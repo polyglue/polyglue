@@ -28,10 +28,15 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
     - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
-  - [SDK version and build number](#78-sdk-version-and-build-number)
+  - [Library and build configuration](#77-library-and-build-configuration)
+  - [Library version and build number](#78-library-version-and-build-number)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
+  - [Complete public naming defaults](#85-complete-public-naming-defaults)
+  - [Formatting and customization profiles](#86-formatting-and-customization-profiles)
+  - [Idiomatic public signatures and Swift import defaults](#87-idiomatic-public-signatures-and-swift-import-defaults)
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
+  - [Unified library public entry points](#105-unified-library-public-entry-points)
 - [11. Compiler and templates](#11-compiler-and-templates)
   - [Compiler pipeline](#111-pipeline)
   - [Template override system](#115-template-override-system-mandatory)
@@ -56,6 +61,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Coverage and test design policy](#180-coverage-and-test-design-policy)
   - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
   - [Deterministic lifecycle race fixtures](#188-deterministic-lifecycle-race-fixtures)
+  - [Default profiles and installed public API conformance](#189-default-profiles-and-installed-public-api-conformance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -63,7 +69,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
-  - [SDK deployment to S3-compatible object storage](#2010-sdk-deployment-to-s3-compatible-object-storage)
+  - [Library deployment to S3-compatible object storage](#2010-library-deployment-to-s3-compatible-object-storage)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
 - [22. Implementation and acceptance checklist](#22-implementation-and-acceptance-checklist)
   - [Repository and tooling](#221-repository-tooling-and-engineering-rules)
@@ -115,13 +121,27 @@ Terms used throughout this document:
 | Adapter | Generated code that converts values and invokes the correct runtime |
 | ABI | The binary rules both sides follow when calling each other |
 | Service registry | An optional place to register and find implementations |
-| SDK | A generated and packaged library that another application can use |
+| Project | A collection of IDL modules, library definitions and shared configuration |
+| IDL module | Logical compilation and dependency unit, independent of a language import namespace |
+| Target | A selected programming language or integration profile |
+| Library | The reusable public API and implementation delivered to a consumer |
+| Public module / namespace / package | The language-native name through which a consumer imports the library |
+| Package | An ecosystem-specific installable distribution of a library |
+| Artifact | An actual generated or built file, archive or package |
+| Runtime | Native support code that connects compatible language attachments |
+| SDK | A broader development kit or a third-party platform toolchain, such as Android SDK or Apple SDK |
 
 A record carries data, an enum names allowed choices, and an interface describes actions. A service is an interface implementation registered for discovery. PolyGlue generates the connection between languages, not the application's business logic.
 
-For a first project, start with a record and one interface method. Generate bindings for two languages, implement the method in one language and call it from the other. Once that works, add a second module, optional values, asynchronous methods and callbacks. Use shared buffers when the application needs to avoid copying large data. Use the registry when the application needs to find or replace an implementation at runtime. Build and package the SDK after the calls work. Deployment is optional. The later chapters explain each step in depth.
+For a first project, start with a record and one interface method. Generate bindings for two languages, implement the method in one language and call it from the other. Once that works, add a second module, optional values, asynchronous methods and callbacks. Use shared buffers when the application needs to avoid copying large data. Use the registry when the application needs to find or replace an implementation at runtime. Build and package the library after the calls work. Deployment is optional. The later chapters explain each step in depth.
 
 ### 1.1 Required outcomes
+
+**Convention over configuration, without sacrificing configurability.** Every supported configurable aspect of generation, public API design, source layout, formatting, integration and packaging must have a documented deterministic default when it can safely be inferred. A minimal project must work without copying a large configuration template. The consumer may override every applicable presentation or integration default at the appropriate scope. An explicit override replaces that setting only. Do not require a setting merely to enable customary language behavior.
+
+**Language-native public APIs.** Generate independently planned public APIs for every selected language, not literal transliterations of C ABI names or another language's syntax. Swift must not expose Objective-C prefixes, Kotlin must not inherit JNI names, and Dart must not expose C handles as ordinary application types. Public calls use native types, error and async conventions whenever they preserve the canonical contract. The application selects the implementation language independently of the public language. No compromise to ownership, type precision, ABI compatibility or executor safety is permitted to make a signature appear idiomatic.
+
+**One library, one public entry point by default.** An explicitly selected library may aggregate several IDL modules into a single native public import surface without erasing their logical identities. Independent modules remain usable without a library definition. A library is not a new IDL namespace, service registry or network boundary. See sections 7.7 and 10.5.
 
 - One IDL can describe data models, repositories, services, callbacks, factories and asynchronous operations.
 - A module can import data models and interfaces defined or generated in another module.
@@ -212,12 +232,14 @@ polyglue generate --module domain
 polyglue generate --module repository --target swift
 polyglue generate --config modules/domain/module.yaml
 polyglue validate
-polyglue config show --module repository --target objc
+polyglue config defaults --target objc
+polyglue config resolved --module repository --target objc
+polyglue generate --library apple
 polyglue list targets
 polyglue --version
 ```
 
-Without a target filter, generate all public targets explicitly selected by the requested modules. With a target filter, generate only that target and its required source dependency closure, including internal bridge artifacts. Resolve source and prebuilt dependencies automatically. A module.yaml used directly inherits built-in and module defaults only. To apply project defaults, select the module through its polyglue.yaml. Do not search parent directories for an implicit project. Validation must happen before writes. The config inspection command prints the effective merged settings, resolved paths and their origins.
+Without a target filter, generate all public targets explicitly selected by the requested modules. With a target filter, generate only that target and its required source dependency closure, including internal bridge artifacts. Resolve source and prebuilt dependencies automatically. A module.yaml used directly inherits built-in and module defaults only. Library selection explicitly applies library defaults and the public API plan; a standalone module generation does not infer a library from the project. To apply project defaults, select the module through its polyglue.yaml. Do not search parent directories for an implicit project. Validation must happen before writes. The config inspection command prints the effective merged settings, resolved paths and their origins.
 
 ### 3.2 Official and local generator
 
@@ -268,10 +290,12 @@ One installed Python CLI is the entry point for generation and native build orch
 | polyglue build | Resolve the selected build plan, generate inputs if needed, configure and build the requested artifact |
 | polyglue test | Run target-specific tests, conformance or installed-package tests against selected artifact bytes, optionally with sanitizer configuration |
 | polyglue package | Build and assemble the distributable, inspect its structure and write an artifact manifest |
-| polyglue deploy | Upload an explicitly selected, already packaged SDK to an S3-compatible bucket using its validated version and build number |
+| polyglue deploy | Upload an explicitly selected, already packaged library to an S3-compatible bucket using its validated version and build number |
 | polyglue run | Run the selected example where the current host or device allows execution |
 | polyglue clean | Remove only PolyGlue-owned build outputs for the selected scope |
-| polyglue config show | Inspect the effective configuration and its origin |
+| polyglue config defaults | Inspect the complete applicable built-in defaults and derivation rules |
+| polyglue config schema | Emit the machine-readable configuration schema |
+| polyglue config resolved | Inspect effective settings, paths, names, export closure and origins |
 | polyglue templates list | Show template IDs, target, source and render-model version |
 | polyglue templates export | Export selected built-in templates for local customization |
 | polyglue templates check | Validate a template override set against its declared target and context contract |
@@ -281,18 +305,18 @@ Illustrative CLI (commands to implement and test, not available yet):
 ```bash
 uv run --locked polyglue doctor --target kotlin --platform android
 uv run --locked polyglue generate --module repository --target kotlin
-uv run --locked polyglue build --product mobile --platform android --configuration release
-uv run --locked polyglue package --product mobile --format aar
-uv run --locked polyglue test --product mobile --format aar
-uv run --locked polyglue package --product apple --format xcframework
-uv run --locked polyglue package --product apple --format swiftpm
-uv run --locked polyglue package --product desktop --platform linux --format cmake
+uv run --locked polyglue build --library mobile --platform android --configuration release
+uv run --locked polyglue package --library mobile --format aar
+uv run --locked polyglue test --library mobile --format aar
+uv run --locked polyglue package --library apple --format xcframework
+uv run --locked polyglue package --library apple --format swiftpm
+uv run --locked polyglue package --library desktop --platform linux --format cmake
 uv run --locked polyglue test --target cpp --sanitizer address
 uv run --locked polyglue test --target cpp --sanitizer thread
 uv run --locked polyglue run --target flutter --platform android
 ```
 
-Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
+Use explicit module/target selection for standalone generation and explicit library selection for library source assembly and binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous library/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
 
 ### 3.5 Development version and release authorization
 
@@ -302,7 +326,7 @@ The current project version is **0.0.1**, an unreleased development version. Use
 - Advance to 0.0.2, 0.0.3 and subsequent versions only when explicitly authorized. Never increment the version automatically for commits, builds or successful CI.
 - An authorization to change the development version does not authorize a Git tag, GitHub Release, TestPyPI upload, PyPI upload or any other external publication.
 - Local builds and GitHub Actions test artifacts may use the current development version without creating a public release. Identify individual builds by commit SHA and artifact checksum.
-- Do not create tags, releases, registry uploads, SDK cloud deployments or publication automation capable of running automatically during normal development. An explicit consumer invocation of deploy authorizes only that selected SDK artifact and destination. For this repository, actual external deployment requires the owner's explicit authorization. No cloud upload or credential setup is authorized by implementing or documenting the feature.
+- Do not create tags, releases, registry uploads, library cloud deployments or publication automation capable of running automatically during normal development. An explicit consumer invocation of deploy authorizes only that selected library artifact and destination. For this repository, actual external deployment requires the owner's explicit authorization. No cloud upload or credential setup is authorized by implementing or documenting the feature.
 - Production PyPI publication is prohibited until every mandatory acceptance gate passes on the exact candidate revision, the project is complete to the owner's satisfaction and the owner explicitly approves that specific version for PyPI. Never publish placeholder packages to reserve the name.
 
 ### 3.6 PyPI Trusted Publishing (future, disabled)
@@ -1186,7 +1210,7 @@ my-project/
 └── web/
 ```
 
-A module is the fundamental unit of compilation, dependency resolution, generation and distribution. A project is a convenient collection of modules and shared defaults, not a mandatory monolithic input.
+A module is the fundamental unit of logical compilation, dependency resolution and independent generation. It can be distributed independently or composed into a library with other modules. A project is a collection of modules, optional library definitions and shared defaults, not a mandatory monolithic input. A logical module name is not automatically a public language import name.
 
 ### 6.2 Independent dependencies
 
@@ -1276,11 +1300,14 @@ flowchart TD
 
 From lowest to highest priority:
 
-1. Built-in generator defaults.
-2. Project-wide defaults.
-3. Module-wide defaults.
-4. Target settings inside that module.
-5. Declaration annotations for supported properties.
+1. Built-in generator defaults for the selected target.
+2. Project-wide defaults, including target-specific defaults.
+3. Selected library defaults, only when generating or assembling that library.
+4. Module-wide defaults.
+5. Explicit target settings inside that module.
+6. Declaration annotations for supported properties.
+
+Library public entry-point identities and exposure rules are assembly settings, not inherited module naming overrides. They are resolved separately from module defaults. A library can specify its public module, package, namespace, facade aliases and export set without mutating a defining module's physical name. Module-level explicit naming and declaration annotations still control the defining symbols. Multiple libraries can consume the same module with distinct public facades. For different actual module render configurations, stage isolated outputs keyed by the effective configuration; never overwrite another library's files. Prebuilt modules cannot be renamed or recompiled by consumer defaults; use compatible public aliases or explicitly rebuild from source.
 
 Project defaults and module defaults use the same defaults key. Apply shared settings before target-specific settings at each level. Normalize naming shorthand before merging, for example methods: camelCase means methods: {case: camelCase}. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
 
@@ -1314,6 +1341,8 @@ defaults:
     objc:
       swift_names:
         enabled: true
+        remove_prefix: true
+        remove_suffix: true
     dart:
       naming:
         types: PascalCase
@@ -1321,7 +1350,7 @@ defaults:
         files: snake_case
 ```
 
-Global defaults must not enable undeclared targets automatically. Each module explicitly selects its outputs. Determinism, ABI validation, ownership safety, ARC where required, nullability correctness and strict concurrency checks are mandatory invariants, not options to disable.
+Global defaults must not enable undeclared targets automatically. A standalone module explicitly selects its public targets. An explicitly selected library declares its public targets and requests the necessary source-module generation closure for those targets, even when the modules rely on inherited target defaults rather than repeating target blocks. A module may explicitly constrain a target; incompatible requests fail rather than silently dropping required symbols. Determinism, ABI validation, ownership safety, ARC where required, nullability correctness and strict concurrency checks are mandatory invariants, not options to disable.
 
 ### 7.3 Domain module configuration
 
@@ -1546,9 +1575,50 @@ None of these choices is imposed on domain or repository.
 
 Define a machine-readable schema with examples and reject unknown options. Do not invent settings without implementing their semantics. Test inherited defaults, module-only generation, target-specific overrides and invalid combinations.
 
-### 7.7 Build and product configuration
+#### 7.6.1 Discoverable defaults and resolved configuration
 
-A module remains the unit of code generation. A product is an explicit aggregation of already-defined modules for linking, packaging and distribution. A product is not another IDL namespace and never overrides a module's public names or type identity. This is necessary when domain, repository and network belong to one AAR or XCFramework, or when a reusable module is shipped independently.
+All supported options are described by one machine-readable typed schema, including key path, applicable target and scope, type, allowed values, default or deterministic derivation rule, nullability, whether required, merge rule, validation constraints, and examples. Generate the configuration reference and built-in defaults view from the same definitions used by validation and resolution. Every shipped default is explicitly versioned with the generator, not guessed from the installed formatter or environment. A target-specific default is only displayed for that target; unsupported properties are rejected with a path and reason. No advertised setting may be ignored.
+
+```bash
+polyglue config defaults
+polyglue config defaults --target cpp
+polyglue config schema
+polyglue config resolved --module repository --target swift
+polyglue config resolved --library ubook --target swift
+polyglue config resolved --library ubook --format json
+```
+
+Defaults output contains all applicable presentation and integration settings, including the Swift import defaults, not just values explicitly supplied in YAML. A derivation rule is displayed as a rule when no project or module ID is available. Resolved output shows effective values and their source (built-in, project, library, module, target or annotation), normalized names/paths and selected export and dependency closure. Never print credentials. Config commands and validate operate without rendering or modifying files. The machine-readable schema supports editor completion and diagnostics. JSON output is deterministic; output format is distinct from library artifact format and used only by config commands here. Do not introduce parallel config engines or duplicate hand-maintained default tables.
+
+#### 7.6.2 Default versus required input
+
+| Area | Built-in default | Explicit input / override |
+| --- | --- | --- |
+| IDL source discovery | idl/**/*.idl relative to module.yaml, sorted by normalized path | Source globs, files and excludes |
+| Module/target selection | Only requested standalone targets or explicit library target closure | Module IDs, library IDs, public targets |
+| Output root | generated/<module-id>/<target-id> relative to module manifest for standalone generation; isolated library output under configured build root when necessary | Output paths, public/private dirs, header/source dirs |
+| Generation mode | sources | package integration metadata when selected |
+| Build root / artifact root | build/polyglue and dist relative to project config | Config-relative paths |
+| Build configuration | release for library build/package; explicit debug/sanitizer profiles supported | Configuration, toolchain, flags, parallelism, environment allowlist |
+| Library API exposure | unified, public selected modules plus required signature types | modular, export allowlist, aliases, entrypoint and public identities |
+| Public imports | Resolved automatically from defining manifests and selected library export graph | Include/import prefixes, module/package/namespace, supported import strategies |
+| Runtime linking | One deliberately shared context per library integration; generated internal native adapter as needed | Static/shared linkage and explicit existing-context attachment |
+| Registry | Optional; duplicate Reject | Explicit Replace or ScopedOverride per registration; separate registries and attachment policy |
+| Templates | Versioned built-ins, explicit inheritance of unspecified overrides | Trusted directory, individual file overrides, inheritance policy |
+| Text | UTF-8, LF, final newline, no timestamp, deterministic ordering | Supported encoding/layout overrides only when valid; deterministic source is mandatory |
+| Source documentation | Propagate IDL docs, generated warning on, source path/version metadata off unless enabled | Header, license, copyright, doc layout, source metadata |
+| Optional formatting tools | Off; built-in templates readable | Explicit supported formatter and settings |
+| Package versions | No invented release version/build number | Required explicit version and build number for release artifact |
+| Deployment | Off; local artifact only | Explicit destination, artifact identity and authorized invocation |
+| Tests | Full required contract coverage, real selected target evidence | Selection of local test scope, sanitizer/configuration, bounded resources; no release bypass |
+
+Derived defaults are deterministic and schema-validated. Required business intent, target selection, public release coordinates, credentials, platform capability and safe executor choice are not guessed. Every applicable configurable property has a documented override path; options that cannot be implemented without changing the IDL contract or breaking security are not offered. A user may configure a safe policy, not disable required validation, reference checks, type precision, deterministic generation or platform restrictions. Preserve security defaults and explicit failure semantics from sections 12–15.
+
+### 7.7 Library and build configuration
+
+A module remains the unit of logical generation. A library is an explicit aggregation of already-defined modules for public API exposure, linking, packaging and distribution. The configuration root is libraries, and the CLI selector is --library. A build system may call a library a product (for example a SwiftPM library product), but that ecosystem term is not a separate PolyGlue config entity. Do not implement an obsolete products key or --product alias. The library's identity does not override IDL type identities. The default unified public API exposes the chosen modules through an ecosystem-native entry point with one intended runtime context. Modular exposure is opt-in. See section 10.5.
+
+A library without artifact settings can generate its source facade and selected bindings. Binary packaging requires an explicit release version and build number. Library target selection is a list; per-target public identity and export customization belongs under api.targets. Keep this distinction rather than supporting competing YAML shapes for the same property.
 
 Module-level build settings configure integration, not global compiler installation:
 
@@ -1580,7 +1650,7 @@ targets:
       consumer_rules: ../../android/consumer-rules.pro
 ```
 
-Illustrative project-level products in polyglue.yaml (in addition to modules and defaults from section 7.2):
+Illustrative project-level libraries in polyglue.yaml (in addition to modules and defaults from section 7.2):
 
 ```yaml
 build:
@@ -1588,7 +1658,7 @@ build:
   artifacts: dist
   configuration: release
 
-products:
+libraries:
   mobile:
     modules: [domain, repository, network]
     targets: [c, cpp, java, kotlin]
@@ -1605,6 +1675,14 @@ products:
   apple:
     modules: [domain, repository, network]
     targets: [c, cpp, objc, swift]
+    api:
+      mode: unified
+      targets:
+        swift:
+          module: AppBridge
+        objc:
+          module: AppBridgeObjC
+          prefix: AB
     artifact:
       formats: [xcframework, swiftpm]
       name: AppBridge
@@ -1640,11 +1718,86 @@ products:
         architectures: [arm64, x86_64]
 ```
 
-SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Product manifests declare the exact module closure, native implementation sources, runtime linkage, SDK version, build number, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them and is required when several are configured. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop product spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Product packaging can select source or prebuilt modules, with strict compatibility validation. A prebuilt module may carry its own module version but must not silently replace the product SDK version. Product metadata is generated at the packaging boundary. Separate product output roots prevent cross-product contamination. A source-only project never has to declare products.
+SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Product manifests declare the exact module closure, native implementation sources, runtime linkage, library version, build number, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them and is required when several are configured. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop product spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Product packaging can select source or prebuilt modules, with strict compatibility validation. A prebuilt module may carry its own module version but must not silently replace the product library version. Product metadata is generated at the packaging boundary. Separate library output roots prevent cross-product contamination. A source-only project never has to declare libraries.
 
 Dependency names in native build configuration refer to explicitly declared CMake targets, not arbitrary flags. IDL dependencies and native build dependencies are distinct. Module output paths, native implementation source paths, SDK settings, extra includes and link libraries are schema-validated. Accept additional CMake integration via an explicit, trusted consumer CMake target or source list. No arbitrary shell execution from IDL.
 
-### 7.8 SDK version and build number
+#### 7.7.1 Minimal library and explicit overrides
+
+```yaml
+project:
+  name: ubook
+
+modules:
+  - modules/domain/module.yaml
+  - modules/repository/module.yaml
+  - modules/network/module.yaml
+  - modules/helper/module.yaml
+
+libraries:
+  ubook:
+    modules: [domain, repository, network, helper]
+    targets: [cpp, objc, swift, kotlin, dart, python, csharp, typescript]
+```
+
+This is sufficient to generate a source library, provided the referenced module manifests declare valid module IDs and IDL sources (or use the default idl/**/*.idl glob). No boilerplate case, prefix, filename, import, template or formatter declarations are required. Library ID is explicit; public names derive deterministically from it, for example Ubook for Swift and C#, ubook for C++ and Python. Do not invent an organization reverse-DNS identifier or registry account: the minimal local JVM package is ubook; the application can explicitly set com.ubook. The same applies to Maven groups, npm scopes, signing identities and public release coordinates. Require real explicit identity where an ecosystem requires it. If the derived legal public name would collide or be invalid, diagnose it and require an override.
+
+A full override of the public surface can be expressed as follows. Unspecified keys still inherit defaults. The artifact name is a distribution name, not an implicit override of a target's import name.
+
+```yaml
+libraries:
+  ubook:
+    modules: [domain, repository, network, helper]
+    targets: [cpp, objc, swift, java, kotlin, dart, flutter, python, csharp, javascript, typescript, wasm]
+    api:
+      mode: unified
+      targets:
+        cpp:
+          namespace: ubook
+          include: ubook/ubook.hpp
+          cmake_target: Ubook::Ubook
+        objc:
+          module: UbookObjC
+          prefix: UB
+          include: UbookObjC/UbookObjC.h
+        swift:
+          module: Ubook
+        java:
+          package: com.ubook
+        kotlin:
+          package: com.ubook
+        dart:
+          package: ubook
+          entrypoint: lib/ubook.dart
+        flutter:
+          package: ubook_flutter
+        python:
+          package: ubook
+          entrypoint: ubook.api
+        csharp:
+          namespace: Ubook
+          assembly: Ubook
+        javascript:
+          package: "@ubook/core"
+        typescript:
+          package: "@ubook/core"
+        wasm:
+          module: ubook
+    artifact:
+      name: Ubook
+      version: "1.0.0"
+      build_number: 1
+```
+
+This example shows names only, not a request to build every platform/format in one command. The selected library platform/build settings and ecosystem capability checks determine the actual distributables. When exactly one format is applicable to a requested platform and target set, infer it. Multiple compatible formats require explicit selection unless a default format was configured. Never infer unsupported architectures, signing credentials, deployment destinations, or publish coordinates. Native platform deployment floors and architecture sets must be explicitly resolved by the build plan, and must be compatible with selected toolchains and declared availability. Source generation stays independent of installed native SDKs. A library can define separate package identities for platform integrations without duplicating public canonical Dart models.
+
+#### 7.7.2 Export selection and dependency closure
+
+By default expose the public declarations of explicitly listed modules and the public types that are required to use their exported signatures. Other transitive dependencies stay implementation details. An explicit export set may select a subset of logical module IDs and fully qualified declaration IDs; it must remain closed over all public signature dependencies, or fail with a diagnostic naming the missing type. Use api.exports for an explicit allowlist and api.targets.<target>.aliases for per-target public names keyed by canonical declaration ID where the language supports the alias or a proven typed facade. Validate unknown IDs, conflicting aliases and unsupported target mappings. No wildcard expansion based on filesystem order. Do not expose internal C ABI functions, bridge envelopes, native handles, vtable internals, support-only adapters or private fields just because they were linked into the library. A public type that cannot be represented using a target's idiomatic native type retains its required typed wrapper.
+
+A library is not allowed to re-declare an interface with a different logical identity merely to move it to a convenient namespace. Re-exports, aliases, native public module ownership and forwarding facades must preserve canonical type identity and ownership. Validate the complete public symbol graph before rendering. If the target cannot offer a chosen unified layout with compatible prebuilt dependencies, require a compatible explicit modular layout or source rebuild. Do not silently generate duplicate classes or a second registry.
+
+### 7.8 Library version and build number
 
 Keep the following identities independent. Never infer one from another.
 
@@ -1653,15 +1806,15 @@ Keep the following identities independent. Never infer one from another.
 | PolyGlue version | Tool pyproject.toml | Generator and support library release |
 | ABI version and contract fingerprints | Runtime and canonical IDL | Reject incompatible binary contracts |
 | Module version | module.yaml | Logical module dependency metadata |
-| SDK version | products.<id>.artifact.version | Distributed library release version |
-| SDK build number | products.<id>.artifact.build_number | Identifies a particular build of that SDK version |
+| Library version | libraries.<id>.artifact.version | Distributed library release version |
+| Library build number | libraries.<id>.artifact.build_number | Identifies a particular build of that library version |
 
-The SDK version and build number are required for a binary product. They are not required for source-only IDL generation. Use an explicit numeric MAJOR.MINOR.PATCH string without leading zeroes and a positive integer build_number. The version is not derived from the Git tag, module version, tool version, CI run number or current time. The build number is supplied by the product owner, not incremented automatically. Keep SDK build numbers monotonic within a version for operational clarity. The tool need not contact a remote service to allocate a number. The same build identity is used by every requested architecture and format of a product for one build. Different platform and format outputs are distinct artifact sets under that identity. If changed bytes must replace an already deployed artifact set, assign a new build number explicitly. Local development may regenerate an unpublished artifact set at the same build number.
+The library version and build number are required for a packaged binary library. They are not required for source-only IDL generation. Use an explicit numeric MAJOR.MINOR.PATCH string without leading zeroes and a positive integer build_number. The version is not derived from the Git tag, module version, tool version, CI run number or current time. The build number is supplied by the product owner, not incremented automatically. Keep SDK build numbers monotonic within a version for operational clarity. The tool need not contact a remote service to allocate a number. The same build identity is used by every requested architecture and format of a product for one build. Different platform and format outputs are distinct artifact sets under that identity. If changed bytes must replace an already deployed artifact set, assign a new build number explicitly. Local development may regenerate an unpublished artifact set at the same build number.
 
 Example:
 
 ```yaml
-products:
+libraries:
   apple:
     modules: [domain, repository, network]
     targets: [c, cpp, objc, swift]
@@ -1677,46 +1830,46 @@ products:
         simulator_architectures: [arm64, x86_64]
 ```
 
-Resolve these two values once in the Python build plan and pass the same immutable values to every downstream tool. Do not maintain duplicated editable versions in Gradle, CMake, Xcode, manifests or templates. Expose sdk_version and sdk_build_number in the existing versioned template context when generating for a product. A standalone module generation must not invent SDK metadata. Keep product-specific generated version files in the selected product staging directory so multiple products cannot overwrite shared module source. A module's logical ID and ABI fingerprint do not change merely because the product build number changed. The build and artifact fingerprints do change.
+Resolve these two values once in the Python build plan and pass the same immutable values to every downstream tool. Do not maintain duplicated editable versions in Gradle, CMake, Xcode, manifests or templates. Expose library_version and library_build_number in the existing versioned template context when generating for a product. A standalone module generation must not invent library metadata. Keep library-specific generated version files in the selected library staging directory so multiple libraries cannot overwrite shared module source. A module's logical ID and ABI fingerprint do not change merely because the library build number changed. The build and artifact fingerprints do change.
 
-Validate version constraints for the selected ecosystems before building. Do not truncate, clamp, round, append an invented suffix or silently substitute a different value to fit a platform field. The SDK version remains the ecosystem package version. Build number is separate build metadata, not a new Maven/PyPI/npm/NuGet package version. Two builds of one ecosystem version are not two independently publishable releases in an immutable registry. Local and bucket paths distinguish them. Use a new SDK version if a registry requires a unique release coordinate.
+Validate version constraints for the selected ecosystems before building. Do not truncate, clamp, round, append an invented suffix or silently substitute a different value to fit a platform field. The library version remains the ecosystem package version. Build number is separate build metadata, not a new Maven/PyPI/npm/NuGet package version. Two builds of one ecosystem version are not two independently publishable releases in an immutable registry. Local and bucket paths distinguish them. Use a new library version if a registry requires a unique release coordinate.
 
 #### 7.8.1 Propagation to toolchains
 
-| Target | SDK version | Build number |
+| Target | Library version | Build number |
 | --- | --- | --- |
-| C / C++ / CMake | Product project VERSION, generated product version header and package config version, target VERSION where applicable | Product version header and manifest |
+| C / C++ / CMake | Library project VERSION, generated library version header and package config version, target VERSION where applicable | Library version header and manifest |
 | Windows native | File/Product version resource where emitted, checked platform representation | Checked fourth file version component when representable |
-| Android AAR | Gradle project/publication version and local Maven coordinates | Packaged SDK metadata resource and native version metadata |
+| Android AAR | Gradle project/publication version and local Maven coordinates | Packaged library metadata resource and native version metadata |
 | JVM JAR | Gradle/Maven version and JAR Implementation-Version | JAR metadata and native version metadata |
 | Apple framework | MARKETING_VERSION / CFBundleShortVersionString | CURRENT_PROJECT_VERSION / CFBundleVersion |
 | SwiftPM | Distribution package metadata, archive and URL path. SwiftPM dependency versions are selected by actual Git tags or package configuration | Packaged metadata and referenced artifact build path |
-| Python generated bindings | Wheel/sdist project version | Packaged metadata resource and native product version metadata |
-| Dart / Flutter | pubspec.yaml package version | Packaged metadata and native product version metadata |
+| Python generated bindings | Wheel/sdist project version | Packaged metadata resource and native library version metadata |
+| Dart / Flutter | pubspec.yaml package version | Packaged metadata and native library version metadata |
 | C# | PackageVersion, Version and checked assembly/file version mapping | Informational metadata and checked file version where applicable |
-| JS / TS | package.json version | Packaged SDK metadata |
-| WASM | Product metadata emitted with the JS loader or packaged WASM assets | Same metadata and native product version where applicable |
+| JS / TS | package.json version | Packaged library metadata |
+| WASM | Product metadata emitted with the JS loader or packaged WASM assets | Same metadata and native library version where applicable |
 
-AAR libraries do not have an application versionCode requirement. Only an application artifact with a supported versionCode field may map the SDK build number to it. Do not pretend JARs, archives, static libraries or WASM modules have a standard OS-level build number field. Where native metadata has no matching field, include the canonical values in a small packaged metadata resource. Use the resolved build plan as the source for embedded metadata and the final artifact manifest. Only add a small version header/resource where a runtime or ecosystem needs it. Never embed the final artifact manifest inside a file whose own hash that manifest records. Verify metadata in installed consumers. Do not add a new version service or ABI call solely for build numbers.
+AAR libraries do not have an application versionCode requirement. Only an application artifact with a supported versionCode field may map the library build number to it. Do not pretend JARs, archives, static libraries or WASM modules have a standard OS-level build number field. Where native metadata has no matching field, include the canonical values in a small packaged metadata resource. Use the resolved build plan as the source for embedded metadata and the final artifact manifest. Only add a small version header/resource where a runtime or ecosystem needs it. Never embed the final artifact manifest inside a file whose own hash that manifest records. Verify metadata in installed consumers. Do not add a new version service or ABI call solely for build numbers.
 
 For CMake, pass explicit cache inputs from Python:
 
 ```bash
-cmake -S . -B build/example -DPOLYGLUE_SDK_VERSION=1.2.3 -DPOLYGLUE_SDK_BUILD_NUMBER=42
+cmake -S . -B build/example -DPOLYGLUE_LIBRARY_VERSION=1.2.3 -DPOLYGLUE_LIBRARY_BUILD_NUMBER=42
 ```
 
-The product integration uses these values for its project VERSION, configure_file version metadata and native target version properties as appropriate. Do not overwrite the parent project's version or set unrelated global version properties when using add_subdirectory. Shared library SOVERSION follows the runtime's actual ABI major, not the SDK's build number. Do not apply versioned shared-library properties to static archives. Keep compiler, SDK deployment floor and library version separate. Resolve the product version before the product CMake project() call. The PolyGlue runtime's own CMake project retains the tool/runtime version when built as a dependency. A generated product header must not redefine runtime version macros or collide with another product's header.
+The product integration uses these values for its project VERSION, configure_file version metadata and native target version properties as appropriate. Do not overwrite the parent project's version or set unrelated global version properties when using add_subdirectory. Shared library SOVERSION follows the runtime's actual ABI major, not the library's build number. Do not apply versioned shared-library properties to static archives. Keep compiler, library deployment floor and library version separate. Resolve the library version before the product CMake project() call. The PolyGlue runtime's own CMake project retains the tool/runtime version when built as a dependency. A generated product header must not redefine runtime version macros or collide with another product's header.
 
-For Apple products, verify the framework Info.plist values after building each device/simulator slice and before assembling the XCFramework. Use the same product build identity across all constituent frameworks. For Windows/.NET numeric file version fields, check the range of each component before assigning it. For Android and JVM, verify the publication metadata and the packaged resource independently. For all formats, inspect final manifests and packaged version metadata and reject any mismatch with the resolved plan.
+For Apple products, verify the framework Info.plist values after building each device/simulator slice and before assembling the XCFramework. Use the same library build identity across all constituent frameworks. For Windows/.NET numeric file version fields, check the range of each component before assigning it. For Android and JVM, verify the publication metadata and the packaged resource independently. For all formats, inspect final manifests and packaged version metadata and reject any mismatch with the resolved plan.
 
 #### 7.8.2 Acceptance
 
-- A single product configuration produces matching version and build metadata in the native outputs, ecosystem packages, archive metadata and artifact manifest.
+- A single library configuration produces matching version and build metadata in the native outputs, ecosystem packages, archive metadata and artifact manifest.
 - Changing only the build number invalidates relevant generated metadata and builds without changing logical type IDs or ABI fingerprints.
-- Two builds with the same SDK version but different build numbers have separate output directories and can coexist.
-- Distinct product versions or concurrent product builds do not overwrite common module source files.
+- Two builds with the same library version but different build numbers have separate output directories and can coexist.
+- Distinct library versions or concurrent library builds do not overwrite common module source files.
 - Invalid or unrepresentable version/build values fail before compilation. No silently modified version.
-- Build and deploy reject a manifest whose version, build number, files or selected product identity differ from the requested configuration.
+- Build and deploy reject a manifest whose version, build number, files or selected library identity differ from the requested configuration.
 
 ### 7.9 How configuration reaches generated files
 
@@ -1743,7 +1896,7 @@ flowchart TD
 | Target | Types | Methods | Fields | Files |
 | --- | --- | --- | --- | --- |
 | C | snake_case | snake_case | snake_case | kebab-case |
-| C++ | PascalCase | snake_case | snake_case | kebab-case |
+| C++ | PascalCase | camelCase | camelCase | kebab-case |
 | Java / Kotlin | PascalCase | camelCase | camelCase | PascalCase |
 | Swift | PascalCase | camelCase | camelCase | PascalCase |
 | Objective-C | prefixed PascalCase | camelCase | camelCase | PascalCase |
@@ -1752,7 +1905,7 @@ flowchart TD
 | C# | PascalCase | PascalCase | PascalCase | PascalCase |
 | JS / TS | PascalCase | camelCase | camelCase | kebab-case |
 
-These are defaults, not mandatory language standards. Support PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase, UPPERCASE and dot-separated paths where legal. Configure types, records, interfaces, methods, async methods, fields, parameters, constants, enum values, files, namespaces, packages, private fields and proxy names independently.
+These are PolyGlue's explicit defaults, not claims that every language enforces these conventions. C++ uses camelCase by default for methods, async methods, fields, parameters, local variables and private member base names. For example repository.findAll() and repository.findById(id), with arrow syntax when using a pointer-like interface reference. Consumers may override any category without changing the logical contract. Support PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase, UPPERCASE and dot-separated paths where legal. Configure types, records, interfaces, methods, async methods, fields, parameters, constants, enum values, files, namespaces, packages, private fields and proxy names independently.
 
 ### 8.1.1 Mandatory dash-based filenames
 
@@ -1790,7 +1943,7 @@ targets:
       remove_suffix: true
 ```
 
-Repository can independently use REP and an interface suffix such as Protocol. With that optional override applied in repository as well:
+All three swift_names values above are built-in defaults even when the entire swift_names block is omitted. They remove only affixes introduced by Objective-C naming resolution, not characters that happen to match the original logical IDL name. Repository can independently use REP and an interface suffix such as Protocol. With that optional override applied in repository as well:
 
 | IDL | Objective-C | Swift public name |
 | --- | --- | --- |
@@ -1833,7 +1986,7 @@ naming:
     - IPv6
 ```
 
-Define normalization and preservation policies per target. Test HTTPClient, XMLParser, getUserID, GPUTexture2D, URLRequest and IPv6Address. Expected normalized examples: httpClient / http_client, getUserId / get_user_id, gpuTexture2D / gpu_texture_2d.
+Define normalization and preservation policies per target. Default acronym segmentation recognizes the listed acronym dictionary and normalizes word casing deterministically. The acronym list and per-target casing/preservation rules are configurable. Test HTTPClient, XMLParser, getUserID, GPUTexture2D, URLRequest and IPv6Address. Expected normalized examples: httpClient / http_client, getUserId / get_user_id, gpuTexture2D / gpu_texture_2d. Swift-specific public names may explicitly preserve ID/URL spelling via the resolved acronym policy or annotations; do not invent semantic rewrites.
 
 Handle reserved words through legal escaping where appropriate (Swift/Kotlin backticks, C# @identifier) or configured suffixes. Detect collisions after all conversions, including user_id vs userId, generated proxies vs user types, Unicode/case-folded filenames, Java/Kotlin duplicate JVM types and reserved Windows filenames. Fail with both source locations. Never silently rename public symbols to resolve an ambiguity.
 
@@ -1858,6 +2011,139 @@ targets:
 ```
 
 Generate deterministic UTF-8 text, ordered and deduplicated imports and appropriate documentation comments. Do not include wall-clock generation timestamps or machine-specific absolute source paths. If source metadata is selected, use a normalized logical module-relative path. Build provenance may record execution times separately from generated source and its fingerprints. Default formatting must be readable without external tools and follow the owner conventions in AGENTS.md, including single-line calls, signatures and string literals. Optional formatters: clang-format, google-java-format, ktlint, swift-format, Ruff, dart format, dotnet format, Prettier. Only advertise options a backend actually honors. Test custom formatting, output byte reproducibility and unchanged-file preservation.
+
+### 8.5 Complete public naming defaults
+
+Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase and UPPERCASE; dot-separated namespace/package segments are planned separately. UPPERCASE means uppercase without inserted separators, whereas SCREAMING_SNAKE_CASE means uppercase words separated by underscores. A target/category may override any case that can produce legal identifiers. All categories have an effective default even if omitted from YAML.
+
+| Target | Types / records / interfaces / enums | Methods / async methods | Fields / parameters / locals | Constants | Enum cases |
+| --- | --- | --- | --- | --- | --- |
+| C | snake_case | snake_case | snake_case | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
+| C++ | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
+| Objective-C | PascalCase with configured prefix | camelCase | camelCase | PascalCase with configured prefix | PascalCase with enum prefix |
+| Swift | PascalCase | camelCase | camelCase | camelCase | camelCase |
+| Java | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
+| Kotlin | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
+| Dart / Flutter | PascalCase | camelCase | camelCase | camelCase | camelCase |
+| Python | PascalCase | snake_case | snake_case | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
+| C# | PascalCase | PascalCase; async suffix Async | public properties PascalCase; parameters/locals/private camelCase | PascalCase | PascalCase |
+| JavaScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
+| TypeScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
+| WASM | C ABI internal representation; JS/TS facade uses its target defaults | C ABI internal names; no public raw offsets | Canonical boundary layout; JS/TS facade defaults | Facade target defaults | Facade target defaults |
+
+| Target | Source file naming | Default scope for standalone module |
+| --- | --- | --- |
+| C | kebab-case .h/.c | module-derived snake_case symbol prefix and include path |
+| C++ | kebab-case .hpp/.cpp | module-derived snake_case namespace |
+| Objective-C | PascalCase .h/.mm | module-derived PascalCase prefix and Clang module |
+| Swift | PascalCase .swift | module-derived PascalCase Swift module |
+| Java | PascalCase .java | module-derived lowercase legal package |
+| Kotlin | PascalCase .kt | module-derived lowercase legal package |
+| Python | snake_case .py | module-derived snake_case package |
+| Dart / Flutter | snake_case .dart | module-derived snake_case pub package |
+| C# | PascalCase .cs | module-derived PascalCase namespace/assembly |
+| JS / TS | kebab-case .js/.ts/.d.ts as applicable | module-derived kebab-case package |
+| WASM | kebab-case .wasm and adapter source | owning library/selected module ID |
+
+A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default (project name plus module ID when needed for a project-scoped default); collision detection remains mandatory. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
+
+Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, argument_labels (where supported), variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured, and no default suffix other than the C# async-method Async convention. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
+
+Example effective C++ defaults:
+
+```yaml
+naming:
+  types: PascalCase
+  records: PascalCase
+  interfaces: PascalCase
+  classes: PascalCase
+  enums: PascalCase
+  flags: PascalCase
+  variants: PascalCase
+  callbacks: PascalCase
+  methods: camelCase
+  async_methods: camelCase
+  static_methods: camelCase
+  fields: camelCase
+  properties: camelCase
+  parameters: camelCase
+  variables: camelCase
+  private_fields: camelCase
+  constants: SCREAMING_SNAKE_CASE
+  enum_values: PascalCase
+  generic_parameters: PascalCase
+  namespaces: snake_case
+  files: kebab-case
+  directories: kebab-case
+  proxies:
+    suffix: Proxy
+  adapters:
+    suffix: Adapter
+```
+
+This is the built-in resolved profile, not required YAML in a consumer project. Other supported categories inherit documented base categories. For example a user can override methods.case, async_methods.suffix, interfaces.prefix, files.case or a single declaration with its target annotation. Empty affix explicitly removes an inherited affix. Missing settings inherit. Use a single casing resolver and preserve token boundaries and acronym rules deterministically, including mixed ID, URL, HTTP, GPU, IPv6, numbers and configured acronyms. Do not infer semantic abbreviations or shorten methods by guessing which words are redundant.
+
+### 8.6 Formatting and customization profiles
+
+| Setting | Default |
+| --- | --- |
+| Encoding / line endings | UTF-8 / LF |
+| Final newline | true |
+| Indentation | four spaces for native/Python/Swift/Kotlin/Java/C#/Dart; two for JS/TS/JSON/YAML/HTML/CSS/SVG |
+| Make recipes | tabs |
+| Trailing whitespace | remove unless syntactically significant |
+| Line length | 320 where the formatter supports a width; C++ clang-format ColumnLimit 0 |
+| Function calls/signatures/string literals | single line by default, except structural syntax and language-required layout |
+| Imports/includes | deterministic, deduplicated, target-appropriate order |
+| Generated warning | true |
+| User copyright/license | unset unless configured; preserve required notices |
+| Generator version/source path in file header | false |
+| External formatter execution | false; optional explicitly configured |
+| Build timestamps in generated source | never |
+
+Support independent overrides for applicable formatting properties: indentation width/style, line length, brace style, blank-line rules, quote style where valid, line endings, final newline, import ordering, header text, generated documentation and formatter options. Do not promise an unsupported formatter flag; validate capabilities per target. Repository-owned files follow AGENTS.md, separate from consumer-configured generated output. A trusted custom template may change the presentation of any emitted file while respecting the resolved model and validated public contract. Templates must not invent imports, type identities or unsafe marshalling. Default built-ins remain usable with no external formatters.
+
+### 8.7 Idiomatic public signatures and Swift import defaults
+
+Plan public names from the IDL declaration and target naming policy before computing bridge names. This applies to models, interfaces, static/instance members where supported by IDL, enums, flags, constructors, callbacks, factories, proxies, registration controls and async APIs. Public callable shape is independently resolved: base name, argument labels where legal, async suffix, parameter identifiers, return/error representation and visibility. Never generate a public name by parsing a C symbol, JNI export or Objective-C selector. Default naming preserves semantic IDL words; explicit annotations can make a long logical name concise without changing the contract. Never heuristically drop meaningful terms or imply a different sort order or behavior.
+
+For Swift, Objective-C swift_names.enabled, remove_prefix and remove_suffix are all true by default. Generate explicit NS_SWIFT_NAME metadata for representable types and methods and NS_SWIFT_ASYNC_NAME where supported, using the resolved Swift signature rather than relying on importer heuristics. The native Swift backend uses the same planned Swift names and argument labels. When a wrapper is required for async, ownership, nullable values or another importer limitation, emit the wrapper with the same public signature and keep the imported bridge symbol internal or appropriately refined. A shared imported model has one canonical type; do not emit an independent public Swift type with the same role. Avoid underscored compiler-only re-export attributes as a required public strategy. See sections 9.3 and 10.5.
+
+Swift parameters use their resolved camelCase names as argument labels by default. Explicitly configure a per-target label policy or declaration/parameter override to omit labels, change individual labels or express natural prepositions. A full @swift.name annotation specifies the complete base name and ordered external argument labels, with _ for an omitted label. It does not change parameter order, arity, value types, instance/static semantics or async/error contract. Internal parameter names may differ from external labels. Validate the Swift name grammar, argument count, reserved identifiers, constructor/static context and overload conflicts before emission; Objective-C selector collisions are independently checked. If both a full-signature annotation and a parameter label override specify the same label inconsistently, fail with both source locations. Simple @swift.name("User") remains valid for a type, and a simple method name override retains resolved labels.
+
+```text
+interface ProductChapterRepository {
+    @swift.name("findAll(catalogId:ascending:)")
+    async findAllByCatalogIdOrderBySequence(catalogId: int64, ascending: bool): list<ProductChapter>;
+}
+
+interface ProductChapterHelper {
+    @swift.name("index(of:in:)")
+    getIndexByChapterIdAndList(chapterId: int64, list: list<ProductChapter>): int32;
+}
+```
+
+Illustrative consumption of interface references in Swift, with the same semantic method contracts:
+
+```swift
+import Ubook
+
+let chapters = try await repository.findAll(catalogId: product.catalogId, ascending: true)
+let index = try helper.index(of: chapter.chapterId, in: chapters)
+```
+
+A synchronous method may cross only a supported synchronous execution path; choose an async IDL method for a helper that can run on a different executor. The naming example does not introduce a static IDL service or promise synchronous cross-isolate calls. An actual static method is supported only where the IDL grammar and ownership contract define it, not inferred from a Djinni call site.
+
+| Objective-C emitted name | Swift public name |
+| --- | --- |
+| UBRepositoryProductChapterRepository | ProductChapterRepository |
+| UBHelperProductChapterHelper | ProductChapterHelper |
+| UBDomainProduct | Product |
+| UBNetworkHttpClientProtocol | HttpClient |
+
+The prefix remains in Objective-C symbols. To keep a generated affix on Swift imports, set remove_prefix or remove_suffix to false explicitly. Setting swift_names.enabled false disables the optional imported-name metadata, not the independent Swift backend's native naming rules. An imported-model configuration that cannot satisfy the selected public Swift contract must generate an appropriate typed facade or report an incompatibility; it must not silently leak a different public API. Validate actual Swift compiler-visible names, not macro text alone.
+
+Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python async def, C# Task with Async suffix, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
 
 ## 9. Annotations and platform attributes
 
@@ -1919,7 +2205,7 @@ Annotations are allowed on modules, records, interfaces, enums, enum members, fi
 | NS_DESIGNATED_INITIALIZER / NS_UNAVAILABLE | Initialization contract |
 | @discardableResult | Intentional result-discard support |
 
-Automatically infer safe attributes from IDL when possible. Annotations override naming or supported metadata, not safety rules.
+Automatically infer safe attributes from IDL when possible. Annotations override naming or supported metadata, not safety rules. Section 8.7 is the required default Swift public-signature and importer policy. NS_SWIFT_NAME and NS_SWIFT_ASYNC_NAME must be generated only for valid declarations and tested against the actual Clang/Swift importer. The Swift signature plan, not selector spelling, defines public argument labels and names. The generated Objective-C and Swift APIs must both remain usable.
 
 Illustrative Objective-C output for a reduced User record (id, name and optional email):
 
@@ -2215,6 +2501,49 @@ These trees illustrate public artifacts, not exhaustive bridge sources. The doma
 | WASM | Emscripten build configuration, exports and JS loader |
 
 Provide sources mode (integrate into existing build) and package mode (standalone buildable package). Paths, filenames, extensions and public import strings are separately configurable. Do not overwrite consumer-owned build files. Test both modes, separate source roots and external dependencies, same-module Swift imports, Python circular imports, C++ forward declarations and package export validity.
+
+### 10.5 Unified library public entry points
+
+Every library has an explicit public import plan per selected target. The default api.mode is unified. A single consumer-facing import or include path exposes the library's selected public API without requiring the consumer to know the IDL directory layout. The module names remain in manifests, dependency graphs, logical IDs and generated internal paths. This is an API and package assembly requirement, not an assertion that every language has the same module feature.
+
+| Target | Example public consumption | Required assembly strategy |
+| --- | --- | --- |
+| C | #include <ubook/ubook.h> | Umbrella header with exported typed API and stable prefixed C symbols |
+| C++ | #include <ubook/ubook.hpp> | Self-contained umbrella header, public namespace aliases or intentionally unified declarations, relocatable CMake target |
+| Objective-C | @import UbookObjC; | Actual Clang module, umbrella header and compatible prefixed runtime classes |
+| Swift | import Ubook | Actual importable Swift module/target, native public declarations or explicit public typealiases and forwarding APIs |
+| Java | import com.ubook.ProductChapterRepository; | Actual public class/package layout in JAR/AAR; no fictitious Java re-export |
+| Kotlin | import com.ubook.ProductChapterRepository | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
+| Dart | import 'package:ubook/ubook.dart'; | Public library entrypoint exports selected src declarations; conditional native/web adapter imports |
+| Flutter | import 'package:ubook_flutter/ubook_flutter.dart'; | Plugin entrypoint exports the shared Dart API and platform initialization |
+| Python | from ubook.api import ProductChapterRepository | Explicit public api.py module re-exports selected defining symbols; __init__.py stays empty |
+| C# | using Ubook; | Actual namespace and assembly public types; type forwarding only where CLR supports it |
+| JS / TS | import { ProductChapterRepository } from "@ubook/core"; | ESM export map, actual JS implementation, corresponding type declarations and assets |
+| WASM | Import the owning JS/TS or Dart Web entrypoint | One intended WASM instance behind generated host adapters, not direct public pointer access |
+
+```mermaid
+flowchart TD
+    A["Domain IDL module"] --> P["Resolve logical symbols and dependencies"]
+    B["Repository IDL module"] --> P
+    C["Network IDL module"] --> P
+    P --> L["Library public API plan"]
+    L --> M["One native public entry point per selected target"]
+    P --> R["Shared runtime and adapters"]
+    R --> M
+    M --> U["Installed independent consumer"]
+```
+
+The entrypoint must be a real language mechanism. A SwiftPM product named Ubook is insufficient if the only available Swift modules are Domain and Repository. Emit a Swift target/module named Ubook when unified mode requires it. Use public typealiases to the canonical imported or generated models and public forwarding functions/proxies where needed. A plain import in a Swift source file is not a re-export. Generate actual public declarations or explicitly imported typealiases instead of relying on underscored attributes. Do not generate two protocols with the same role into one public namespace; choose one canonical public surface and keep the lower bridge in a distinct internal module where necessary. Test actual import Ubook in a clean consumer, including type checking of values crossing module boundaries, async and errors, not only package resolution.
+
+For Java/Kotlin and C#, putting multiple already-compiled module artifacts in one package archive does not move their class/namespace identities. To support a unified source library, plan the defining public declarations in the selected package or namespace, with distinct internal paths and one actual type owner. Source-only assembly may render those declarations directly into the final public scope if the library configuration selects that scope and there is no conflicting explicit module identity; such output has a distinct physical artifact plan, not a different canonical ID. Explicit module package overrides and prebuilt binaries retain their names. Where aliases are not equivalent (Java lacks type aliases), require an explicitly compatible source layout or modular distribution; do not create duplicate model classes or claim a facade is a transparent re-export when it changes identity. Java/Kotlin shared artifacts have one JVM class owner. Kotlin-only aliases cannot satisfy a Java import contract.
+
+A public Objective-C library umbrella can expose actual prefixed classes from multiple defining headers, but its import module does not rename existing runtime class names. A public C++ umbrella may include defining headers and expose configured aliases without duplicate declarations. C header naming cannot discard required ABI prefixes. Python api.py, Dart entrypoint, JS/TS barrel exports and package exports must contain only explicitly selected public API and required public dependencies, not arbitrary recursive wildcard exports. A Flutter plugin reuses canonical Dart contracts; the integration layer is not another source of data model identities.
+
+In modular mode, expose selected modules through their own configured package/module/namespace and optionally package compatible components together. No implicit unified facade is required. A consumer can deliberately distribute a reusable module independently or assemble several libraries. Mode and export choices do not change canonical IDL descriptors. A public alias may be an additional name for a type; it does not create another interface key or service registration. Detect collisions in the final merged API, including modules with the same simple type name, generated helpers, methods whose labels collide, filesystem paths and package exports. Resolve only via explicit aliases or module qualification where the target supports it. Do not add numeric suffixes or leak bridge prefixes to hide collisions.
+
+#### 10.5.1 Library API manifest and compatibility
+
+Alongside module manifests, emit a library API manifest derived from the resolved public plan. Include library ID, selected targets, api.mode, exported canonical declaration IDs, target public qualified names and signatures, actual defining artifact owners, import/include/entrypoint names, required dependencies, runtime/ABI identity, visibility, effective config fingerprint and the owned files/content hashes. Version/build identity is included only for packaging as defined in section 7.8. Different libraries with the same logical type may have distinct physical presentation plans; the runtime must still validate matching logical identity and compatible ABI before sharing a handle. A naming-only change does not alter the logical ID or canonical operation contract, but can change source/binary public compatibility, selectors, JVM class identities and package fingerprints. Distinguish those changes from ABI compatibility. Build plans and installed consumer checks use actual names and fingerprinted artifacts. Never silently publish a changed public API under already committed immutable package coordinates.
 
 ## 11. Compiler and templates
 
@@ -3531,7 +3860,7 @@ pg_status app_repo_user_repository_count_async(
 
 ### 16.6 C++ backend
 
-**Artifacts and configuration:** .hpp/.cpp files, namespace, header/include prefix, public/private layout, configurable case and suffixes, forward declarations, CMake targets and optional installed package config. Use C++20 baseline. Do not require std::expected or C++23 for public headers. Support nodiscard/deprecated and safe noexcept annotations.
+**Artifacts and configuration:** .hpp/.cpp files, namespace, header/include prefix, public/private layout, configurable case and suffixes (camelCase methods, fields and parameters by default), forward declarations, CMake targets and optional installed package config. Unified library includes a self-contained umbrella header and configured public namespace/target. Use C++20 baseline. Do not require std::expected or C++23 for public headers. Support nodiscard/deprecated and safe noexcept annotations.
 
 **Types and memory:** records with value semantics, enums/flags, optional, variant, vector/collections, generated Result, typed references and RAII wrappers. Move ownership when contract permits. Reference counting must not copy buffers. DataView span-like scoped access. MutableDataView exclusive borrow. DataRef retainable owner. Weak references must not resurrect disposed objects.
 
@@ -3595,7 +3924,7 @@ id<REPUserRepository> repo = [registry userRepository];
 
 ### 16.10 Swift backend
 
-**Artifacts and configuration:** .swift contracts, models or re-exports, proxies and adapters, Package.swift or source integration, module/target, visibility, prefix/case, imports and availability. Swift module names are not directory names. When using imported Objective-C models, provide one canonical model type. When generating native Swift models, use explicit conversion or separate modules and avoid ambiguous unqualified imports.
+**Artifacts and configuration:** .swift contracts, models or re-exports, proxies and adapters, Package.swift or source integration, module/target, visibility, prefix/case, imports and availability. Enforce independent Swift public names and argument labels from section 8.7, and an actual unified Swift module when selected by section 10.5. Swift module names are not directory names. When using imported Objective-C models, provide one canonical model type. When generating native Swift models, use explicit conversion or separate modules and avoid ambiguous unqualified imports.
 
 **Types and memory:** Swift value types where appropriate, protocols and generated proxies, optional, enum/OptionSet, tagged variants and Result when Error constraints are satisfied. Exact numeric/time mappings. Controlled UnsafeRawBufferPointer access for DataView, owned DataRef reference and explicit Data copying. ARC and Unmanaged bridge ownership must be balanced. Never label arbitrary object types Sendable or use unchecked Sendable without a documented proof and tests.
 
@@ -4104,6 +4433,31 @@ Use a finite named inventory integrated with section 18.5, not a new test framew
 
 For native core fixtures, expose minimal test-only barriers and counters without shipping public test hooks or fake timing modes. For managed host fixtures, verify real callbacks execute on their owning executor and that host roots, pending envelopes and thread-affine releases return to expected baselines. Test callback faults through the documented error channel and ensure failures do not cause alternate provider calls. For externally forced host termination, verify only platform-observable revocation and native safety guarantees; if the host cannot provide required cooperative cleanup, record the limitation as a blocker rather than claiming a successful drain. Map these case IDs to actual platform and artifact evidence with the existing capability matrix. Reuse identical core scenarios across target suites, but exercise every distinct scheduler/loader/attachment teardown path.
 
+### 18.9 Default profiles and installed public API conformance
+
+Test the minimal config and one intentional customized config per distinct backend, with fixtures shared across targets. The expected public signature inventory is independently written from the documented defaults, not copied from generator output.
+
+| Case | Required evidence |
+| --- | --- |
+| config.minimal | No naming/format/import/default boilerplate; all declared targets resolve and generate |
+| config.precedence | Built-in, project, library, module, target and declaration overrides merge per property; explicit empty affix works; path origins retained |
+| config.schema | Defaults and schema enumerate actual supported options, types, derivations and validation; unknown or inapplicable keys fail |
+| naming.cpp-default | Actual C++ compile using findAll, findById, camelCase fields and parameters without target naming config |
+| naming.target-overrides | Change one naming category and affix; unrelated inherited defaults and logical IDs remain unchanged |
+| naming.swift-default | Actual Swift import of prefixed/suffixed Objective-C declarations with no swift_names config; public types are unprefixed |
+| naming.swift-labels | Compile explicit findAll(catalogId:ascending:), index(of:in:), omitted labels, initializers and async signatures; invalid arity/conflicts rejected |
+| naming.swift-shared-model | Native Swift facade and Objective-C imported model preserve one canonical type; no duplicate public protocol or class |
+| naming.collision | Different IDL declarations normalize to same public name/signature or file path; generation fails before writes with source locations |
+| api.unified | Install real library and consume exported declarations through the configured entrypoint for every feasible target; no direct internal imports |
+| api.modular | Independently import selected modules, preserving logical identities and declared dependencies |
+| api.prebuilt | Preserve defining prebuilt identity; incompatible unified plans fail; valid aliases keep canonical identity |
+| api.visibility | Selected public signature closure remains usable; internal adapters and raw ABI details are absent from normal public API |
+| api.multiple-libraries | Same modules in distinct library configurations produce isolated output and no accidental duplicate runtime or public identity |
+| config.formatting | Built-in output readable without external formatters; supported override honored; unchanged generation byte-identical |
+| library.version | Source-only library needs no fabricated release metadata; package requires explicit valid version/build and propagates exact values |
+
+For Swift compile and execute a fresh consumer containing import Ubook and the repository/helper call-site fixture. Verify both the native Swift module and the Objective-C importer path with actual Apple SDK tooling. For Java and Kotlin verify real class/package ownership, not only archive contents. For Python keep all __init__.py files empty and exercise the explicit api module from an installed wheel. For C/C++, check self-contained umbrella headers and installed CMake targets. For Dart/Flutter, C# and JS/TS/WASM, validate native package imports and real calls through the packaged library. Reuse existing conformance fixtures; do not build another test framework. Mark cases planned until executed with real evidence.
+
 ## 19. GitHub Actions
 
 ### 19.1 Workflows and independent checks
@@ -4268,13 +4622,13 @@ Keep directories meaningful. Do not create empty scaffolding just to match the t
 
 ### 20.2 README and logo
 
-The README is a concise public introduction in English, following the owner's existing project style. Use the centered logo, project name and one-line tagline. Do not display the project version in the README. Write the public README as the final product introduction, without temporary development notices or repeated progress disclaimers. Track implementation status and verified coverage in PROJECT.md and AGENTS.md instead. Start the Project section by stating exactly what PolyGlue is, what it generates and what manual work it removes. Use at most three short paragraphs, including one concrete use case. Follow with concise Features, Supported languages and platforms, Documentation, Contributing, Support, License and author credit. Use meaningful emojis for features. Present two groups of labeled inline SVG images inside HTML paragraphs: Languages and Platforms. Include Flutter and WebAssembly in the Platforms group as integration targets for a compact public overview, while preserving their technical classification in the specification. Allow natural line wrapping using whitespace between images. Do not use tables, forced row breaks, custom CSS or fixed-width containers for these groups. Do not open with a story or repeat the workflow, IDL tutorials or technical diagrams in the README. Preserve the standard Markdown section headings and the owner's established layout. Use one compact centered header without excess transparent logo padding or an unnecessary title divider. Use local transparent labeled SVG assets in extras/images/languages/ and extras/images/platforms/ with intrinsic dimensions of 512 × 512. Display each entire asset at 88 × 88 through HTML, with a 300 × 300 internal symbol (about 52 pixels displayed) and the name below. Use recognizable logos where available and clearly distinguish original platform pictograms from official logos. Include meaningful alt text and preserve upstream attribution and license. Keep platforms separate, without a language-to-platform column. Link to the technical matrix in section 2 for runtime and build coverage. The consumer selects the targets and compiles the generated code using the appropriate toolchains. Use the owner-approved static overview at extras/images/how-it-works.svg. Show Swift on iOS and Kotlin on Android each calling the same C++ source code compiled into its own app. Use platform colors and neutral shared-logic blocks to avoid clashing colors. Never imply that the two devices communicate over a network. Do not use Mermaid in the README. Progressive teaching belongs in PROJECT.md and docs/. Use plain English and explain unfamiliar terms briefly. Each feature is a brief, objective bullet with a meaningful label and short description. Describe SDK distribution in provider-neutral terms. Keep the optional S3-compatible deployment implementation and consumer-owned release pipelines documented in the technical specification. Keep technical architecture, detailed configuration, ABI contracts, complete examples and implementation checklists in PROJECT.md or the applicable docs/ guide rather than duplicating them in the README.
+The README is a concise public introduction in English, following the owner's existing project style. Use the centered logo, project name and one-line tagline. Do not display the project version in the README. Write the public README as the final product introduction, without temporary development notices or repeated progress disclaimers. Track implementation status and verified coverage in PROJECT.md and AGENTS.md instead. Start the Project section by stating exactly what PolyGlue is, what it generates and what manual work it removes. Use at most three short paragraphs, including one concrete use case. Follow with concise Features, Supported languages and platforms, Documentation, Contributing, Support, License and author credit. Use meaningful emojis for features. Present two groups of labeled inline SVG images inside HTML paragraphs: Languages and Platforms. Include Flutter and WebAssembly in the Platforms group as integration targets for a compact public overview, while preserving their technical classification in the specification. Allow natural line wrapping using whitespace between images. Do not use tables, forced row breaks, custom CSS or fixed-width containers for these groups. Do not open with a story or repeat the workflow, IDL tutorials or technical diagrams in the README. Preserve the standard Markdown section headings and the owner's established layout. Use one compact centered header without excess transparent logo padding or an unnecessary title divider. Use local transparent labeled SVG assets in extras/images/languages/ and extras/images/platforms/ with intrinsic dimensions of 512 × 512. Display each entire asset at 88 × 88 through HTML, with a 300 × 300 internal symbol (about 52 pixels displayed) and the name below. Use recognizable logos where available and clearly distinguish original platform pictograms from official logos. Include meaningful alt text and preserve upstream attribution and license. Keep platforms separate, without a language-to-platform column. Link to the technical matrix in section 2 for runtime and build coverage. The consumer selects the targets and compiles the generated code using the appropriate toolchains. Use the owner-approved static overview at extras/images/how-it-works.svg. Show Swift on iOS and Kotlin on Android each calling the same C++ source code compiled into its own app. Use platform colors and neutral shared-logic blocks to avoid clashing colors. Never imply that the two devices communicate over a network. Do not use Mermaid in the README. Progressive teaching belongs in PROJECT.md and docs/. Use plain English and explain unfamiliar terms briefly. Each feature is a brief, objective bullet with a meaningful label and short description. Describe library distribution in provider-neutral terms. Keep the optional S3-compatible deployment implementation and consumer-owned release pipelines documented in the technical specification. Keep technical architecture, detailed configuration, ABI contracts, complete examples and implementation checklists in PROJECT.md or the applicable docs/ guide rather than duplicating them in the README.
 
 List the intended language and platform scope under neutral headings, distinguish languages from integration targets, and keep implementation and verification status in the technical documents. Do not claim that tests, packages or releases exist before they do. Keep the public language and platform lists consistent with section 2. The full compatibility matrix remains in PROJECT.md and AGENTS.md. Add concise installation/usage instructions only when they are runnable. Add centered CI and release badges only for real workflows or published artifacts. Keep the author's verified support links and credit at the end, following the existing Varn and skills READMEs. Link the root MIT LICENSE file in the License section. Preserve third-party license notices separately. Never create fake badges, broken links, unsupported feature claims or fabricated examples to fill a section.
 
 The original SVG logo lives at extras/images/logo.svg. Use it directly in the README and keep it as a small, self-contained vector asset with a viewBox and accessible label. It should remain recognizable at small sizes on light and dark backgrounds. No external images, fonts, scripts or unnecessary variants. The mark combines two code brackets with a connecting element to represent native language interoperability.
 
-Use GitHub-renderable Mermaid diagrams throughout PROJECT.md for every major feature, including both directions of calls and values, errors, cancellation, ownership and service discovery. Use flowcharts for control and value flow and sequence diagrams when they make the call and return order clearer. Keep AGENTS.md diagram-free. Its purpose is engineering rules and the complete synchronized type and platform reference. Group related features rather than drawing redundant diagrams for each scalar. Place diagrams next to the contract they explain. Include compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
+Use GitHub-renderable Mermaid diagrams throughout PROJECT.md for every major feature, including both directions of calls and values, errors, cancellation, ownership and service discovery. Use flowcharts for control and value flow and sequence diagrams when they make the call and return order clearer. Keep AGENTS.md diagram-free. Its purpose is engineering rules and the complete synchronized type and platform reference. Group related features rather than drawing redundant diagrams for each scalar. Place diagrams next to the contract they explain. Include compiler and library build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
 
 ### 20.3 AGENTS.md and documentation
 
@@ -4457,11 +4811,11 @@ src/polyglue/
 
 This structure is conceptual. Consolidate small functions rather than creating excessive files. Build plans are immutable data describing commands, input fingerprints, dependencies and expected outputs. The plan is inspectable before execution, supports host/target distinction, and validates requested SDKs/platforms/architectures up front.
 
-The build and distribution pipeline consumes the configured SDK version and build number throughout. The final cloud deployment is optional and explicitly invoked.
+The build and distribution pipeline consumes the configured library version and build number throughout. The final cloud deployment is optional and explicitly invoked.
 
 ```mermaid
 flowchart TD
-    product["Product configuration and SDK version/build"] --> resolve["Resolve modules and native dependencies"]
+    product["Product configuration and library version/build"] --> resolve["Resolve modules and native dependencies"]
     resolve --> doctor["Validate host tools and target capabilities"]
     doctor --> generate["Generate selected module sources"]
     generate --> slices["Plan platform and architecture slices"]
@@ -4475,7 +4829,7 @@ flowchart TD
     ready -->|No| failed["Keep local artifact, block deployment and release"]
     ready -->|Yes| evidence["Record test evidence for exact artifact hashes"]
     evidence --> choice{"Explicit deploy requested?"}
-    choice -->|No| done["Keep local SDK"]
+    choice -->|No| done["Keep local library"]
     choice -->|Yes| upload["Deploy command: upload exact packaged bytes to S3-compatible storage"]
     upload --> verify["Verify remote hashes"]
     verify --> complete["Write deployment completion manifest"]
@@ -4489,7 +4843,7 @@ The same CLI and code path is used locally, by Makefile and in GitHub Actions. T
 
 ```text
 build/polyglue/
-└── <product>/<version>/build-<build-number>/
+└── <library>/<version>/build-<build-number>/
     └── <platform>/<sdk-variant>/<architecture>/<configuration>/<sanitizer>/
         ├── generated/
         ├── cmake/
@@ -4497,7 +4851,7 @@ build/polyglue/
         ├── logs/
         └── build-manifest.json
 dist/
-└── <product>/
+└── <library>/
     └── <version>/build-<build-number>/
         └── <format>/
             └── <platform-or-platform-set>/<architecture-or-slice-set>/<configuration>/<sanitizer>/
@@ -4506,7 +4860,7 @@ dist/
                 └── checksums.sha256
 ```
 
-Use stable names for actual platform and slice sets, not guessed SDK identifiers. Separate local artifact paths for different configurations, architectures and sanitizer modes, even when the product version is unchanged. Package archives and manifests must agree on that identity. Generated source outputs configured by the module may reside outside build/. The build plan references them or stages a snapshot without rewriting user files. Build cache keys include generator/runtime version, SDK version and build number, canonical IDL, effective config, all used templates, implementation source fingerprints, dependencies, compiler/SDK, architecture, flags and configuration. Compiler caches may reuse unchanged objects across build identities when their actual input hashes match. Do not reuse a previous artifact for a changed build plan. The tool must detect stale or missing outputs, unexpected files, architecture mismatches and interrupted builds. Clean only explicitly owned directories (never recursive deletion based on an unvalidated path). Temporary staging and atomic publication prevent partial packages appearing successful. Incremental output is equivalent to a clean build.
+Use stable names for actual platform and slice sets, not guessed SDK identifiers. Separate local artifact paths for different configurations, architectures and sanitizer modes, even when the library version is unchanged. Package archives and manifests must agree on that identity. Generated source outputs configured by the module may reside outside build/. The build plan references them or stages a snapshot without rewriting user files. Build cache keys include generator/runtime version, library version and build number, canonical IDL, effective config, all used templates, implementation source fingerprints, dependencies, compiler/SDK, architecture, flags and configuration. Compiler caches may reuse unchanged objects across build identities when their actual input hashes match. Do not reuse a previous artifact for a changed build plan. The tool must detect stale or missing outputs, unexpected files, architecture mismatches and interrupted builds. Clean only explicitly owned directories (never recursive deletion based on an unvalidated path). Temporary staging and atomic publication prevent partial packages appearing successful. Incremental output is equivalent to a clean build.
 
 ### 20.6 Binary and package outputs by target
 
@@ -4583,7 +4937,7 @@ AppBridge.xcframework/
     └── AppBridge.framework/
 ```
 
-The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Preserve the public identities of generated Swift and Objective-C modules. An XCFramework contains variants of one library product, not unrelated modules as architecture slices. If separate frameworks are needed, produce one XCFramework per framework and a SwiftPM product referencing the required binary targets. A single aggregated framework requires an explicit public module layout and compilation proof. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
+The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Preserve the public identities of generated Swift and Objective-C modules. An XCFramework contains variants of one library product, not unrelated modules as architecture slices. If separate frameworks are needed, produce one XCFramework per framework and a SwiftPM product referencing the required binary targets. Unified mode is the library default and requires a real importable public Swift/Clang module layout and compilation proof, even if several implementation frameworks are needed. Modular mode may distribute separately importable frameworks. SwiftPM product names alone do not satisfy this contract. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
 
 SwiftPM binary packaging produces a locally usable Package.swift and the required XCFrameworks. Reference the local artifact with binaryTarget(name:path:). For an explicitly configured remote distribution, produce a ZIP with the XCFramework at its root and compute its checksum using swift package compute-checksum. Emit binaryTarget(name:url:checksum:) only when a real remote URL is supplied. A local binary target does not require a remote URL or checksum in Package.swift. No fabricated download URL. A local archive/package must be usable before remote publication. Publishing is separate. Verify fresh SwiftPM/Xcode consumers import generated APIs and run on requested simulator/device. Include Objective-C and Swift consumers. Test visionOS independently. Verify package contains exactly the requested valid slices and no stale sanitizer/debug slice.
 
@@ -4601,9 +4955,9 @@ Stage CMake install output: include/, lib/, bin/ where applicable, CMake package
 
 ### 20.7 Artifact provenance and release validation
 
-A successful package command emits an artifact manifest only after structural inspection, including architecture, ABI, expected files and metadata. Structural validity is not test approval. The test command runs applicable installed-consumer checks against the exact artifact, recording the artifact manifest hash and the actual payload hashes in its separate test report. Do not mutate the artifact manifest after testing. A successful report for other bytes, even with the same SDK version and build number, cannot approve this artifact. A compile-only result must not be reported as a runtime test. Deploy checks applicable required product test evidence before uploading, without rerunning tests or rebuilding. Missing required evidence blocks deployment. This is the consumer product's declared verification scope, not the full release checklist for PolyGlue itself. Local packaging remains usable before tests are complete. Define a non-recursive integrity layout: artifact-manifest.json lists final distributable payloads, their relative paths, byte sizes and SHA-256 hashes, but not itself or the checksum file. checksums.sha256 covers those payloads and the completed artifact-manifest.json, never itself. The deployment manifest separately records the verified hashes of the payloads, artifact manifest and checksum file. It does not hash itself. A checksum file must agree with the artifact manifest, not authorize additional payloads. Record product ID, SDK version, SDK build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. Test reports identify the immutable package by manifest hash and payload hashes. The artifact manifest contains structural inspection results, not future test verdicts. A package manifest must not claim that cloud deployment or external registry publication occurred. Deployment evidence is a separate manifest written only after verified upload. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
+A successful package command emits an artifact manifest only after structural inspection, including architecture, ABI, expected files and metadata. Structural validity is not test approval. The test command runs applicable installed-consumer checks against the exact artifact, recording the artifact manifest hash and the actual payload hashes in its separate test report. Do not mutate the artifact manifest after testing. A successful report for other bytes, even with the same library version and build number, cannot approve this artifact. A compile-only result must not be reported as a runtime test. Deploy checks applicable required product test evidence before uploading, without rerunning tests or rebuilding. Missing required evidence blocks deployment. This is the consumer product's declared verification scope, not the full release checklist for PolyGlue itself. Local packaging remains usable before tests are complete. Define a non-recursive integrity layout: artifact-manifest.json lists final distributable payloads, their relative paths, byte sizes and SHA-256 hashes, but not itself or the checksum file. checksums.sha256 covers those payloads and the completed artifact-manifest.json, never itself. The deployment manifest separately records the verified hashes of the payloads, artifact manifest and checksum file. It does not hash itself. A checksum file must agree with the artifact manifest, not authorize additional payloads. Record product ID, library version, library build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. Test reports identify the immutable package by manifest hash and payload hashes. The artifact manifest contains structural inspection results, not future test verdicts. A package manifest must not claim that cloud deployment or external registry publication occurred. Deployment evidence is a separate manifest written only after verified upload. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
 
-Record input identity and output checksums separately. A clean build may produce different bytes because of toolchain or signing nondeterminism. Never claim that equal inputs guarantee identical archive bytes. Deploy selects existing bytes rather than rebuilding them. Verify reproducibility where toolchains permit it. Deterministic generation is mandatory. Do not promise bit-for-bit equality of signed archives or compiler-specific outputs without evidence. Use checksums to identify final bytes and store release/debug variants separately. Never reuse stale binaries or overwrite an existing published release. Publishing to PyPI, Maven, SwiftPM release hosting, pub, NuGet or npm is explicitly separate from local packaging. S3-compatible SDK deployment is also an explicit separate command under section 20.10. Packaging never uploads.
+Record input identity and output checksums separately. A clean build may produce different bytes because of toolchain or signing nondeterminism. Never claim that equal inputs guarantee identical archive bytes. Deploy selects existing bytes rather than rebuilding them. Verify reproducibility where toolchains permit it. Deterministic generation is mandatory. Do not promise bit-for-bit equality of signed archives or compiler-specific outputs without evidence. Use checksums to identify final bytes and store release/debug variants separately. Never reuse stale binaries or overwrite an existing published release. Publishing to PyPI, Maven, SwiftPM release hosting, pub, NuGet or npm is explicitly separate from local packaging. S3-compatible library deployment is also an explicit separate command under section 20.10. Packaging never uploads.
 
 ### 20.8 Build and packaging documentation
 
@@ -4619,7 +4973,7 @@ Mandatory conventions: English code, comments, docs and commit messages. Meaning
 
 AGENTS.md must cover architecture, code ownership, repository organization, Git delivery, privacy, security, dependency policy, generated artifacts, version and publication authorization, actual test commands and CI evidence. No task diary or claims of implemented features that are still planned. No unconditional force push, history rewrite, deletion, tag or release without specific authorization. Follow the Git skill's task-aware naming and reviewed change procedure. The single-root snapshot policy expressly authorized for the skills repository does not automatically authorize rewriting PolyGlue history. Keep main as the current development branch for explicitly requested repository edits. Do not create extra branches or pull requests without an actual need or instruction. Use real human author identity for local Git commits. Connector-created commits may use the integration identity and must be reported accurately.
 
-### 20.10 SDK deployment to S3-compatible object storage
+### 20.10 Library deployment to S3-compatible object storage
 
 Support one S3-compatible deployment implementation for AWS S3, Cloudflare R2 and other services implementing the required S3 protocol operations. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes belong to the consumer's project. They can consume the local package and artifact manifest using their own script or CI without modifying PolyGlue.
 
@@ -4627,49 +4981,49 @@ Use the latest stable verified boto3/botocore versions through a Python optional
 
 #### 20.10.1 Destination configuration
 
-Use named destinations at project level. Each destination has the same S3 protocol configuration. A product chooses the destination explicitly with the command, allowing the same validated local artifact to be deployed to another bucket without rebuilding.
+Use named destinations at project level. Each destination has the same S3 protocol configuration. A library chooses the destination explicitly with the command, allowing the same validated local artifact to be deployed to another bucket without rebuilding.
 
 ```yaml
 deploy:
   destinations:
     aws:
-      bucket: company-sdks
-      prefix: sdk
+      bucket: company-libraries
+      prefix: libraries
       region: us-east-1
 
     r2:
-      bucket: company-sdks
-      prefix: sdk
+      bucket: company-libraries
+      prefix: libraries
       endpoint_url: https://ACCOUNT_ID.r2.cloudflarestorage.com
       region: auto
       addressing_style: path
 
     compatible:
-      bucket: company-sdks
-      prefix: internal/sdk
+      bucket: company-libraries
+      prefix: internal/libraries
       endpoint_url: https://storage.example.com
       region: us-east-1
       addressing_style: path
 ```
 
-The names and account values are illustrative. Do not add actual bucket/account/credential values to the PolyGlue repository. An omitted endpoint uses the official AWS SDK endpoint resolution. Custom endpoints are explicit HTTPS S3 API endpoints, not public CDN URLs. Allow an explicit local HTTP endpoint only in an isolated test fixture without real credentials. Keep TLS certificate verification enabled. Validate bucket, prefix, region, endpoint and addressing style. Reject embedded endpoint credentials and ambiguous path segments. Credentials come from the standard AWS credential provider chain, such as environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, an explicitly selected local profile or temporary AWS role credentials. R2 uses its S3 API access key pair with scoped permissions. A custom S3 endpoint must be explicitly trusted by the user and use credentials intended for that service. Do not silently use AWS role or instance credentials against a custom endpoint. For a custom endpoint, require an explicitly selected service profile or explicitly supplied environment credentials. Keep actual credentials out of the project configuration. Validate the effective endpoint, including SDK environment overrides, against the destination selected by the user before creating a client. Do not store keys in YAML, manifests, command arguments, logs or generated SDKs. Do not discover or provision buckets, change IAM, public access, ACLs, lifecycle or CDN settings.
+The names and account values are illustrative. Do not add actual bucket/account/credential values to the PolyGlue repository. An omitted endpoint uses the official AWS SDK endpoint resolution. Custom endpoints are explicit HTTPS S3 API endpoints, not public CDN URLs. Allow an explicit local HTTP endpoint only in an isolated test fixture without real credentials. Keep TLS certificate verification enabled. Validate bucket, prefix, region, endpoint and addressing style. Reject embedded endpoint credentials and ambiguous path segments. Credentials come from the standard AWS credential provider chain, such as environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, an explicitly selected local profile or temporary AWS role credentials. R2 uses its S3 API access key pair with scoped permissions. A custom S3 endpoint must be explicitly trusted by the user and use credentials intended for that service. Do not silently use AWS role or instance credentials against a custom endpoint. For a custom endpoint, require an explicitly selected service profile or explicitly supplied environment credentials. Keep actual credentials out of the project configuration. Validate the effective endpoint, including SDK environment overrides, against the destination selected by the user before creating a client. Do not store keys in YAML, manifests, command arguments, logs or generated library. Do not discover or provision buckets, change IAM, public access, ACLs, lifecycle or CDN settings.
 
 #### 20.10.2 CLI and versioned object keys
 
 ```bash
 uv sync --locked --extra deploy
-uv run --locked polyglue package --product apple --format xcframework
-uv run --locked polyglue test --product apple --format xcframework
-uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2 --dry-run
-uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2
+uv run --locked polyglue package --library apple --format xcframework
+uv run --locked polyglue test --library apple --format xcframework
+uv run --locked --extra deploy polyglue deploy --library apple --format xcframework --destination r2 --dry-run
+uv run --locked --extra deploy polyglue deploy --library apple --format xcframework --destination r2
 ```
 
 These are planned commands, not working commands yet. The deploy command uses exactly one selected artifact manifest. Product, format, platform or slice set, architecture or slice set, configuration and sanitizer must resolve unambiguously. Accept the exact manifest path as an explicit selection alternative for an already built artifact, with identity and checksum validation against the selected project. Missing or ambiguous packages are errors, not a reason to rebuild or select the newest directory. Dry-run prints destination and the exact object keys, sizes, version/build and checksums without opening a cloud connection or requiring credentials.
 
-Use the local distribution-relative path as the remote key beneath the configured prefix. Use forward slashes, not host filesystem separators. Example for an Apple product with SDK version 1.2.3 and build number 42:
+Use the local distribution-relative path as the remote key beneath the configured prefix. Use forward slashes, not host filesystem separators. Example for an Apple product with library version 1.2.3 and build number 42:
 
 ```text
-s3://company-sdks/sdk/
+s3://company-libraries/sdk/
 └── apple/
     └── 1.2.3/
         └── build-42/
@@ -4692,11 +5046,11 @@ For remote SwiftPM, use an explicitly supplied download base URL and the exact i
 
 - Validate the manifest schema, selected identity, listed relative paths, byte lengths and SHA-256 values of all files before any network write. Reject symlink escapes and undeclared files. Use the immutable packaged bytes for upload. Prevent concurrent mutation of the selected local package during upload.
 - First conditionally create artifact-manifest.json at the destination, before uploading any payload. This existing manifest serves as the immutable identity of the intended artifact set, not a completion signal. When it already exists, compare its exact bytes or verified SHA-256 with the local manifest and reject a different artifact set before writing any other object. This prevents concurrent deployments of different builds at the same identity from mixing their payloads. The later deployment-manifest.json is still the only completion signal.
-- Upload only the manifest allowlist and accompanying checksum/manifest files. Record the SDK version, build number and checksum in object metadata where appropriate. Set content types correctly. Do not treat an S3 ETag as SHA-256 or as a universal MD5.
+- Upload only the manifest allowlist and accompanying checksum/manifest files. Record the library version, build number and checksum in object metadata where appropriate. Set content types correctly. Do not treat an S3 ETag as SHA-256 or as a universal MD5.
 - Use conditional creation with If-None-Match: * on PutObject or CompleteMultipartUpload. Check required operations against the current provider API. A preliminary HEAD followed by unconditional PUT is not an atomic overwrite guard. Do not remove the condition if a compatible provider rejects it. Report an unsupported deployment endpoint explicitly.
 - Use single PUT for appropriate file sizes and multipart for files that require it. Reuse the official SDK's protocol functionality. If its high-level transfer helper cannot pass the required condition, use the necessary low-level SDK operations rather than inventing a client. Stream bounded chunks and abort only multipart sessions created by this invocation on a known failure. Never delete committed objects automatically. A conditional-write conflict or an ambiguous completion response must be reconciled by reading the exact destination object and verifying its bytes. An existing identical object may be reused. A different object is an error. If no committed object exists and an S3 multipart completion cannot be retried with its original upload ID, fail cleanly and let an explicit rerun start a new multipart upload. Never retry as an unconditional write.
 - Verify remote bytes through a supported full-object SHA-256 checksum or a streaming read and hash. A checksum advertised only in user metadata is not proof of transferred bytes. Use the storage API, not a potentially stale CDN cache, for verification. Set bounded network timeouts and SDK transport retries for safe transient failures. Never retry by dropping a conditional write or changing the destination.
-- Publish deployment-manifest.json last using the same conditional write. It records the artifact manifest hash, SDK version/build, selected artifact identity and the verified object keys and hashes. Its presence marks the artifact set as complete. Do not claim a multi-object atomic transaction. A partial upload is not a successful deployment and consumers must use the completion manifest rather than directory listing. A pre-existing valid identical completion manifest plus verified matching bytes is an idempotent success.
+- Publish deployment-manifest.json last using the same conditional write. It records the artifact manifest hash, library version/build, selected artifact identity and the verified object keys and hashes. Its presence marks the artifact set as complete. Do not claim a multi-object atomic transaction. A partial upload is not a successful deployment and consumers must use the completion manifest rather than directory listing. A pre-existing valid identical completion manifest plus verified matching bytes is an idempotent success.
 - If interrupted, leave committed immutable objects intact. An explicit re-run with the exact same artifact can verify and reuse already committed identical bytes, then upload missing objects and finish the deployment manifest. If an existing object or completion manifest differs, fail and require a new explicitly selected build number or destination. No silent overwrite or automatic rollback/deletion. Concurrent identical uploads converge to one complete artifact set. Concurrent differing bytes cannot replace a committed object or completion manifest. The artifact manifest is claimed first, so a conflicting deployment cannot add unrelated payloads to the same artifact set. This guarantee assumes other writers respect the immutable destination policy. PolyGlue does not control external writers, bucket lifecycle or deletion policies.
 - Report actual completed keys, errors and the final deployment manifest path. Return nonzero when upload or verification fails, even if some objects were committed. Do not mark unverified content complete.
 
@@ -4717,13 +5071,13 @@ Provide docs/deployment.md with AWS S3, R2 and generic S3-compatible configurati
 
 ### 20.11 Package and deploy detail
 
-#### Immutable SDK deployment
+#### Immutable library deployment
 
 The selected artifact is uploaded without rebuilding it or changing its version.
 
 ```mermaid
 flowchart TD
-    A["Select product version, build and manifest"] --> B["Verify local paths and SHA-256"]
+    A["Select library version, build and manifest"] --> B["Verify local paths and SHA-256"]
     B --> C{"Dry run?"}
     C -->|Yes| D["Print exact destination and files"]
     C -->|No| E["Resolve scoped credentials and S3 endpoint"]
@@ -4733,7 +5087,7 @@ flowchart TD
     F --> G{"Remote bytes match?"}
     G -->|No| X["Fail without overwriting"]
     G -->|Yes| H["Write completion manifest last"]
-    H --> I["Report completed SDK deployment"]
+    H --> I["Report completed library deployment"]
     F -->|Conflict| J["Verify existing exact bytes"]
     J --> G
 ```
@@ -4746,14 +5100,14 @@ Use the detailed checklist in section 22 as the implementation backlog. Check an
 | --- | --- | --- |
 | 0 — specification | PROJECT.md, detailed examples, scope review | No missing discussed feature. Unresolved choices explicitly recorded |
 | 1 — compiler | Package, CLI, parser, IR, module config, naming/layout/import/annotation systems, template overrides, diagnostics and build-plan foundation | Compiler tests, template override tests and clean wheel installation |
-| 2 — native base | Versioned C ABI, C/C++ generated bindings, memory, async, callbacks, CMake target/install graph, SDK version/build metadata and Python native build orchestration | C/C++ conformance, sanitizer pass, version propagation and independent installed package consumer |
+| 2 — native base | Versioned C ABI, C/C++ generated bindings, memory, async, callbacks, CMake target/install graph, library version/build metadata and Python native build orchestration | C/C++ conformance, sanitizer pass, version propagation and independent installed package consumer |
 | 3 — JVM and Apple | Java/Kotlin/JNI, Obj-C/Swift, cross-runtime adapters, AAR/JAR and XCFramework/SwiftPM packagers | JVM/Android and Apple conformance plus actual packaged consumer tests |
 | 4 — additional targets | Python, C#, Dart/Flutter, WASM/JS/TS and their packagers | All target-specific integration and installed artifact tests |
 | 5 — full conformance | Finish remaining advanced type, stream, registry and package integration cases across implemented backends | All applicable type/pair combinations pass |
 | 6 — applications, distribution and docs | HTTP, camera, login per target, optional S3-compatible deployment, SVG, README, AGENTS.md and complete docs | Executable examples, deployment tests and accurate documentation |
 | 7 — stabilization | Full CI, sanitizer, fuzz, stress, performance and deep reviews | All release acceptance gates green on candidate SHA |
 
-Every phase includes implementation, purposeful automated tests, review and fixes. Define the complete canonical type and ownership contract before extending managed backends. Prove representative advanced types, external adapters, streams and registry operations in C/C++ before porting them. Each new backend implements the established contracts and product version/build propagation instead of deferring all advanced features to the final phase. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
+Every phase includes implementation, purposeful automated tests, review and fixes. Define the complete canonical type and ownership contract before extending managed backends. Prove representative advanced types, external adapters, streams and registry operations in C/C++ before porting them. Each new backend implements the established contracts and library version/build propagation instead of deferring all advanced features to the final phase. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
 
 Explicit remaining design decisions to settle with proof-of-concept and tests: exact grammar, concrete ABI declarations, safe handle representation, detailed type mapping (especially unsigned/64-bit web values), executor policies, shared JVM/Apple artifact strategies, stream backpressure configuration and registry duplicate/override API. These are engineering design gates, not permission to drop requirements.
 
@@ -4781,11 +5135,12 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 
 ### 22.3 Module system, configuration and output planning
 
-- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking, normalized naming shorthand and config-relative paths. Do not expose settings that disable safety or deterministic generation. Reject wall-clock timestamps in generated source and preserve the complete template lookup precedence.
+- [ ] Implement the complete built-in default profiles, project/library/module defaults, target overrides and declaration annotations with defined precedence, validated machine-readable schema, type checking, normalized naming shorthand and config-relative paths. Implement config defaults/schema/resolved from the same definitions. Do not expose settings that disable safety or deterministic generation. Reject wall-clock timestamps in generated source and preserve the complete template lookup precedence.
 - [ ] Support independent Domain, Repository and Network module configurations and IDL sources, with correct import resolution regardless of physical paths, prefixes and package names.
 - [ ] Implement source and prebuilt dependencies, transitive resolution, compatible canonical symbol metadata and artifact validation. Reject duplicate or incompatible artifacts without trying old formats.
-- [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings.
+- [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings. All applicable presentation settings must have documented defaults and granular overrides. Enforce C++ camelCase defaults and independent language-native public signatures.
 - [ ] Resolve names/includes/imports before rendering, including Java/Kotlin shared JVM artifact ownership, Swift/Obj-C shared or distinct models and JS/TS shared runtime declarations.
+- [ ] Implement libraries and --library selection, unified public entrypoint by default, modular mode, export closure, validated aliases, independent library API manifests, collision diagnostics and isolated output plans. Test real installed imports across every selected language.
 - [ ] Detect case-folded filename collisions, reserved names, overlapping outputs, path traversal, invalid symlinks and incompatible dependency identities. Preserve user-owned files.
 - [ ] Write files deterministically and atomically per file, reject unowned collisions, invalidate incomplete generation, preserve unchanged files, record owned outputs and remove obsolete generated files safely when requested. Emit real module manifests and fingerprints.
 
@@ -4795,7 +5150,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement module/target directory and individual template overrides, explicit inheritance of unmodified templates, documented IDs, StrictUndefined, partials, export/list/check and content fingerprinting.
 - [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
 - [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments, including scoped/retained/one-shot callback parameters as specified in section 14.2. Enforce actual semantics where applicable, not comments alone.
-- [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes.
+- [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes. Swift imported names remove generated affixes by default; implement complete @swift.name signatures and explicit argument labels/omission.
 - [ ] Verify customized templates, imports, naming and generated build files compile in each applicable target. Test one representative real override path per distinct backend behavior.
 
 ### 22.5 Built-in types and extension mechanism
@@ -4853,8 +5208,8 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Build the pure Python generator wheel/sdist and target-specific native bindings wheels. Inspect archive metadata/resources and install outside the source tree.
 - [ ] Build and validate Dart/Flutter packages and plugins, .NET NuGet packages, JS/TS npm packages and WASM binaries/loader assets. Run real installed consumers.
 - [ ] Record package manifests, hashes, exact toolchains, dependencies and evidence. No stale artifacts or cross-architecture/sanitizer contamination.
-- [ ] Implement one product SDK version/build number source, validate selected ecosystem ranges, pass both values to CMake and all ecosystem tools and inspect final native/package metadata. Keep tool, module, ABI and SDK identities independent.
-- [ ] Isolate build and dist paths by SDK version and build number as well as platform, architecture, format, configuration and sanitizer. Prove separate builds coexist and changed metadata invalidates the relevant build inputs.
+- [ ] Implement one product library version/build number source, validate selected ecosystem ranges, pass both values to CMake and all ecosystem tools and inspect final native/package metadata. Keep tool, module, ABI and library identities independent.
+- [ ] Isolate build and dist paths by library version and build number as well as platform, architecture, format, configuration and sanitizer. Prove separate builds coexist and changed metadata invalidates the relevant build inputs.
 - [ ] Implement optional boto3-based deploy for S3/R2/compatible endpoints using exact packaged manifests, explicit destinations, version/build keys and dry-run without credentials or network. No extra provider framework or implicit uploads.
 - [ ] Implement conditional immutable uploads, manifest-first identity, bounded multipart handling, SHA-256 verification, completion manifest, identical re-run and conflict/partial-failure handling. Test through SDK fixtures and separately authorized AWS/R2 live smokes. Never mark an unverified provider as supported.
 
@@ -4876,7 +5231,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
 - [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete language and platform scope, no temporary development-status labels and real badges when available. Track actual implementation and verification status in the technical documents. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts, including explicit cancellation tokens and runtime initialization. Keep the complete type and platform tables identical in PROJECT.md and AGENTS.md. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
-- [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, SDK version/build configuration, S3-compatible deployment, all language guides and example execution.
+- [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, library version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.
 - [ ] Clean temporary files, stale build outputs, abandoned scripts, obsolete generated files, unused dependencies and unrelated scaffolding within the authorized scope. Preserve user-owned files, source assets and required evidence. Review final diff and repository tree.
