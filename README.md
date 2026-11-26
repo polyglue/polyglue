@@ -1,8 +1,7 @@
 <p align="center">
     <a href="https://github.com/polyglue/polyglue"><img width="180" src="extras/images/logo.svg" alt="PolyGlue logo"></a><br>
     <strong>PolyGlue</strong><br>
-    Generate native type-safe bindings from a single definition to connect programming languages across platforms.<br>
-    <sub>Version 0.0.1</sub>
+    Generate native type-safe bindings from a single definition to connect programming languages across platforms.
 </p>
 
 ## Project
@@ -29,7 +28,7 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 - 🎨 **Customization:** module-specific naming, prefixes, annotations and template overrides.
 - 🛠️ **Build tools:** generate, compile and test with one Python command-line tool.
 - 📦 **SDK packaging:** versioned native libraries, AARs, XCFrameworks and language packages.
-- ☁️ **Deploy:** upload validated SDKs to Amazon S3, Cloudflare R2 and compatible storage.
+- ☁️ **Deploy:** distribute validated SDKs through configurable storage destinations or your own release pipeline.
 
 ## Languages
 
