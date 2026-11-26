@@ -31,9 +31,9 @@
         <rect x="24" y="181" width="102" height="46" rx="7" fill="#FFFAF6" stroke="#F7C6B0"/>
         <text x="75" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#B93820">Swift</text>
         <text x="75" y="216" text-anchor="middle" font-size="11" fill="#925039">App code</text>
-        <rect x="220" y="181" width="116" height="46" rx="7" fill="#EFF6FF" stroke="#93C5FD"/>
-        <text x="278" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#00599C">C++</text>
-        <text x="278" y="216" text-anchor="middle" font-size="11" fill="#345B80">Shared logic</text>
+        <rect x="220" y="181" width="116" height="46" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+        <text x="278" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#334155">C++</text>
+        <text x="278" y="216" text-anchor="middle" font-size="11" fill="#475569">Shared logic</text>
         <rect x="390" y="143" width="340" height="98" rx="13" fill="#ECFDF3" stroke="#86D9A5"/>
         <g fill="none" stroke="#16A34A" stroke-width="1.8" stroke-linecap="round">
             <rect x="404" y="154" width="12" height="19" rx="3"/>
@@ -44,19 +44,19 @@
         <rect x="404" y="181" width="102" height="46" rx="7" fill="#F5EEFF" stroke="#D8B4FE"/>
         <text x="455" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#7E22CE">Kotlin</text>
         <text x="455" y="216" text-anchor="middle" font-size="11" fill="#70548A">App code</text>
-        <rect x="600" y="181" width="116" height="46" rx="7" fill="#EFF6FF" stroke="#93C5FD"/>
-        <text x="658" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#00599C">C++</text>
-        <text x="658" y="216" text-anchor="middle" font-size="11" fill="#345B80">Shared logic</text>
+        <rect x="600" y="181" width="116" height="46" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+        <text x="658" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#334155">C++</text>
+        <text x="658" y="216" text-anchor="middle" font-size="11" fill="#475569">Shared logic</text>
         <g fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M135 196h76m-5-4 5 4-5 4" stroke="#F05138"/>
             <path d="M515 196h76m-5-4 5 4-5 4" stroke="#9333EA"/>
-            <path d="M211 213h-76m5-4-5 4 5 4M591 213h-76m5-4-5 4 5 4" stroke="#00599C"/>
+            <path d="M211 213h-76m5-4-5 4 5 4M591 213h-76m5-4-5 4 5 4" stroke="#64748B"/>
         </g>
         <g font-size="10" text-anchor="middle" font-weight="600">
             <text x="173" y="192" fill="#B93820">Call</text>
-            <text x="173" y="225" fill="#00599C">Result</text>
+            <text x="173" y="225" fill="#334155">Result</text>
             <text x="553" y="192" fill="#7E22CE">Call</text>
-            <text x="553" y="225" fill="#00599C">Result</text>
+            <text x="553" y="225" fill="#334155">Result</text>
         </g>
         <rect x="125" y="249" width="490" height="19" rx="9.5" fill="#E2E8F0"/>
         <text x="370" y="262" font-size="12" font-weight="600" fill="#334155" text-anchor="middle">Write the C++ logic once. Compile it into each app. No server needed.</text>

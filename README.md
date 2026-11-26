@@ -35,21 +35,23 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 
 <table>
     <tr>
-        <td align="center" width="140"><img src="extras/images/languages/c.svg" width="100" height="100" alt="C logo"><br><strong>C</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/cpp.svg" width="100" height="100" alt="C++ logo"><br><strong>C++</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/java.svg" width="100" height="100" alt="Java logo"><br><strong>Java</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/kotlin.svg" width="100" height="100" alt="Kotlin logo"><br><strong>Kotlin</strong></td>
+        <td align="center"><img src="extras/images/languages/c.svg" width="50" height="50" alt="C logo"><br><strong>C</strong></td>
+        <td align="center"><img src="extras/images/languages/cpp.svg" width="50" height="50" alt="C++ logo"><br><strong>C++</strong></td>
+        <td align="center"><img src="extras/images/languages/java.svg" width="50" height="50" alt="Java logo"><br><strong>Java</strong></td>
     </tr>
     <tr>
-        <td align="center" width="140"><img src="extras/images/languages/objective-c.svg" width="100" height="100" alt="Objective-C logo"><br><strong>Objective-C</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/swift.svg" width="100" height="100" alt="Swift logo"><br><strong>Swift</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/python.svg" width="100" height="100" alt="Python logo"><br><strong>Python</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/dart.svg" width="100" height="100" alt="Dart logo"><br><strong>Dart</strong></td>
+        <td align="center"><img src="extras/images/languages/kotlin.svg" width="50" height="50" alt="Kotlin logo"><br><strong>Kotlin</strong></td>
+        <td align="center"><img src="extras/images/languages/objective-c.svg" width="50" height="50" alt="Objective-C logo"><br><strong>Objective-C</strong></td>
+        <td align="center"><img src="extras/images/languages/swift.svg" width="50" height="50" alt="Swift logo"><br><strong>Swift</strong></td>
     </tr>
     <tr>
-        <td align="center" width="140"><img src="extras/images/languages/csharp.svg" width="100" height="100" alt="C# logo"><br><strong>C#</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/javascript.svg" width="100" height="100" alt="JavaScript logo"><br><strong>JavaScript</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/typescript.svg" width="100" height="100" alt="TypeScript logo"><br><strong>TypeScript</strong></td>
+        <td align="center"><img src="extras/images/languages/python.svg" width="50" height="50" alt="Python logo"><br><strong>Python</strong></td>
+        <td align="center"><img src="extras/images/languages/dart.svg" width="50" height="50" alt="Dart logo"><br><strong>Dart</strong></td>
+        <td align="center"><img src="extras/images/languages/csharp.svg" width="50" height="50" alt="C# logo"><br><strong>C#</strong></td>
+    </tr>
+    <tr>
+        <td align="center"><img src="extras/images/languages/javascript.svg" width="50" height="50" alt="JavaScript logo"><br><strong>JavaScript</strong></td>
+        <td align="center"><img src="extras/images/languages/typescript.svg" width="50" height="50" alt="TypeScript logo"><br><strong>TypeScript</strong></td>
     </tr>
 </table>
 
@@ -57,8 +59,8 @@ Integration targets:
 
 <table>
     <tr>
-        <td align="center" width="140"><img src="extras/images/languages/flutter.svg" width="100" height="100" alt="Flutter logo"><br><strong>Flutter</strong></td>
-        <td align="center" width="140"><img src="extras/images/languages/webassembly.svg" width="100" height="100" alt="WebAssembly logo"><br><strong>WebAssembly</strong></td>
+        <td align="center"><img src="extras/images/languages/flutter.svg" width="50" height="50" alt="Flutter logo"><br><strong>Flutter</strong></td>
+        <td align="center"><img src="extras/images/languages/webassembly.svg" width="50" height="50" alt="WebAssembly logo"><br><strong>WebAssembly</strong></td>
     </tr>
 </table>
 
