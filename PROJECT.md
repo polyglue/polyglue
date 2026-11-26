@@ -694,8 +694,7 @@ object GeoPointAdapter {
     }
 
     fun fromRepresentation(value: GeoPointValue): GeoPoint {
-        require(value.latitude.isFinite() && value.latitude in -90.0..90.0)
-        require(value.longitude.isFinite() && value.longitude in -180.0..180.0)
+        validate(value.latitude, value.longitude)
 
         return GeoPoint(value.latitude, value.longitude)
     }
