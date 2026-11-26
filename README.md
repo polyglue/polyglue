@@ -47,13 +47,6 @@ For example, share the same C++ code between an iOS app written in Swift and an 
     <img src="extras/images/languages/typescript.svg" width="88" height="88" alt="TypeScript" title="TypeScript">
 </p>
 
-Integration targets:
-
-<p align="center">
-    <img src="extras/images/languages/flutter.svg" width="88" height="88" alt="Flutter" title="Flutter">
-    <img src="extras/images/languages/webassembly.svg" width="88" height="88" alt="WebAssembly" title="WebAssembly">
-</p>
-
 ## Platforms
 
 <p align="center">
@@ -70,6 +63,8 @@ Integration targets:
     <img src="extras/images/platforms/mac-catalyst.svg" width="88" height="88" alt="Mac Catalyst" title="Mac Catalyst">
     <img src="extras/images/platforms/web.svg" width="88" height="88" alt="Web" title="Web">
     <img src="extras/images/platforms/nodejs.svg" width="88" height="88" alt="Node.js" title="Node.js">
+    <img src="extras/images/languages/flutter.svg" width="88" height="88" alt="Flutter" title="Flutter">
+    <img src="extras/images/languages/webassembly.svg" width="88" height="88" alt="WebAssembly" title="WebAssembly">
 </p>
 
 Choose the languages and targets for your project and compile the generated code with the appropriate toolchains. See the [target matrix](PROJECT.md#2-supported-languages-and-platforms) for runtime and build coverage.
