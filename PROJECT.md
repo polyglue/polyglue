@@ -164,7 +164,7 @@ Use a standalone installed CLI as the baseline. A bundled executable without a s
 
 ### 3.3 Tooling
 
-Python 3.12+ (verify the chosen stable runtime and dependency compatibility before locking), uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
+Latest stable CPython (verify actual release and dependency compatibility before locking), uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
 
 ### 3.4 Build, test and packaging commands
 
@@ -232,6 +232,22 @@ When enabled by a separate owner-approved task, use manual workflow_dispatch for
 
 Official guidance: https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/ and https://docs.pypi.org/trusted-publishers/using-a-publisher/.
 
+### 3.7 Current stable tools and dependencies
+
+Latest stable versions are a mandatory engineering policy. At implementation time and when maintaining build, CI or package configuration, verify every direct runtime, development, testing and build dependency, GitHub Action, reusable workflow, compiler, SDK and package manager against its official upstream stable release. Select the newest stable release, not an arbitrary older major or a prerelease. Verify compatible dependency sets for coupled toolchains. A necessary older direct version requires an explicit documented incompatibility and owner approval; do not silently downgrade. Transitive versions respect upstream constraints and must be reviewed for security and compatibility.
+
+Use the newest stable CPython and uv for development and CI; verify the actual available releases and all dependency compatibility before declaring the supported Python runtime range. Keep pyproject.toml, src layout, uv.lock, dependency groups, modern supported Python syntax/typing and standard-library APIs. Use uv for project setup, virtual environments, dependency management, execution, testing and packaging. Do not maintain parallel requirements.txt or other Python environment-management workflows. Consumers may install an authorized distribution with pip; that does not replace uv for development.
+
+```bash
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked pytest
+uv build --no-sources
+```
+
+Use uv add for declared dependencies and uv lock --upgrade during deliberate reviewed upgrades. Commit the updated lockfile. The latest stable dependency policy and reproducible builds are complementary: select current stable releases, lock their actual versions and test them. Ordinary CI installs the committed resolution and must not silently upgrade it or rewrite files. Pin Actions to the immutable commit of the latest verified stable release and annotate the release tag. Pin CMake/native dependencies by reviewed source revision or archive checksum. Record exact resolved toolchains and dependencies in build evidence. No unreviewed floating dependency or automatic release, version increment, dependency-update PR or scheduled repository mutation.
+
 ## 4. IDL language
 
 ### 4.1 Domain and repository example
@@ -256,7 +272,7 @@ enum UserStatus {
 }
 ```
 
-`modules/repository/idl/user_repository.idl`:
+`modules/repository/idl/user-repository.idl`:
 
 ```text
 module repository;
@@ -505,12 +521,12 @@ my-project/
 │   ├── repository/
 │   │   ├── module.yaml
 │   │   └── idl/
-│   │       ├── user_repository.idl
-│   │       └── product_repository.idl
+│   │       ├── user-repository.idl
+│   │       └── product-repository.idl
 │   └── network/
 │       ├── module.yaml
 │       └── idl/
-│           └── http_client.idl
+│           └── http-client.idl
 ├── native/
 ├── android/
 ├── apple/
@@ -626,7 +642,7 @@ defaults:
         types: PascalCase
         methods: camelCase
         fields: camelCase
-        files: snake_case
+        files: kebab-case
     objc:
       arc: true
       nullability: true
@@ -954,8 +970,8 @@ Dependency names in native build configuration refer to explicitly declared CMak
 
 | Target | Types | Methods | Fields | Files |
 | --- | --- | --- | --- | --- |
-| C | snake_case | snake_case | snake_case | snake_case |
-| C++ | PascalCase | snake_case | snake_case | snake_case |
+| C | snake_case | snake_case | snake_case | kebab-case |
+| C++ | PascalCase | snake_case | snake_case | kebab-case |
 | Java / Kotlin | PascalCase | camelCase | camelCase | PascalCase |
 | Swift | PascalCase | camelCase | camelCase | PascalCase |
 | Objective-C | prefixed PascalCase | camelCase | camelCase | PascalCase |
@@ -965,6 +981,10 @@ Dependency names in native build configuration refer to explicitly declared CMak
 | JS / TS | PascalCase | camelCase | camelCase | kebab-case |
 
 These are defaults, not mandatory language standards. Support PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase, UPPERCASE and dot-separated paths where legal. Configure types, records, interfaces, methods, async methods, fields, parameters, constants, enum values, files, namespaces, packages, private fields and proxy names independently.
+
+### 8.1.1 Mandatory dash-based filenames
+
+Use hyphens for multiword repository-owned filenames and directories wherever possible, including IDL, native C/C++ headers and sources, Jinja2 templates, CMake helper scripts, documentation, standalone Python scripts, CI workflows, assets and tests. Do not use underscores unless a language or tool requires them or the adopted language profile mandates the exact convention. Python importable modules/packages and __init__.py, enforced Dart file_names conventions, symbol-named Java/Kotlin/Swift files and required tool entrypoints are narrow exceptions. Keep these exceptions explicit. This is a filename policy, not a rule to rename valid identifiers, ABI symbols, JSON/YAML keys, package names or environment variables. Consumer naming overrides are still available, but the built-in defaults follow this policy. Validate path conventions and compile generated imports/includes after changing filenames.
 
 ### 8.2 Prefixes and suffixes per module and category
 
@@ -1340,8 +1360,8 @@ native/domain/cpp/
 └── src/user.cpp
 
 native/repository/cpp/
-├── include/app/repository/user_repository.hpp
-└── src/user_repository.cpp
+├── include/app/repository/user-repository.hpp
+└── src/user-repository.cpp
 
 android/generated/domain/java/
 └── com/app/domain/User.java
@@ -1510,7 +1530,7 @@ A default built-in template catalog is packaged with the Python wheel. Each entr
 ```text
 templates/
 ├── common/
-│   └── file_header.j2
+│   └── file-header.j2
 ├── cpp/
 │   ├── record.hpp.j2
 │   ├── interface.hpp.j2
@@ -1549,8 +1569,8 @@ targets:
     templates:
       directory: ./templates/cpp
       overrides:
-        interface.hpp.j2: ./templates/special/repository_interface.j2
-        CMakeLists.txt.j2: ./templates/special/repository_cmake.j2
+        interface.hpp.j2: ./templates/special/repository-interface.j2
+        CMakeLists.txt.j2: ./templates/special/repository-cmake.j2
       fallback_to_builtin: true
 ```
 
@@ -1951,7 +1971,7 @@ For each target, generate a capability manifest listing types, sync/async direct
 
 ### 16.5 C backend
 
-**Artifacts and configuration:** public .h files, generated C or C-compatible bridge source, separate private headers, typed handles and vtables, include guards, export/calling convention macros, optional CMake target. Module-specific prefix (app_domain_, app_repo_, etc.), include prefix, header/source paths, extensions and snake_case naming. Public headers compile as C11 and when included from C++; no C++ types leak through.
+**Artifacts and configuration:** public .h files, generated C or C-compatible bridge source, separate private headers, typed handles and vtables, include guards, export/calling convention macros, optional CMake target. Module-specific prefix (app_domain_, app_repo_, etc.), include prefix, header/source paths, extensions, snake_case symbols and kebab-case filenames. Public headers compile as C11 and when included from C++; no C++ types leak through.
 
 **Types and memory:** fixed-width integers and explicit UTF-8 pointer/length descriptors. Generated tagged optionals, results and variants; typed collection descriptors; opaque interface/weak/operation/subscription handles. Explicit init/destroy for owning values and recursive cleanup on partial conversion failure. Borrowed buffers are scoped; DataRef is retained/released through the ABI. Caller never frees memory allocated by another allocator.
 
@@ -2358,7 +2378,7 @@ Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only a
 
 ### 19.2 CI rules
 
-PR and main runs execute mandatory checks. Expensive fuzzing and extended platform coverage also run nightly and before release; release gates require all mandatory evidence on the exact candidate SHA. Pin reviewed toolchains and action revisions, use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
+PR and main runs execute mandatory checks. Expensive fuzzing and extended platform coverage also run nightly and before release; release gates require all mandatory evidence on the exact candidate SHA. Use the latest stable verified toolchains and actions under section 3.7, pinned to reviewed revisions; use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
 
 Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/test matrix, build logs and benchmark data as artifacts. Confirm jobs actually ran, inspect failures, fix root causes, rerun and record the SHA. Platform/runner unavailability remains an explicit blocker. Do not claim a passing run from a queued workflow or successful compilation alone.
 
@@ -2480,11 +2500,11 @@ polyglue/
 ├── CMakeLists.txt
 ├── CMakePresets.json
 ├── cmake/
-│   ├── Options.cmake
-│   ├── Dependencies.cmake
-│   ├── CompilerWarnings.cmake
-│   ├── Sanitizers.cmake
-│   ├── Install.cmake
+│   ├── options.cmake
+│   ├── dependencies.cmake
+│   ├── compiler-warnings.cmake
+│   ├── sanitizers.cmake
+│   ├── install.cmake
 │   ├── PolyGlueConfig.cmake.in
 │   ├── dependencies/
 │   │   └── testing.cmake
@@ -2570,7 +2590,7 @@ Keep core runtime dependency-free apart from the standard library and mandatory 
 
 - Default strategy: use standard CMake find_package for explicitly supplied packages and pinned FetchContent for necessary source dependencies (initially tests only if core remains dependency-free).
 - Support preinstalled dependency targets, local source overrides and an offline cache; fail explicitly if a required dependency is unavailable in offline mode.
-- Pin exact revisions or archive hashes; record dependency versions, licenses, source hashes and build options in artifact metadata.
+- Select the latest stable verified releases under section 3.7, then pin exact revisions or archive hashes; record dependency versions, licenses, source hashes and build options in artifact metadata.
 - Separate test-only dependencies, such as a native test framework if justified, from public installed targets. Do not install or link them into production libraries.
 - Do not add a second dependency manager merely to match another project. CPM or Conan integration may be supported behind the same CMake target interface if a concrete need is demonstrated and the complete corresponding CI matrix passes. Do not require both.
 - Resolve SDK-specific dependencies through the ecosystem tool: Gradle/Maven, SwiftPM, uv/pip, NuGet, pub, npm, and official SDKs. Use lockfiles or equivalent pinned versions appropriate to each ecosystem. No hidden downloads at generation time.
@@ -2802,7 +2822,7 @@ The owner requires the engineering practices from https://github.com/paulocoutin
 
 Apply code-developer, code-review, git, editor-config, git-ignore, security-audit and pypi-library, with npm-library and platform testing profiles where applicable. For languages without a dedicated profile, establish a compatible language-specific convention using official toolchain documentation. Do not invent a rule or force invalid syntax. Owner-specific preferences are not universal language requirements.
 
-Mandatory conventions: English code, comments, docs and commit messages; meaningful names, clear intermediate values, blank lines between responsibilities, early returns, one class/enum/component per file where syntax allows, hyphenated filenames where legal, no speculative abstractions or legacy compatibility. Single-line function calls, signatures and string literals with structural block exceptions. Python src layout, uv, Ruff, completely empty __init__.py, explicit public module imports and no TYPE_CHECKING. Formatter settings: Ruff line-length 320 and skip-magic-trailing-comma true, clang-format ColumnLimit 0 and narrow formatter-off regions around lambdas, Swift formatter and SwiftLint width 320, Kotlin ktlint max_line_length 320, Prettier printWidth 320. Use appropriate settings for additional languages. Keep generated code readable by default and allow explicit consumer naming/format overrides without changing the repository's own style. Check formatter idempotence and previously wrapped calls.
+Mandatory conventions: English code, comments, docs and commit messages; meaningful names, clear intermediate values, blank lines between responsibilities, early returns, one class/enum/component per file where syntax allows, mandatory dash-based multiword filenames and directories except documented language/tool requirements, no speculative abstractions or legacy compatibility. Single-line function calls, signatures and string literals with structural block exceptions. Python src layout, uv, Ruff, completely empty __init__.py, explicit public module imports and no TYPE_CHECKING. Formatter settings: Ruff line-length 320 and skip-magic-trailing-comma true, clang-format ColumnLimit 0 and narrow formatter-off regions around lambdas, Swift formatter and SwiftLint width 320, Kotlin ktlint max_line_length 320, Prettier printWidth 320. Use appropriate settings for additional languages. Keep generated code readable by default and allow explicit consumer naming/format overrides without changing the repository's own style. Check formatter idempotence and previously wrapped calls.
 
 AGENTS.md must cover architecture, code ownership, repository organization, Git delivery, privacy, security, dependency policy, generated artifacts, version and publication authorization, actual test commands and CI evidence. No task diary or claims of implemented features that are still planned. No unconditional force push, history rewrite, deletion, tag or release without specific authorization. Follow the Git skill's task-aware naming and reviewed change procedure. The single-root snapshot policy expressly authorized for the skills repository does not automatically authorize rewriting PolyGlue history. Keep main as the current development branch for explicitly requested repository edits; do not create extra branches or pull requests without an actual need or instruction. Use real human author identity for local Git commits; connector-created commits may use the integration identity and must be reported accurately.
 
@@ -2826,6 +2846,8 @@ Explicit remaining design decisions to settle with proof-of-concept and tests: e
 ## 22. Release acceptance checklist
 
 - [ ] Generator is installable and usable locally/offline; official packaging validated.
+- [ ] Latest stable dependencies, SDKs and GitHub Actions verified, locked and tested; any unavoidable older direct version explicitly approved.
+- [ ] Dash-based filename policy validated, with only documented language/tool-required exceptions.
 - [ ] Partial and individual template overrides, precedence, template export/check and custom build templates are proven in every target.
 - [ ] CMake structure, dependency resolution, install/export and independent consumers work without changing consumer settings.
 - [ ] Python CLI generates, builds, tests and packages every target; clean/incremental and failure behavior proven.
