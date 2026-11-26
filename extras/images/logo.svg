@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-    <title id="title">PolyGlue</title>
-    <rect x="2" y="2" width="124" height="124" rx="28" fill="#101B2D"/>
-    <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="11">
-        <path d="M49 34 22 64 49 94" stroke="#36D9BB"/>
-        <path d="M79 34 106 64 79 94" stroke="#78A9FF"/>
-        <path d="M49 70 61 58 67 64 79 52" stroke="#F5F8FF"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">PolyGlue</title>
+  <desc id="desc">Two interlocking geometric links representing native interoperability between programming languages.</desc>
+  <g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#36D9BB" d="M60 40 44 31 16 47v32l28 16 30-17V60"/>
+    <path stroke="#78A9FF" d="M68 88 84 97l28-16V49L84 33 54 50v18"/>
+    <path stroke="#36D9BB" d="M44 95 74 78V60"/>
+  </g>
 </svg>
