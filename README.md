@@ -14,35 +14,71 @@
 
 ## Project
 
-PolyGlue is a cross-platform interface compiler and code generator designed to connect programming languages through native, strongly typed interfaces.
+Imagine a mobile app written in Flutter that needs to use an Android feature written in Kotlin and an iOS feature written in Swift. Normally, developers need to write connecting code for each language and keep their data models, method signatures and error handling in sync.
 
-Define your models and interfaces once, then generate bindings for multiple languages. Implement a contract in Kotlin, Swift, C++ or another supported runtime and consume it from a different language without a server or mandatory serialization.
+PolyGlue is designed to solve that problem. Define your data and methods once, then generate the code that connects the selected programming languages. Write the actual implementation in one language and use it from another.
 
-> PolyGlue is in early development. The features and targets below describe the planned scope, not verified support.
+The goal is to make native cross-language calls feel like ordinary method calls, without requiring a server or JSON conversion.
+
+> PolyGlue is in early development. The features, examples and targets below describe the planned design, not verified support.
+
+## How it works
+
+An IDL (Interface Definition Language) is a simple way to describe data and methods without choosing a programming language. A record describes data, an enum describes named values, and an interface describes the methods an implementation provides.
+
+For example, a repository may find a user by ID and return no user if that ID does not exist:
+
+```text
+module domain;
+
+record User {
+    id: int64;
+    name: string;
+    email: optional<string>;
+    loggedIn: bool = false;
+}
+
+interface UserLookup {
+    async findById(id: int64): optional<User>;
+}
+```
+
+The generator creates the equivalent types and connecting code for the chosen languages. Your application provides the actual lookup implementation. The optional result means the call can succeed even when no user is found.
+
+```mermaid
+flowchart LR
+    IDL["One IDL definition"] --> G["PolyGlue generator"]
+    G --> A["Dart API"]
+    G --> B["Kotlin or Swift API"]
+    A <-->|Typed calls and results| R["Generated bridge"]
+    R <-->|Typed calls and results| B
+```
+
+For example, a Dart app calls findById, a Kotlin implementation finds the user, and the generated bridge returns the User to Dart. The same idea works in reverse when the selected runtimes support that direction. PolyGlue generates the connection, not your application's business logic.
 
 ## Features
 
-- 🔗 **Native interoperability:** bidirectional calls through generated interfaces and bindings.
-- 🧩 **Modular IDL:** reusable models, interfaces and independent modules.
-- 📚 **Rich types:** records, collections, enums, results, dates and custom external types.
-- ⚡ **Asynchronous operations:** native async APIs, callbacks, streams and cancellation.
-- 💾 **Shared memory:** explicit ownership and zero-copy buffers where supported.
-- 🔄 **Service discovery:** optional registry with replaceable implementations.
-- 🎨 **Customization:** per-module naming, prefixes, annotations and template overrides.
-- 🛠️ **Build tools:** one Python CLI for generation, compilation, testing and packaging.
-- 📦 **SDK distribution:** versioned AAR, XCFramework, native libraries and ecosystem packages.
-- ☁️ **Cloud deployment:** optional upload to Amazon S3, Cloudflare R2 and compatible storage.
-- ✅ **Quality:** automated cross-language, memory, concurrency and packaged-consumer tests.
+- 🔗 **Native interoperability:** call and implement interfaces across languages.
+- 🧩 **Modular IDL:** share data models and contracts between independent modules.
+- 📚 **Rich types:** records, enums, collections, optional values, UTC timestamps and custom types.
+- ⚡ **Asynchronous operations:** use native async APIs, callbacks, streams and cancellation.
+- 💾 **Shared memory:** pass borrowed or owned buffers with clear lifetime rules.
+- 🔄 **Service registry:** register, find and replace implementations when needed.
+- 🎨 **Customization:** control naming, prefixes, annotations and templates per module.
+- 🛠️ **Build tools:** generate, compile, test and package with one Python CLI.
+- 📦 **SDK distribution:** produce versioned native libraries, AARs, XCFrameworks and ecosystem packages.
+- ☁️ **Cloud deployment:** optionally upload validated SDKs to S3, R2 or compatible storage.
+- ✅ **Quality:** verify real cross-language calls, memory safety and packaged consumers.
 
 ## Supported languages and platforms
 
-The following targets are planned. Each combination is confirmed only after its build and runtime tests pass.
+The following targets are planned. A combination is confirmed only after its required build and runtime tests pass.
 
 ### Languages
 
 C, C++, Java, Kotlin, Objective-C, Swift, Python, Dart, C#, JavaScript and TypeScript.
 
-Flutter and WebAssembly are also planned integration targets.
+Flutter and WebAssembly are integration targets. Flutter uses Dart, and WebAssembly provides a native execution boundary for web bindings.
 
 ### Platforms
 
@@ -58,17 +94,17 @@ Flutter and WebAssembly are also planned integration targets.
 | ⌚ watchOS | C, C++, Objective-C, Swift |
 | 🥽 visionOS | C, C++, Objective-C, Swift |
 | 💻 Mac Catalyst | C, C++, Objective-C, Swift |
-| 🌐 Web | WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
+| 🌐 Web | C/C++ through WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
 
 ## Workflow
 
 Define → Generate → Build → Test → Package → Deploy (optional).
 
-See the [compiler pipeline](PROJECT.md#111-pipeline) and [SDK distribution workflow](PROJECT.md#205-python-build-orchestration-and-artifact-pipeline) for details.
+Start with an IDL contract, choose your languages, generate the bindings, implement your methods and test the resulting SDK. Packaging and cloud deployment are separate steps.
 
 ## Documentation
 
-- [Project specification](PROJECT.md)
-- [Engineering and contribution rules](AGENTS.md)
+- [Project specification](PROJECT.md) — start here to understand the full design, type mappings, examples and feature flowcharts.
+- [Engineering and contribution rules](AGENTS.md) — code standards, architecture, type mappings and validation rules.
 
-Installation instructions, usage examples and language guides will be added as the implementation is verified. No package has been released yet.
+Installation instructions and runnable examples will be added as implementation is verified. No package has been released yet.

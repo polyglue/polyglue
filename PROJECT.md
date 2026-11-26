@@ -13,6 +13,9 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 - [3. Developer workflow and distribution](#3-developer-workflow-and-distribution)
 - [4. IDL language](#4-idl-language)
 - [5. Type system](#5-type-system)
+  - [Complete type mapping contract](#54-complete-type-mapping-contract)
+  - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
+  - [How each value crosses languages](#59-how-each-value-crosses-languages)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
@@ -26,8 +29,11 @@ The numbered chapters describe the technical contracts. Section 22 is the single
   - [Template override system](#115-template-override-system-mandatory)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
 - [13. Memory and buffers](#13-memory-and-buffers)
+  - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
+  - [Async, callbacks, cancellation and streams in motion](#145-async-callbacks-cancellation-and-streams-in-motion)
 - [15. Interfaces and service discovery](#15-interfaces-and-service-discovery)
+  - [Direct references and service registry flows](#155-direct-references-and-service-registry-flows)
 - [16. Language-specific integration](#16-language-specific-integration)
 - [17. Example applications](#17-example-applications)
 - [18. Test specification](#18-test-specification)
@@ -57,7 +63,43 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 
 **One definition. Multiple languages. Native interoperability.**
 
-PolyGlue is a cross-platform interface compiler and source-code generator, written in Python with Jinja2 templates. Its primary product is generated, idiomatic, strongly typed source code that allows languages to consume and implement interfaces in either direction.
+Imagine a Flutter app that needs an Android feature written in Kotlin and an iOS feature written in Swift. Without a shared contract, developers often write the same data models and connecting code separately, and must keep the signatures, error handling and memory rules in sync.
+
+PolyGlue is designed to solve this problem. Write a contract once in an Interface Definition Language (IDL). The Python generator creates native-looking types and bindings for each selected language. A binding is the connecting code that lets one language call another. The application still supplies the real implementation of each method. The runtime is a small support library used at execution time. It is not a server and it does not require JSON or Python in non-Python applications.
+
+Start with the platform scope in section 2, follow the developer workflow in section 3, and learn the IDL and type mappings in sections 4 and 5. Sections 6 through 11 explain how files are generated. Sections 12 through 16 explain what happens when the program runs. Sections 17 through 22 explain how to prove the behavior, build, distribute and complete the project.
+
+### 1.0 The idea in one picture
+
+The same contract generates both sides of a connection. At run time either language can be the caller or the implementation, when their runtimes can safely coexist.
+
+```mermaid
+flowchart TD
+    IDL["One IDL contract: types and methods"] --> G["PolyGlue generator"]
+    G --> A["Generated API for language A"]
+    G --> B["Generated API for language B"]
+    A <-->|Typed calls and results| R["Shared runtime and generated adapters"]
+    R <-->|Typed calls and results| B
+    A --- C["Application A"]
+    B --- P["Application B"]
+```
+
+Terms used throughout this document:
+
+| Term | Meaning |
+| --- | --- |
+| IDL | A language-neutral description of types and operations |
+| Record | A named group of values, such as a user |
+| Interface | A contract describing what methods an object offers |
+| Consumer | Code that calls a method |
+| Provider | Code that implements the method |
+| Proxy | A generated object that forwards a call to another implementation |
+| Adapter | Generated code that converts values and invokes the correct runtime |
+| ABI | The binary rules both sides follow when calling each other |
+| Service registry | An optional place to register and find implementations |
+| SDK | A generated and packaged library that another application can use |
+
+A record does not execute a method. An interface does not generate the business logic. A service is an interface implementation registered for discovery. These distinctions matter when choosing what to define.
 
 ### 1.1 Required outcomes
 
@@ -445,91 +487,142 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 ### 5.4 Complete type mapping contract
 
-The tables below define the intended public surface, not binary layout. Generated helper types are acceptable where the host language cannot represent the contract exactly. A representation is not supported until conversion, round-trip, ownership and negative tests pass in both directions. For an unsupported representation or combination, issue a diagnostic before writing files.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model only when explicitly configured. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
-#### Numeric and text types
+All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async method` is a declaration modifier rather than a value type. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
-| IDL | C | C++ | Java | Kotlin | Objective-C | Swift |
-| --- | --- | --- | --- | --- | --- | --- |
-| bool | uint8_t (0/1) | bool | boolean | Boolean | BOOL | Bool |
-| int8 | int8_t | int8_t | byte | Byte | int8_t | Int8 |
-| int16 | int16_t | int16_t | short | Short | int16_t | Int16 |
-| int32 | int32_t | int32_t | int | Int | int32_t | Int32 |
-| int64 | int64_t | int64_t | long | Long | int64_t | Int64 |
-| uint8 | uint8_t | uint8_t | short, checked | UByte | uint8_t | UInt8 |
-| uint16 | uint16_t | uint16_t | int, checked | UShort | uint16_t | UInt16 |
-| uint32 | uint32_t | uint32_t | long, checked | UInt | uint32_t | UInt32 |
-| uint64 | uint64_t | uint64_t | BigInteger, checked | ULong | uint64_t | UInt64 |
-| float32 | float | float | float | Float | float | Float |
-| float64 | double | double | double | Double | double | Double |
-| string | owned/scoped UTF-8 descriptor | std::string | String | String | NSString | String |
-| bytes | owned byte descriptor | vector<uint8_t> | byte[] | ByteArray | NSData (copy) | Data (copy) |
-| void | void/status | void | void / Void | Unit | void | Void |
+#### Type meaning and native boundary
+
+| IDL | Meaning | C | WebAssembly |
+| --- | --- | --- | --- |
+| `bool` | True or false | uint8_t (0/1) | i32 (0/1) |
+| `int8` | Signed 8-bit integer | int8_t | i32, checked |
+| `int16` | Signed 16-bit integer | int16_t | i32, checked |
+| `int32` | Signed 32-bit integer | int32_t | i32 |
+| `int64` | Signed 64-bit integer | int64_t | i64 |
+| `uint8` | Unsigned 8-bit integer | uint8_t | i32, checked |
+| `uint16` | Unsigned 16-bit integer | uint16_t | i32, checked |
+| `uint32` | Unsigned 32-bit integer | uint32_t | i32 bit pattern |
+| `uint64` | Unsigned 64-bit integer | uint64_t | i64 bit pattern |
+| `float32` | 32-bit floating-point value | float | f32 |
+| `float64` | 64-bit floating-point value | double | f64 |
+| `string` | Unicode text | UTF-8 descriptor | UTF-8 in linear memory |
+| `bytes` | Independent binary value | Owned byte descriptor | Owned byte buffer |
+| `void` | Successful return with no payload | Status, no payload | Status, no payload |
+| `record` | Named group of values | Generated value/handle | Canonical fields |
+| `enum` | One declared integer value | int32_t + constants | i32, checked |
+| `flags` | Combined named bits | uint32_t + constants | i32 bit mask |
+| `variant` | One of several tagged alternatives | Tagged value + destroy | Tag + active payload |
+| `list<T>` | Ordered sequence | Typed descriptor/handle | Length + elements |
+| `set<T>` | Unique values | Typed descriptor/handle | Canonical unique elements |
+| `map<K,V>` | Keys mapped to values | Typed descriptor/handle | Canonical key/value pairs |
+| `array<T>` | Sequence with contiguous primitive optimization | Typed array descriptor | Length + typed or element buffer |
+| `optional<T>` | Absent or present value | Presence tag + payload | Presence tag + payload |
+| `Result<T,E>` | Business success or business error | Tagged result + destroy | Tag + active payload |
+| `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
+| `callback` | Callable passed to another implementation | Function table + context | Typed callback handle |
+| `async method` | Operation that completes later | Completion + operation handle | Operation handle + completion |
+| `Stream<T>` | Sequence of asynchronous events | Subscription handle | Subscription handle |
+| `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
+| `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
+| `date` | Calendar date, without a time | int64_t epoch days | i64 epoch days |
+| `timestamp` | UTC instant, exact microseconds | int64_t UTC microseconds | i64 UTC microseconds |
+| `duration` | Signed elapsed nanoseconds | int64_t nanoseconds | i64 nanoseconds |
+| `uuid` | 128-bit identifier | 16-byte value | 16 canonical bytes |
+| `DataView` | Scoped read-only borrowed memory | Const pointer + length | Scoped offset + length |
+| `MutableDataView` | Scoped exclusive writable memory | Writable pointer + length | Exclusive scoped offset + length |
+| `DataRef` | Shared owning buffer reference | Owning handle | Context-local owner handle |
+| `external` | User-defined host type with canonical mapping | Declared type / adapter | Declared canonical representation |
+
+#### Native and JVM public APIs
+
+| IDL | C++ | Java | Kotlin | Objective-C | Swift |
+| --- | --- | --- | --- | --- | --- |
+| `bool` | bool | boolean | Boolean | BOOL | Bool |
+| `int8` | std::int8_t | byte | Byte | int8_t | Int8 |
+| `int16` | std::int16_t | short | Short | int16_t | Int16 |
+| `int32` | std::int32_t | int | Int | int32_t | Int32 |
+| `int64` | std::int64_t | long | Long | int64_t | Int64 |
+| `uint8` | std::uint8_t | short | UByte | uint8_t | UInt8 |
+| `uint16` | std::uint16_t | int | UShort | uint16_t | UInt16 |
+| `uint32` | std::uint32_t | long | UInt | uint32_t | UInt32 |
+| `uint64` | std::uint64_t | BigInteger | ULong | uint64_t | UInt64 |
+| `float32` | float | float | Float | float | Float |
+| `float64` | double | double | Double | double | Double |
+| `string` | std::string | String | String | NSString | String |
+| `bytes` | std::vector<uint8_t> | byte[] | ByteArray | NSData | Data |
+| `void` | void | void / Void | Unit | void | Void |
+| `record` | struct | Immutable class | data class | NSObject model | struct or imported model |
+| `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
+| `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
+| `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
+| `list<T>` | std::vector<T> | List<T> | List<T> | NSArray | [T] |
+| `set<T>` | std::set / hash set | Set<T> | Set<T> | NSSet | Set<T> |
+| `map<K,V>` | std::map / hash map | Map<K,V> | Map<K,V> | NSDictionary | Dictionary<K,V> |
+| `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
+| `optional<T>` | std::optional<T> | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | Optional<T> |
+| `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
+| `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
+| `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
+| `async method` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
+| `Stream<T>` | Async stream | Publisher adapter | Flow | Subscription + block | AsyncSequence |
+| `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
+| `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
+| `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
+| `timestamp` | sys_time<microseconds> | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
+| `duration` | std::chrono::nanoseconds | Duration | java.time.Duration | Exact duration wrapper | Duration or exact wrapper |
+| `uuid` | UUID value wrapper | UUID | UUID | NSUUID | UUID |
+| `DataView` | Scoped read-only span | Checked read view | Checked read view | Checked read view | Scoped read-only access |
+| `MutableDataView` | Scoped writable span | Checked write view | Checked write view | Checked write view | Scoped writable access |
+| `DataRef` | RAII owner | Retained buffer owner | Retained buffer owner | Retained buffer owner | Retained buffer owner |
+| `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
+
+#### Managed and web public APIs
 
 | IDL | Python | Dart native | Dart Web | C# | JavaScript | TypeScript |
 | --- | --- | --- | --- | --- | --- | --- |
-| bool | bool | bool | bool | bool | boolean | boolean |
-| int8/16/32 | int, checked | int, checked | int, checked | sbyte/short/int | number, checked | number |
-| int64 | int, checked | int | BigInt | long | bigint | bigint |
-| uint8/16/32 | int, checked | int, checked | int, checked | byte/ushort/uint | number, checked | number |
-| uint64 | int, checked | BigInt | BigInt | ulong | bigint | bigint |
-| float32 | float, f32 conversion | double, f32 conversion | double, f32 conversion | float | number, f32 conversion | number |
-| float64 | float | double | double | double | number | number |
-| string | str | String | String | string | string | string |
-| bytes | bytes | Uint8List (copy) | Uint8List (copy) | byte[] | Uint8Array (copy) | Uint8Array |
-| void | None | void | void | void | undefined | void |
+| `bool` | bool | bool | bool | bool | boolean | boolean |
+| `int8` | int | int | int | sbyte | number | number |
+| `int16` | int | int | int | short | number | number |
+| `int32` | int | int | int | int | number | number |
+| `int64` | int | int | BigInt | long | bigint | bigint |
+| `uint8` | int | int | int | byte | number | number |
+| `uint16` | int | int | int | ushort | number | number |
+| `uint32` | int | int | int | uint | number | number |
+| `uint64` | int | BigInt | BigInt | ulong | bigint | bigint |
+| `float32` | float | double | double | float | number | number |
+| `float64` | float | double | double | double | number | number |
+| `string` | str | String | String | string | string | string |
+| `bytes` | bytes | Uint8List | Uint8List | byte[] | Uint8Array | Uint8Array |
+| `void` | None | void | void | void | undefined | void |
+| `record` | Frozen dataclass | Immutable class | Immutable class | record / class | Immutable object | Readonly model + runtime object |
+| `enum` | Enum | enum | enum | enum | Frozen constants | Checked numeric type |
+| `flags` | IntFlag / checked wrapper | Flags wrapper | Flags wrapper | Flags enum / wrapper | Checked mask | Checked mask |
+| `variant` | Tagged dataclass union | Sealed class | Sealed class | Tagged record hierarchy | Tagged object | Discriminated union |
+| `list<T>` | list[T] | List<T> | List<T> | IReadOnlyList<T> | Array | ReadonlyArray<T> |
+| `set<T>` | set[T] | Set<T> | Set<T> | IReadOnlySet<T> | Set | Set<T> |
+| `map<K,V>` | dict[K,V] | Map<K,V> | Map<K,V> | IReadOnlyDictionary<K,V> | Map | Map<K,V> |
+| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / Memory<T> | TypedArray / Array | TypedArray / ReadonlyArray<T> |
+| `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
+| `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
+| `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
+| `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
+| `async method` | Awaitable / async def | Future | Future | Task | Promise | Promise |
+| `Stream<T>` | AsyncIterator | Stream | Stream | IAsyncEnumerable<T> | AsyncIterable | AsyncIterable<T> |
+| `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
+| `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
+| `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
+| `timestamp` | Exact wrapper + aware datetime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + DateTimeOffset conversion | bigint + Date conversion | bigint + Date conversion |
+| `duration` | Exact wrapper + timedelta conversion | Exact wrapper + Duration conversion | Exact wrapper + Duration conversion | Exact wrapper + TimeSpan conversion | bigint nanoseconds | bigint nanoseconds |
+| `uuid` | uuid.UUID | UUID wrapper | UUID wrapper | Guid | Canonical UUID string | Canonical UUID string |
+| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked linear-memory view | Checked linear-memory view |
+| `MutableDataView` | Checked write view | Checked write view | Checked write view | Scoped writable access | Checked writable memory view | Checked writable memory view |
+| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Linear-memory owner | Linear-memory owner |
+| `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
 
-Rules: all integral conversions validate range and type (Python bool is not accepted as an integer by accident). JS number inputs must be finite integers for integer types. Java unsigned widening preserves mathematical values, while Kotlin/JNI unsigned inline representations use deliberate bit conversions. Shared Java/Kotlin models require a checked conversion layer when their public unsigned representations differ. Dart native int64 and uint64 are not interchangeable: uint64 uses BigInt. Float32 rounding occurs at the boundary, and tests define NaN, infinity and negative zero behavior. Preserve embedded NUL with explicit lengths. Reject invalid UTF-8 and unpaired surrogates rather than silently replacing them. C ABI bool is a fixed-width byte, not a compiler-dependent C++ bool layout. Reject values other than 0 and 1. Validate tags before reading variant payloads. Value records and ordinary collections have value semantics across the boundary, not shared mutable identity. Copy or move their contents as the contract allows. Interface references and DataRef retain identity and ownership explicitly.
+Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through Number. Numeric arrays use exact contiguous representations only where available. Float32 rounding occurs at the boundary. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
 
-#### Composite, temporal and special types
-
-| IDL | C | C++ | Java / Kotlin | Objective-C / Swift |
-| --- | --- | --- | --- | --- |
-| record | Generated owned value/handle | struct | Generated immutable model | NSObject model / struct or imported model |
-| enum / flags | Fixed-width value + constants | enum class / flags helper | Generated enum / flags wrapper preserving numeric contract | NS_ENUM / NS_OPTIONS. Swift enum / OptionSet |
-| variant | Tagged union + destroy | std::variant | Generated sealed/tagged type | Tagged object / enum with associated values |
-| list<T> | Typed descriptor or handle | vector<T> | List<T> | NSArray / [T] |
-| set<T> | Typed descriptor or handle | set/hash set according to equality policy | Set<T> | NSSet / Set<T> |
-| map<K,V> | Typed descriptor or handle | map/hash map | Map<K,V> | NSDictionary / Dictionary<K,V> |
-| array<T> | Typed contiguous descriptor for primitives | vector<T> or dedicated array wrapper | Primitive array where exact | Typed contiguous buffer or generated array wrapper |
-| optional<T> | Explicit presence tag + payload | optional<T> | Boxed nullable reference or explicit Optional wrapper | Nullable boxed value or explicit optional / Optional<T> |
-| Result<T,E> | Tagged result + cleanup | PolyGlue Result | Generated Result class/sealed type | Tagged object / Swift Result or generated enum |
-| interface | Typed opaque reference | shared owning interface reference | Interface and proxy | Protocol and proxy |
-| callback | Function table + context | Callable wrapper | Functional interface / lambda | Block / closure |
-| Stream<T> | Subscription handle | Async stream | Flow-compatible publisher / Kotlin Flow | Subscription block / AsyncSequence |
-| WeakRef<T> | Weak handle | Weak interface reference | Generated weak handle | Generated weak handle |
-| CancellationToken | Shared token handle | Token wrapper | Token wrapper | Token wrapper |
-| date | int64_t epoch days | chrono::year_month_day | LocalDate | Calendar-date value / DateComponents conversion |
-| timestamp | int64_t UTC microseconds | chrono-based checked wrapper | Instant or exact wrapper | Exact wrapper / Date conversion |
-| duration | int64_t nanoseconds | chrono duration | Duration or exact wrapper | Exact wrapper / Duration conversion |
-| uuid | 16-byte value | UUID value wrapper | UUID | NSUUID / UUID |
-| external | Declared ABI + adapter | Declared type | Declared type | Declared type |
-| DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
-
-| IDL | Python | Dart / Flutter | C# | JavaScript / TypeScript |
-| --- | --- | --- | --- | --- |
-| record | frozen dataclass | immutable class | record or generated immutable class | immutable model / readonly interface plus runtime implementation |
-| enum / flags | Enum / IntFlag or checked wrapper | enum / flags wrapper | enum / flags wrapper | frozen constants + checked numeric type |
-| variant | Tagged dataclass union | sealed class | discriminated record hierarchy | Tagged object / discriminated union |
-| list<T> | list[T] | List<T> | IReadOnlyList<T> | Array / ReadonlyArray<T> |
-| set<T> | set[T] | Set<T> | IReadOnlySet<T> | Set<T> |
-| map<K,V> | dict[K,V] | Map<K,V> | IReadOnlyDictionary<K,V> | Map<K,V> |
-| array<T> | typed buffer for primitives | typed_data where exact | T[] / Memory<T> | TypedArray where exact |
-| optional<T> | T or None | T? | Nullable<T> or nullable reference | T or null |
-| Result<T,E> | Tagged result | sealed Result | Generated Result | Tagged object / discriminated union |
-| interface | ABC / protocol + proxy | abstract interface class + proxy | interface + proxy | runtime object / interface + proxy |
-| callback | Callable | typedef / function | delegate | Function / typed function |
-| Stream<T> | AsyncIterator | Stream | IAsyncEnumerable<T> | AsyncIterable<T> |
-| WeakRef<T> | generated weak handle | generated weak handle | generated weak handle | generated weak handle |
-| CancellationToken | token wrapper | token wrapper | CancellationToken adapter | AbortSignal adapter |
-| date | datetime.date | Calendar-date value | DateOnly | Calendar-date value |
-| timestamp | exact wrapper / datetime conversion | exact microseconds / DateTime conversion | exact wrapper / DateTimeOffset conversion | bigint microseconds / Date conversion |
-| duration | exact wrapper / timedelta conversion | exact nanoseconds / Duration conversion | exact wrapper / TimeSpan conversion | bigint nanoseconds |
-| uuid | uuid.UUID | checked UUID value | Guid with canonical byte ordering | checked UUID value |
-| external | Declared adapter | Declared adapter | Declared adapter | Declared adapter |
-| DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
-
-Nested optional values cannot collapse distinct absence states. Use an explicit tagged wrapper when nullable syntax collapses those states. Missing, present absent inner value and present inner payload must round-trip distinctly. Set/map keys must have portable equality and hashing. For the initial implementation restrict portable map keys and set elements to bool, integer, string, enum and UUID. An external type may be used in a key position only when its canonical representation is one of these key types and its adapter preserves that exact equality contract. Other key types require an explicitly approved contract extension. Do not use object identity for value keys. Define key equality by canonical values: exact integers, Unicode scalar sequences without implicit normalization, enum values and canonical UUID bytes. Sets and maps have no portable iteration-order guarantee. Reject duplicate canonical keys in incoming representations rather than silently overwrite entries. Native maps and sets are allowed only when their key equality matches the portable contract. Swift String equality compares canonically equivalent Unicode sequences as equal, while the IDL preserves distinct scalar sequences. JS Map uses identity for object-valued keys, including a UUID wrapper. For these mismatches, use a narrowly scoped generated key wrapper with equality and hashing over canonical values, or an exact native scalar representation such as validated canonical UUID strings in JS. Do not introduce a general collection framework. Test that composed and decomposed Unicode keys remain distinct and equal UUIDs are equal keys independent of object identity. Ordinary strings outside key positions still preserve their exact scalar sequence at the boundary. Preserve infinity, signed zero and NaN classification for floats, without promising NaN payload bits across runtimes. Float keys are excluded by the initial portable key policy. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit. The exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
+Collection key types are limited to bool, integer, string, enum and UUID, plus external types proven to preserve one of those key representations. Reject duplicate canonical keys. There is no portable set/map iteration order. Key wrappers are needed when host equality differs from canonical equality, such as Swift canonical-equivalent Unicode strings. JS UUID keys use canonical strings. Preserve float signed zero, infinity and NaN classification without promising NaN payload bits. UUID bytes use network order. No borrowed memory may escape a direct synchronous parameter. DataRef is read-only by default and retains its true owner. See sections 5.6, 5.8, 13 and 14 of PROJECT.md for detailed rules.
 
 ### 5.5 Per-type acceptance
 
@@ -537,7 +630,7 @@ Use the shared conformance inventory and risk-based coverage policy in section 1
 
 ### 5.6 Built-in date and time types
 
-Date and time interoperability is a built-in feature, not a user-required extension. Keep built-ins limited to the common types in section 5.1. Domain-specific colors, vectors, money and geographic coordinates use ordinary IDL or external types unless explicitly requested otherwise. Distinguish an instant from a calendar date and a duration. Never interpret a date as a local midnight timestamp. Use the proleptic Gregorian calendar, UTC and POSIX-style epoch semantics (no distinct leap-second encoding).
+Date and time interoperability is a built-in feature, not a user-required extension. Keep built-ins limited to the common types in section 5.1. Domain-specific colors, vectors, money and geographic coordinates use ordinary IDL or external types unless explicitly requested otherwise. Distinguish an instant from a calendar date and a duration. Never interpret a date as a local midnight timestamp. Use the proleptic Gregorian calendar for date and UTC with POSIX-style epoch semantics for timestamp (no distinct leap-second encoding). A timestamp is never sent as a local time, locale-dependent text or floating-point seconds.
 
 | IDL type | Canonical value | Meaning |
 | --- | --- | --- |
@@ -579,13 +672,13 @@ record User {
 | JavaScript / TypeScript | Generated calendar-date value | bigint microseconds plus Date conversion | bigint nanoseconds |
 | WASM | Canonical integer representation | Canonical i64 | Canonical i64 |
 
-The table specifies required supported public conversions. Use idiomatic host-native objects directly when the conversion preserves the entire advertised contract. Otherwise expose a generated exact value wrapper with convenient native conversion methods. Host values outside the canonical range or with finer precision than the IDL type must fail checked conversion. Do not restrict a built-in's canonical range per target to make a native mapping appear complete. Do not silently reduce timestamps to milliseconds for JS Date or round nanoseconds to microseconds/ticks for Python, Dart or .NET. A timezone-aware date-time received from a host is normalized to the same UTC instant. Reject ambiguous naive date-times unless the caller explicitly provides a timezone. Calendar dates do not carry an implicit timezone. Timezone identifiers and local/zoned date-times with DST ambiguity are not synonyms for timestamp. If needed, model them explicitly as records or external types. No extra timezone library in core.
+The table specifies required supported public conversions. Use idiomatic host-native objects directly when the conversion preserves the entire advertised contract. Otherwise expose a generated exact value wrapper with convenient native conversion methods. Host values outside the canonical range or with finer precision than the IDL type must fail checked conversion. Do not restrict a built-in's canonical range per target to make a native mapping appear complete. Do not silently reduce timestamps to milliseconds for JS Date or round nanoseconds to microseconds/ticks for Python, Dart or .NET. Every date-time instant crosses the bridge as UTC, encoded as signed epoch microseconds. A timezone-aware input is normalized to the same UTC instant before conversion. All native date-time values produced by the bridge use UTC when they carry a timezone or offset. Reject naive or ambiguous local date-times unless the application explicitly resolves them to an instant before crossing. Do not read the host's default timezone during conversion. A calendar date is transmitted as epoch days without time or timezone, so a birthday never moves to another day. Durations have no timezone. These rules apply to every nested record, optional, collection, callback, stream, async result and external adapter using timestamp. Timezone identifiers and local/zoned date-times with DST ambiguity are not synonyms for timestamp. If needed, model them explicitly as records or external types. No extra timezone library in core.
 
 Provide checked native conversion methods in the built-in implementation. Do not create a separate profile system for standard dates. If a project wants a narrower domain-specific host type as its public API, use the existing external type mechanism with explicit checked conversion. Keep the built-in representation exact.
 
 #### 5.6.2 Date conformance
 
-Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond values, values beyond the JS safe-integer range, signed extremes, invalid ranges, leap years (including 1900 and 2000), month/day validation, year boundaries, calendar date stability across timezone changes, UTC offset normalization, naive input rejection, DST ambiguous/nonexistent local times in applicable native conversion tests, precision loss, invalid Date/NaN, UUID canonical byte order and signed duration arithmetic overflow. Test dates in records, optionals, lists, maps as values, results, callbacks, async and streams. Compare canonical values independently, not formatted local strings. Calendar-date keys and other non-listed key types remain unavailable unless portable equality and hashing are explicitly specified and proven.
+Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond values, values beyond the JS safe-integer range, signed extremes, invalid ranges, leap years (including 1900 and 2000), month/day validation, year boundaries, calendar date stability across timezone changes, UTC offset normalization, naive input rejection, DST ambiguous/nonexistent local times in applicable native conversion tests, precision loss, invalid Date/NaN, UUID canonical byte order and signed duration arithmetic overflow. Test dates in records, optionals, lists, maps as values, results, callbacks, async and streams. Compare canonical values independently, not formatted local strings. Run a focused round-trip fixture with different host timezone settings, including a non-UTC offset, to prove the bridge does not depend on the machine timezone. Calendar-date keys and other non-listed key types remain unavailable unless portable equality and hashing are explicitly specified and proven.
 
 ### 5.7 Custom and external type extension system
 
@@ -773,6 +866,194 @@ polyglue test --module geo --target cpp
 
 Publish the descriptor schema with the generator package, document exact adapter signatures, provide clear validation diagnostics and ensure generation works from an installed wheel using only user-owned descriptor/adapter files. No separate plugin manager or dynamic registration framework is needed for ordinary custom types.
 
+### 5.8 Optional values, nulls and defaults
+
+All values are required and non-null unless declared as optional<T>. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
+
+At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of optional<optional<T>> are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. Omission is a construction-time rule, not an extra wire state.
+
+| Input or state | Meaning |
+| --- | --- |
+| Required field omitted | Error unless it has a declared default |
+| Required field explicitly null | Error, even if it has a default |
+| Optional field omitted | Use declared default, otherwise absent |
+| Optional field explicitly null | Absent, not the default |
+| Optional value present with empty string/list/bytes, zero or false | A real present value |
+| Nested optional | Outer absent, outer present with inner absent, or both present |
+| Successful optional return with no value | Success with absence, not an invocation failure |
+| Failed Result, runtime error or cancellation | Distinct from optional absence |
+
+Use the native nullable form for a single optional when it can represent both states. Use a small explicit tagged wrapper where native nullability collapses nested states. For Objective-C collections, use generated boxed optional values rather than inserting nil in NSArray or NSDictionary. Java/Kotlin collections must preserve optional elements without using collection constructors that reject legal null values. Swift Optionals retain both tags even when imported Objective-C APIs need wrappers. Python uses None for a single absent value and a tagged wrapper for nested optionals. JavaScript and TypeScript use explicit null for a single absent value. A declared field is not a TypeScript optional property merely because its value can be null. Enable strictNullChecks and exactOptionalPropertyTypes. Reject explicit undefined at value boundaries and sparse array holes rather than treating them as null. The exception is the no-payload void result. Detect missing record properties before default application. A missing map key is not a present key with an absent optional value.
+
+```text
+record Profile {
+    name: string;
+    nickname: optional<string>;
+    biography: optional<string> = "New user";
+    scores: list<optional<int32>>;
+}
+
+interface ProfileStore {
+    save(profile: Profile): Profile;
+    find(id: int64): optional<Profile>;
+}
+```
+
+For example, a missing biography uses "New user", an explicit null biography stays absent, and an empty biography stays present. A call returning an absent profile succeeded. A failed conversion or missing provider did not.
+
+Required conformance cases cover null rejection for required values, default versus explicit absence, nested optional tags, missing map keys versus present absent values, nullable elements, empty and zero values, successful absent async results, and cleanup of partially converted optional collections. Test representative distinct conversion paths in both directions using the common fixtures.
+
+Official host API references: [Foundation collections](https://developer.apple.com/documentation/foundation/collections), [TypeScript strict null checks](https://www.typescriptlang.org/tsconfig/strictNullChecks.html) and [Python datetime](https://docs.python.org/3/library/datetime.html).
+
+### 5.9 How each value crosses languages
+
+Read these flows after the type tables. Every arrow represents a typed operation or conversion, not network serialization. The same contract applies when caller and provider exchange roles.
+
+#### Scalar values, strings and bytes
+
+A call validates values on both sides. The return follows the same conversion in the opposite direction.
+
+```mermaid
+flowchart TD
+    A["Caller: integer, bool, float, string or bytes"] --> B["Encode checked value or owned bytes"]
+    B --> C{"Valid canonical value?"}
+    C -->|No| E["Return conversion error"]
+    C -->|Yes| D["Decode for provider"]
+    D --> F["Provider computes a result"]
+    F --> G["Validate and encode result"]
+    G --> H["Decode for caller"]
+    G -->|Invalid| E
+```
+
+Text uses UTF-8. Ordinary bytes are independent values, not shared buffers.
+
+#### Records and generic records
+
+A record is a value, not a remote object. A concrete Page<User> uses the same field conversion rules as User.
+
+```mermaid
+flowchart TD
+    A["Caller creates User or Page of User"] --> B["Generated adapter visits fields"]
+    B --> C["Canonical fields and nested values"]
+    C --> D["Provider gets its native record"]
+    D --> E["Provider creates return record"]
+    E --> F["Encode fields and validate"]
+    F --> G["Caller receives its native record"]
+    B -->|Invalid field| H["Clean partial values and report error"]
+    F -->|Invalid field| H
+```
+
+#### Enums, flags and variants
+
+An enum carries a declared number, flags carry a mask, and a variant carries a tag plus only its active value.
+
+```mermaid
+flowchart TD
+    A["Native enum, flags or variant"] --> B["Read numeric value, mask or active tag"]
+    B --> C{"Declared value or valid bits and tag?"}
+    C -->|No| E["Conversion error"]
+    C -->|Yes| D["Canonical number or tag and payload"]
+    D --> F["Construct target value"]
+    F --> G["Provider returns a declared alternative"]
+    G --> H["Validate and convert back to caller"]
+    G -->|Invalid| E
+```
+
+#### Collections
+
+Collections use the same conversion for their elements. Arrays do not automatically mean shared memory.
+
+```mermaid
+flowchart TD
+    A["List, set, map or array"] --> B["Validate length and legal key types"]
+    B --> C["Convert elements or key/value pairs"]
+    C --> D{"All values valid and keys unique?"}
+    D -->|No| E["Release partial values and fail"]
+    D -->|Yes| F["Construct target collection"]
+    F --> G["Provider returns collection"]
+    G --> H["Validate and convert in reverse"]
+    H --> I["Caller receives collection"]
+```
+
+#### Optional values and defaults
+
+Only construction applies defaults. The bridge carries the presence tag, not the original omission.
+
+```mermaid
+flowchart TD
+    A["Construct record or supply argument"] --> B{"Missing record field?"}
+    B -->|Yes| C["Apply declared default or optional absence"]
+    B -->|No| D["Use explicit value"]
+    C --> E{"Valid for declared type?"}
+    D --> E
+    E -->|No| X["Validation error"]
+    E -->|Yes| F{"Optional absent?"}
+    F -->|Yes| G["Presence tag 0, no payload"]
+    F -->|No| H["Required value or tag 1 and payload"]
+    G --> I["Target reconstructs exact state"]
+    H --> I
+    I --> J["Return uses same presence rules"]
+    J --> K["Caller receives value or absence"]
+```
+
+Nested optionals repeat the presence decision for each layer. A runtime error is never converted into absence.
+
+#### Result and runtime errors
+
+A business error is an expected return from an implementation. A runtime error means the invocation itself failed.
+
+```mermaid
+flowchart TD
+    A["Caller invokes provider"] --> B{"Invocation valid?"}
+    B -->|No| E["Runtime error status"]
+    B -->|Yes| C["Provider executes"]
+    C --> D{"Business result"}
+    D -->|Success| F["Success tag and value if any"]
+    D -->|Expected failure| G["Error tag and typed error"]
+    D -->|Invocation failure| E
+    F --> H["Caller receives typed Result"]
+    G --> H
+    E --> I["Caller receives runtime failure"]
+```
+
+#### Dates, timestamps, durations and UUIDs
+
+An instant is always normalized to UTC. A calendar date has no timezone.
+
+```mermaid
+flowchart TD
+    A["Host date, instant, duration or UUID"] --> B{"Kind"}
+    B -->|Instant| C["Resolve UTC instant and exact microseconds"]
+    B -->|Date| D["Gregorian epoch days"]
+    B -->|Duration| E["Signed nanoseconds"]
+    B -->|UUID| F["Canonical 16 bytes"]
+    C --> G["Check range and precision"]
+    D --> G
+    E --> G
+    F --> G
+    G --> H["Construct exact target value"]
+    H --> I["Return through same canonical form"]
+    G -->|Invalid| X["Conversion error"]
+```
+
+#### External types
+
+An external type is converted by user-owned adapters. The generator itself remains unchanged.
+
+```mermaid
+flowchart TD
+    A["Host custom type in A"] --> B["A: to representation"]
+    B --> C["Validated canonical IDL value"]
+    C --> D["B: from representation"]
+    D --> E["Provider uses its host type"]
+    E --> F["B: to representation"]
+    F --> G["Validated canonical return"]
+    G --> H["A: from representation"]
+    H --> I["Caller gets its host type"]
+    B -->|Invalid| X["Conversion error and cleanup"]
+    F -->|Invalid| X
+```
+
 ## 6. Modules and dependencies
 
 ### 6.1 Example application layout
@@ -868,6 +1149,25 @@ Illustrative excerpt. The full schema must include canonical type definitions, r
 - Change a domain output path, prefix or package and regenerate repository imports correctly.
 - Reject incompatible duplicates, missing targets, invalid cycles, incompatible manifests and unavailable generated artifacts.
 - Confirm that identical logical symbols have stable identity regardless of casing or path.
+
+### 6.5 Module imports and dependency flow
+
+#### A module uses a type from another module
+
+Logical imports resolve before file generation, even if the modules use different namespaces or output paths.
+
+```mermaid
+flowchart TD
+    A["Repository IDL imports domain.User"] --> B["Resolve logical symbol in domain"]
+    B --> C{"Source or prebuilt dependency?"}
+    C -->|Source| D["Generate dependency target artifacts"]
+    C -->|Prebuilt| E["Validate manifest and ABI"]
+    D --> F["Resolve domain public names and paths"]
+    E --> F
+    F --> G["Generate repository imports and bindings"]
+    G --> H["Compile and link consumer"]
+    E -->|Incompatible| X["Stop with diagnostic"]
+```
 
 ## 7. Module-first configuration
 
@@ -1317,6 +1617,24 @@ For Apple products, verify the framework Info.plist values after building each d
 - Invalid or unrepresentable version/build values fail before compilation. No silently modified version.
 - Build and deploy reject a manifest whose version, build number, files or selected product identity differ from the requested configuration.
 
+### 7.9 How configuration reaches generated files
+
+#### Configuration, naming and annotations
+
+The selected module and target have their own effective settings.
+
+```mermaid
+flowchart TD
+    A["Built-in defaults"] --> B["Project defaults"]
+    B --> C["Module defaults"]
+    C --> D["Selected target settings"]
+    D --> E["Declaration annotations"]
+    E --> F["Validate and resolve naming and paths"]
+    F --> G["Plan includes, imports and files"]
+    G --> H["Render selected templates"]
+    F -->|Conflict| X["Stop before writing"]
+```
+
 ## 8. Naming and file formatting
 
 ### 8.1 Naming categories and defaults
@@ -1549,6 +1867,25 @@ For a repository async method, generate a compatible Objective-C completion API 
 | WASM | Export and visibility controls |
 
 Backend catalog defines exact supported annotations and transformations. Do not allow arbitrary raw code injection as the default annotation mechanism.
+
+### 9.5 Annotation processing flow
+
+#### From IDL annotation to native API
+
+Semantic annotations must affect real behavior, and language-specific annotations must be validated by the target compiler.
+
+```mermaid
+flowchart TD
+    A["IDL declaration and annotation"] --> B["Validate scope and arguments"]
+    B --> C{"Universal or target-specific?"}
+    C -->|Universal| D["Apply semantic contract"]
+    C -->|Target specific| E["Map to target attribute or name"]
+    D --> F["Plan generated API"]
+    E --> F
+    F --> G["Compile and test behavior"]
+    B -->|Invalid| X["Diagnostic"]
+    G -->|Fails| X
+```
 
 ## 10. Output layout and import resolution
 
@@ -1956,6 +2293,28 @@ Custom templates are trusted local developer input, not a security sandbox. A te
 - Generated outputs compile and run in each target, including an actual package consumer using customized source/build templates.
 - Wheel installation includes the same template catalog, export/check commands and behavior as a source checkout.
 
+### 11.6 Template selection flow
+
+#### Override a template without changing the generator
+
+Choose the first applicable declared source. An invalid selected template must fail, not trigger another lookup.
+
+```mermaid
+flowchart TD
+    A["Required template ID"] --> B["Inspect module target overrides"]
+    B --> C{"Explicit mapping or matching file?"}
+    C -->|Yes| F["Select declared template"]
+    C -->|No| D["Inspect inherited module and project layers"]
+    D --> E{"Matching inherited template?"}
+    E -->|Yes| F
+    E -->|No| G{"Built-in inheritance allowed?"}
+    G -->|Yes| F
+    G -->|No| X["Missing template error"]
+    F --> H["Render validated model"]
+    H --> I["Validate output and commit manifest"]
+    H -->|Invalid| X
+```
+
 ## 12. Native runtime and ABI
 
 The support runtime implements only shared interoperability mechanics, while generated adapters provide contract-specific behavior.
@@ -2003,6 +2362,28 @@ One runtime instance per explicitly shared context. Multiple libraries must link
 
 Do not hold internal locks during foreign calls, callbacks, scheduling or destruction. Pin runtime-owned reference state under the lock, then release the lock before calling foreign retain/release or executing the provider. Do not obtain safety by calling user code inside the registry mutex. Define shutdown ordering, pending-operation drain/cancellation, registration invalidation and thread-affine release. Test reentrancy, nested cross-language calls, duplicate runtime instances, stale handles, allocator mismatch, refcount overflow, weak references and shutdown races.
 
+### 12.3 Call and return across the ABI
+
+#### A synchronous interface call
+
+The caller and provider can be written in different languages. The generated proxy and adapter handle the conversion, not the business logic.
+
+```mermaid
+flowchart TD
+    A["Consumer calls typed proxy"] --> B["Validate handle and retain provider"]
+    B --> C["Convert arguments to C ABI"]
+    C --> D["Invoke typed function table"]
+    D --> E["Provider adapter converts arguments"]
+    E --> F["Real provider method"]
+    F --> G["Provider adapter encodes return or status"]
+    G --> H["Consumer adapter decodes return"]
+    H --> I["Release call references and return"]
+    B -->|Invalid| X["Runtime error"]
+    G -->|Failure| X
+```
+
+The return path must release temporary values on both success and failure. A foreign method or deleter is never invoked under the runtime lock.
+
 ## 13. Memory and buffers
 
 ### 13.1 Contracts
@@ -2045,6 +2426,53 @@ A typed array in a JS heap is not automatically shared with WASM. Direct JVM buf
 ### 13.3 Test evidence
 
 Test empty and large buffers, invalid lengths, overflow, slices, misalignment where typed access applies, concurrent release, source destruction while DataRef remains alive, use after view scope, double release, aliasing, mutable borrow conflicts, allocator matching and thread-affine deleters. Verify identity and exact contents across compatible boundaries. Instrument bytes copied, allocations/deallocations, handles and outstanding operations. Instrumentation must not claim visibility into all third-party runtime allocations.
+
+### 13.4 Buffer and ownership flows
+
+#### DataView and MutableDataView
+
+A borrowed view is valid only during its synchronous call. Mutable access is exclusive.
+
+```mermaid
+flowchart TD
+    A["Owner holds buffer"] --> B["Acquire read or exclusive write borrow"]
+    B --> C{"Memory and scope valid?"}
+    C -->|No| X["Reject without copying"]
+    C -->|Yes| D["Provider accesses same valid memory"]
+    D --> E["Return or error"]
+    E --> F["End borrow and invalidate scoped view"]
+    F --> G["Owner retains buffer"]
+```
+
+#### DataRef and explicit copies
+
+An owning reference can outlive the call, and a copy is a separate operation.
+
+```mermaid
+flowchart TD
+    A["Caller owns DataRef"] --> B["Retain real owner"]
+    B --> C["Provider receives owning reference"]
+    C --> D["Provider may keep or return it across async"]
+    D --> E["Caller and provider release their references"]
+    E --> F{"Last owner released?"}
+    F -->|No| G["Memory remains valid"]
+    F -->|Yes| H["Run correct deleter once"]
+    C -->|Explicit conversion to bytes| I["Create independent copy"]
+```
+
+#### Strong and weak interface references
+
+Weak references never resurrect an object that has already been disposed.
+
+```mermaid
+flowchart TD
+    A["Strong interface reference"] --> B["Create weak handle"]
+    B --> C["Try to acquire strong reference"]
+    C --> D{"Owner still alive?"}
+    D -->|Yes| E["Atomically retain and return reference"]
+    D -->|No| F["Return absent optional reference"]
+    E --> G["Use provider and release reference"]
+```
 
 ## 14. Asynchronous operations callbacks and streams
 
@@ -2115,6 +2543,75 @@ Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .
 Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
 Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation, drains actual execution and queued releases, then invalidates handles and detaches the runtime. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
+
+### 14.5 Async, callbacks, cancellation and streams in motion
+
+#### Async request and result
+
+The consumer receives a future. The implementation may complete immediately or later.
+
+```mermaid
+flowchart TD
+    A["Consumer starts async call"] --> B["Retain arguments, provider and completion token"]
+    B --> C{"Start accepted?"}
+    C -->|No| X["Immediate failure, no completion"]
+    C -->|Yes| D["Schedule or execute provider"]
+    D --> E["Provider completes with value or error"]
+    E --> F{"Win terminal transition?"}
+    F -->|Yes| G["Dispatch completion on caller executor"]
+    F -->|No| H["Release late payload without callback"]
+    G --> I["Caller await finishes"]
+    D --> J["Actual execution finishes"]
+    J --> K["Release execution resources"]
+```
+
+#### Callbacks in the opposite direction
+
+The provider may call a callback supplied by the original consumer, using the allowed scheduler.
+
+```mermaid
+flowchart TD
+    A["Consumer passes callback reference"] --> B["Provider retains typed callback"]
+    B --> C["Provider invokes progress callback"]
+    C --> D["Route to callback owner runtime"]
+    D --> E["Original consumer callback runs"]
+    E --> F["Return value or completion when supported"]
+    F --> G["Provider continues work"]
+    G --> H["Release callback when no longer needed"]
+    D -->|Unsafe synchronous call| X["Reject crossing"]
+```
+
+#### Cancellation and actual execution lifetime
+
+Cancellation completes the caller once but cannot free resources still used by the provider.
+
+```mermaid
+flowchart TD
+    A["Consumer cancels operation"] --> B{"Terminal transition won?"}
+    B -->|No| C["Already terminal"]
+    B -->|Yes| D["Notify caller and signal cancellation"]
+    D --> E["Provider cooperates or finishes normally"]
+    E --> F["Consume late completion if any"]
+    F --> G["Drain actual execution and release owners"]
+```
+
+#### Streams and backpressure
+
+A subscription can carry many values, unlike a one-shot async result.
+
+```mermaid
+flowchart TD
+    A["Consumer subscribes"] --> B["Retain provider and subscription"]
+    B --> C["Consumer requests demand or selected preview policy"]
+    C --> D["Provider produces event"]
+    D --> E{"Queue has capacity?"}
+    E -->|Yes| F["Convert and deliver in order"]
+    E -->|No| G["Wait for demand or explicit latest-frame policy"]
+    G --> C
+    F --> C
+    F -->|End, error or cancel| H["Stop delivery, release queued values"]
+    H --> I["Drain and release subscription"]
+```
 
 ## 15. Interfaces and service discovery
 
@@ -2208,6 +2705,74 @@ No reflection or network is required. Multiple registrations can coexist. Use ex
 Default duplicate registration is an error unless explicit replace/override policy is specified. A scoped override restores a previous registration only when that override is deliberately removed, not when a call fails. Do not silently retry a failed call against another provider. Existing operations and stream subscriptions retain their selected provider. New dynamic calls use the current provider. Removing a registration does not invalidate an otherwise valid fixed reference. Runtime shutdown cancels/drains operations before releasing adapters.
 
 Tests: both get/proxy modes. Replacement and explicit scoped restoration. Multiple instances. Nested contexts. ABI mismatch. Concurrent registration, lookup, removal and invocation. Stale registration tokens. Runtime reload. Callback reentrancy. Final release outside locks.
+
+### 15.5 Direct references and service registry flows
+
+#### Direct injection and factories
+
+The registry is not required. A factory returns a normal owning interface reference.
+
+```mermaid
+flowchart TD
+    A["Provider creates implementation"] --> B["Generated adapter exposes typed handle"]
+    B --> C["Pass reference or return from factory"]
+    C --> D["Consumer holds typed proxy"]
+    D --> E["Call provider method through ABI"]
+    E --> F["Return typed value or error"]
+    F --> D
+    D -->|Dispose| G["Release owning reference"]
+```
+
+#### Register, resolve and call a service
+
+A registry maps the logical interface descriptor to a provider, not method-name strings.
+
+```mermaid
+flowchart TD
+    A["Provider creates adapter"] --> B["Register typed descriptor"]
+    B --> C["Validate ABI and retain registration"]
+    C --> D["Shared registry in one runtime context"]
+    E["Consumer requests same descriptor"] --> D
+    D --> F{"Matching registration?"}
+    F -->|No| X["Missing service error"]
+    F -->|Yes| G["Retain snapshot and create proxy"]
+    G --> H["Invoke provider through typed table"]
+    H --> I["Result returns to consumer"]
+    C --> J["Registration token"]
+    J -->|Unregister| K["Remove only matching registration"]
+```
+
+#### Replacing a registered service
+
+A fixed reference keeps its chosen provider. A dynamic proxy resolves again at the start of a new call.
+
+```mermaid
+flowchart TD
+    A["Provider A registered"] --> B["Fixed reference to A"]
+    A --> C["Dynamic proxy"]
+    D["Explicitly register provider B as replacement"] --> E["Registry now points to B"]
+    B --> F["Existing references and in-flight calls use A"]
+    C --> G["Next invocation resolves B"]
+    E --> G
+    G --> H["Invoke B and return result"]
+    F --> I["Release A when last owner finishes"]
+    H -->|Remove scoped override| J["Restore A only if explicitly stacked"]
+```
+
+#### Runtime shutdown
+
+Stop accepting work before detaching any runtime or destroying its callbacks.
+
+```mermaid
+flowchart TD
+    A["Shutdown requested"] --> B["Reject new calls and registrations"]
+    B --> C["Request cancellation"]
+    C --> D["Drain actual execution and queued releases"]
+    D --> E{"Safe to detach?"}
+    E -->|Yes| F["Invalidate handles and release adapters"]
+    F --> G["Detach runtime"]
+    E -->|No| X["Report shutdown failure and keep resources alive"]
+```
 
 ## 16. Language-specific integration
 
@@ -2532,6 +3097,22 @@ WebAssembly is a transport/execution target, not another IDL language.
 
 Physical device tests are not replaceable by a simulator for device-only features. Record hardware access as blocked when unavailable. Do not require a physical camera for platforms without appropriate APIs. The grayscale computation and buffer transfer remain mandatory with fixtures. All supported platform targets must build and execute at least their applicable conformance cases.
 
+### 16.19 Concrete runtime paths in both directions
+
+#### Flutter on Android, Apple and Web
+
+The same Dart-facing contract selects the generated integration for its platform. Reverse calls follow the same bridge and the runtime's scheduling rules.
+
+```mermaid
+flowchart TD
+    A["Flutter native Dart consumer or provider"] <-->|Calls and results| B["Dart FFI adapter and shared C ABI"]
+    B <-->|JNI| C["Kotlin or Java on Android"]
+    B <-->|Apple adapter| D["Swift or Objective-C on Apple"]
+    B <-->|Native adapter| E["C or C++ on desktop"]
+    F["Flutter Web Dart consumer or provider"] <-->|JS interop| G["JS or TS adapter"]
+    G <-->|WASM ABI| H["C or C++ WASM implementation"]
+```
+
 ## 17. Example applications
 
 ### 17.1 Shared modules
@@ -2627,6 +3208,38 @@ A minimal login form or CLI submits fictional username/password values, calls th
 
 Every language has a documented cross-language caller and implementation case, with repeatable commands. Include Flutter Android to Kotlin, Apple to Swift, native to Dart callback/provider, JVM to C++, Python to C++, C# to C++, JS to WASM and their supported reverse directions. Test switching providers without modifying the consumer. Exercise callbacks, cancellation, shared memory and shutdown. The conformance suite, not just UI demos, covers the full type and pair matrix.
 
+### 17.6 Example application flows
+
+#### HTTP and fake login
+
+Both examples prove an application call really reaches a foreign implementation.
+
+```mermaid
+flowchart TD
+    A["App invokes generated API"] --> B{"Selected interface"}
+    B -->|HttpClient| C["Foreign provider performs HTTP request"]
+    B -->|Auth| D["Foreign provider validates fictional credentials"]
+    C --> E["Typed response or error"]
+    D --> F["User or typed business error"]
+    E --> G["Bridge converts return"]
+    F --> G
+    G --> H["App displays result"]
+```
+
+#### Camera and grayscale
+
+Real camera access is platform-specific. The processing contract is shared.
+
+```mermaid
+flowchart TD
+    A["Capture camera frame or CI fixture"] --> B["Validate format, stride and dimensions"]
+    B --> C["Retain CPU-accessible DataRef"]
+    C --> D["Foreign image processor converts to grayscale"]
+    D --> E["Return owned output buffer"]
+    E --> F["Caller displays or checks exact pixels"]
+    F --> G["Release frame and result owners"]
+```
+
 ## 18. Test specification
 
 ### 18.0 Coverage and test design policy
@@ -2713,6 +3326,25 @@ For each feasible ordered pair A -> B (A consumes, B implements), test all suppo
 Test actual values from each language, not just a universal C fixture reflected unchanged back to itself. Include distinct sentinel values and provider-side assertions to detect reversed fields, signedness, wrong time unit, accidental defaulting and unexpected copies. Use reproducible seeds, exact numeric comparisons except explicitly defined float tolerance, canonical date/UUID representations and test failure injection for partial collection conversion. For each external type fixture, test no changes to generator source, module-specific naming/template overrides, descriptor schema errors, missing target, incompatible ABI, adapter compile error, both conversions, async/callback lifetimes and source/prebuilt package consumption.
 
 Report coverage by ordered pair, platform, type, usage, case ID and source revision. Required case coverage must be 100% of the declared feasible matrix before release. This is not a claim that all conceivable defects are impossible. Ordinary type/adapter tests run in each relevant language CI, and an aggregate interop check fails if any required pair or type lacks evidence.
+
+### 18.6 How conformance evidence is produced
+
+#### Test both language directions
+
+The expected cases are independent of what the backend reports as implemented.
+
+```mermaid
+flowchart TD
+    A["Shared type fixtures and required pair inventory"] --> B["Generate and compile real adapters"]
+    B --> C["A calls B with known input"]
+    B --> D["B calls A with known input"]
+    C --> E["Check provider input and independent return"]
+    D --> E
+    E --> F["Check lifetime, error and copy rules"]
+    F --> G{"All required case IDs executed?"}
+    G -->|Yes| H["Record evidence for exact commit"]
+    G -->|No| X["Fail or report blocker"]
+```
 
 ## 19. GitHub Actions
 
@@ -2860,13 +3492,13 @@ Keep directories meaningful. Do not create empty scaffolding just to match the t
 
 ### 20.2 README and logo
 
-The README is a concise public introduction in English, following the owner's existing project style. Use the centered logo, project name, one-line tagline and current project status. Use short Project, Features, Supported languages and platforms, Workflow and Documentation sections. Each feature is a brief, objective bullet with a meaningful label and short description. Keep technical architecture, detailed configuration, ABI contracts, complete examples and implementation checklists in PROJECT.md or the applicable docs/ guide rather than duplicating them in the README.
+The README is a concise public introduction in English, following the owner's existing project style. Use the centered logo, project name, one-line tagline and current project status. Use a progressive introduction: Project (the problem), How it works (one small IDL example and the call/return), Features (brief descriptions), Supported languages and platforms, Workflow and Documentation. Explain a term on first use, avoid unexplained acronyms and write plain English even for technical contracts. Each feature is a brief, objective bullet with a meaningful label and short description. Keep technical architecture, detailed configuration, ABI contracts, complete examples and implementation checklists in PROJECT.md or the applicable docs/ guide rather than duplicating them in the README.
 
 List every intended language and platform accurately, distinguish languages from integration targets, and clearly mark planned targets until actual build and execution evidence exists. Keep the public matrix consistent with section 2. Add concise installation/usage instructions only when they are runnable. Add centered CI and release badges only for real workflows or published artifacts. Add a License section only after the owner selects the license and the file exists. Never create fake badges, broken links, unsupported feature claims or fabricated examples to fill a section.
 
 The original SVG logo lives at extras/images/logo.svg. Use it directly in the README and keep it as a small, self-contained vector asset with a viewBox and accessible label. It should remain recognizable at small sizes on light and dark backgrounds. No external images, fonts, scripts or unnecessary variants. The mark combines two code brackets with a connecting element to represent native language interoperability.
 
-Use GitHub-renderable Mermaid flowcharts in PROJECT.md for the compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
+Use GitHub-renderable Mermaid flowcharts throughout PROJECT.md for every major feature, including both directions of calls and values, errors, cancellation, ownership and service discovery. Group related features rather than drawing redundant diagrams for each scalar. Place diagrams next to the contract they explain. Include compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
 
 ### 20.3 AGENTS.md and documentation
 
@@ -3304,6 +3936,27 @@ Keep ordinary deployment tests network-free and cloud-credential-free. Ordinary 
 
 Provide docs/deployment.md with AWS S3, R2 and generic S3-compatible configuration, optional extra installation, credential setup without exposing secrets, versioned bucket layout, dry-run, actual explicit command, partial-failure handling, integrity checks, remote SwiftPM URL/checksum integration and using the manifest in a consumer-owned custom deployment script. No new publishing framework for other services.
 
+### 20.11 Package and deploy detail
+
+#### Immutable SDK deployment
+
+The selected artifact is uploaded without rebuilding it or changing its version.
+
+```mermaid
+flowchart TD
+    A["Select product version, build and manifest"] --> B["Verify local paths and SHA-256"]
+    B --> C{"Dry run?"}
+    C -->|Yes| D["Print exact destination and files"]
+    C -->|No| E["Resolve scoped credentials and S3 endpoint"]
+    E --> F["Conditionally create objects"]
+    F --> G{"Remote bytes match?"}
+    G -->|No| X["Fail without overwriting"]
+    G -->|Yes| H["Write completion manifest last"]
+    H --> I["Report completed SDK deployment"]
+    F -->|Conflict| J["Verify existing exact bytes"]
+    J --> G
+```
+
 ## 21. Implementation phases and reviews
 
 Use the detailed checklist in section 22 as the implementation backlog. Check an item only when its implementation, meaningful tests and documentation are complete. Record evidence in the normal test reports and commit history rather than a task diary or another tracking framework. Before starting a phase, read the relevant specification and direct/transitive consumers. Implement a coherent vertical slice and verify it before extending the next target. Do not create empty scaffolding or placeholder success jobs.
@@ -3367,8 +4020,8 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.5 Built-in types and extension mechanism
 
 - [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Verify boundaries, invalid encodings, null and empty distinctions.
-- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, distinct nested optional presence states, exact enum/flag/tag checks, canonical equality/hash constraints (including Swift Unicode and JS UUID keys) and duplicate keys.
-- [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. Preserve calendar versus UTC semantics, signed exact units, canonical UUID order and checked native conversions.
+- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct nested optional states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
+- [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. All instants cross as UTC epoch microseconds. Preserve calendar dates without timezone shifts, signed exact units, canonical UUID order and checked native conversions, including different host timezone settings.
 - [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope and ownership contracts. Do not silently copy when a zero-copy contract is requested.
 - [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
 - [ ] Implement module-local external type descriptors and explicit host-language adapters using existing canonical ABI types. Support imports, dependencies, ownership, adapter build integration and validation without changing generator source.
@@ -3438,7 +4091,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Create real independent GitHub Actions checks for all required languages and platforms, generator, interop, packaging, docs and native sanitizers. Use latest stable verified actions and least privilege.
 - [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
-- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete planned/verified language and platform scope, honest status and real badges when available. Keep the PROJECT.md Mermaid diagrams consistent with the compiler and distribution workflow. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
+- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete planned/verified language and platform scope, honest status and real badges when available. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts. Keep the complete type and platform tables identical in PROJECT.md and AGENTS.md. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
 - [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, SDK version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.

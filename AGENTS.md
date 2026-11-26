@@ -48,13 +48,178 @@ The type system supports built-in exact date, timestamp, duration and UUID value
 
 Modules are the unit of generation. Products aggregate modules for binary distribution without changing module identity. Use CMake for native code and the proper ecosystem tooling for Gradle, Apple, SwiftPM, Python, Dart/Flutter, .NET and JS/TS/WASM. Isolate final artifacts by SDK version, build number, platform, architecture or slice set, format, configuration and sanitizer. Keep build plans and subprocess execution in Python and reuse the same CLI locally and in CI. No duplicate build systems or speculative helper frameworks.
 
+## Type and platform reference
+
+The following tables mirror the planned contract in PROJECT.md section 5.4. Keep the two copies identical when modifying a mapping. These are required target mappings, not evidence of implemented support. A backend must not invent a different representation merely to pass its tests.
+
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model only when explicitly configured. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+
+All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async method` is a declaration modifier rather than a value type. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
+
+#### Type meaning and native boundary
+
+| IDL | Meaning | C | WebAssembly |
+| --- | --- | --- | --- |
+| `bool` | True or false | uint8_t (0/1) | i32 (0/1) |
+| `int8` | Signed 8-bit integer | int8_t | i32, checked |
+| `int16` | Signed 16-bit integer | int16_t | i32, checked |
+| `int32` | Signed 32-bit integer | int32_t | i32 |
+| `int64` | Signed 64-bit integer | int64_t | i64 |
+| `uint8` | Unsigned 8-bit integer | uint8_t | i32, checked |
+| `uint16` | Unsigned 16-bit integer | uint16_t | i32, checked |
+| `uint32` | Unsigned 32-bit integer | uint32_t | i32 bit pattern |
+| `uint64` | Unsigned 64-bit integer | uint64_t | i64 bit pattern |
+| `float32` | 32-bit floating-point value | float | f32 |
+| `float64` | 64-bit floating-point value | double | f64 |
+| `string` | Unicode text | UTF-8 descriptor | UTF-8 in linear memory |
+| `bytes` | Independent binary value | Owned byte descriptor | Owned byte buffer |
+| `void` | Successful return with no payload | Status, no payload | Status, no payload |
+| `record` | Named group of values | Generated value/handle | Canonical fields |
+| `enum` | One declared integer value | int32_t + constants | i32, checked |
+| `flags` | Combined named bits | uint32_t + constants | i32 bit mask |
+| `variant` | One of several tagged alternatives | Tagged value + destroy | Tag + active payload |
+| `list<T>` | Ordered sequence | Typed descriptor/handle | Length + elements |
+| `set<T>` | Unique values | Typed descriptor/handle | Canonical unique elements |
+| `map<K,V>` | Keys mapped to values | Typed descriptor/handle | Canonical key/value pairs |
+| `array<T>` | Sequence with contiguous primitive optimization | Typed array descriptor | Length + typed or element buffer |
+| `optional<T>` | Absent or present value | Presence tag + payload | Presence tag + payload |
+| `Result<T,E>` | Business success or business error | Tagged result + destroy | Tag + active payload |
+| `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
+| `callback` | Callable passed to another implementation | Function table + context | Typed callback handle |
+| `async method` | Operation that completes later | Completion + operation handle | Operation handle + completion |
+| `Stream<T>` | Sequence of asynchronous events | Subscription handle | Subscription handle |
+| `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
+| `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
+| `date` | Calendar date, without a time | int64_t epoch days | i64 epoch days |
+| `timestamp` | UTC instant, exact microseconds | int64_t UTC microseconds | i64 UTC microseconds |
+| `duration` | Signed elapsed nanoseconds | int64_t nanoseconds | i64 nanoseconds |
+| `uuid` | 128-bit identifier | 16-byte value | 16 canonical bytes |
+| `DataView` | Scoped read-only borrowed memory | Const pointer + length | Scoped offset + length |
+| `MutableDataView` | Scoped exclusive writable memory | Writable pointer + length | Exclusive scoped offset + length |
+| `DataRef` | Shared owning buffer reference | Owning handle | Context-local owner handle |
+| `external` | User-defined host type with canonical mapping | Declared type / adapter | Declared canonical representation |
+
+#### Native and JVM public APIs
+
+| IDL | C++ | Java | Kotlin | Objective-C | Swift |
+| --- | --- | --- | --- | --- | --- |
+| `bool` | bool | boolean | Boolean | BOOL | Bool |
+| `int8` | std::int8_t | byte | Byte | int8_t | Int8 |
+| `int16` | std::int16_t | short | Short | int16_t | Int16 |
+| `int32` | std::int32_t | int | Int | int32_t | Int32 |
+| `int64` | std::int64_t | long | Long | int64_t | Int64 |
+| `uint8` | std::uint8_t | short | UByte | uint8_t | UInt8 |
+| `uint16` | std::uint16_t | int | UShort | uint16_t | UInt16 |
+| `uint32` | std::uint32_t | long | UInt | uint32_t | UInt32 |
+| `uint64` | std::uint64_t | BigInteger | ULong | uint64_t | UInt64 |
+| `float32` | float | float | Float | float | Float |
+| `float64` | double | double | Double | double | Double |
+| `string` | std::string | String | String | NSString | String |
+| `bytes` | std::vector<uint8_t> | byte[] | ByteArray | NSData | Data |
+| `void` | void | void / Void | Unit | void | Void |
+| `record` | struct | Immutable class | data class | NSObject model | struct or imported model |
+| `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
+| `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
+| `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
+| `list<T>` | std::vector<T> | List<T> | List<T> | NSArray | [T] |
+| `set<T>` | std::set / hash set | Set<T> | Set<T> | NSSet | Set<T> |
+| `map<K,V>` | std::map / hash map | Map<K,V> | Map<K,V> | NSDictionary | Dictionary<K,V> |
+| `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
+| `optional<T>` | std::optional<T> | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | Optional<T> |
+| `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
+| `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
+| `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
+| `async method` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
+| `Stream<T>` | Async stream | Publisher adapter | Flow | Subscription + block | AsyncSequence |
+| `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
+| `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
+| `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
+| `timestamp` | sys_time<microseconds> | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
+| `duration` | std::chrono::nanoseconds | Duration | java.time.Duration | Exact duration wrapper | Duration or exact wrapper |
+| `uuid` | UUID value wrapper | UUID | UUID | NSUUID | UUID |
+| `DataView` | Scoped read-only span | Checked read view | Checked read view | Checked read view | Scoped read-only access |
+| `MutableDataView` | Scoped writable span | Checked write view | Checked write view | Checked write view | Scoped writable access |
+| `DataRef` | RAII owner | Retained buffer owner | Retained buffer owner | Retained buffer owner | Retained buffer owner |
+| `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
+
+#### Managed and web public APIs
+
+| IDL | Python | Dart native | Dart Web | C# | JavaScript | TypeScript |
+| --- | --- | --- | --- | --- | --- | --- |
+| `bool` | bool | bool | bool | bool | boolean | boolean |
+| `int8` | int | int | int | sbyte | number | number |
+| `int16` | int | int | int | short | number | number |
+| `int32` | int | int | int | int | number | number |
+| `int64` | int | int | BigInt | long | bigint | bigint |
+| `uint8` | int | int | int | byte | number | number |
+| `uint16` | int | int | int | ushort | number | number |
+| `uint32` | int | int | int | uint | number | number |
+| `uint64` | int | BigInt | BigInt | ulong | bigint | bigint |
+| `float32` | float | double | double | float | number | number |
+| `float64` | float | double | double | double | number | number |
+| `string` | str | String | String | string | string | string |
+| `bytes` | bytes | Uint8List | Uint8List | byte[] | Uint8Array | Uint8Array |
+| `void` | None | void | void | void | undefined | void |
+| `record` | Frozen dataclass | Immutable class | Immutable class | record / class | Immutable object | Readonly model + runtime object |
+| `enum` | Enum | enum | enum | enum | Frozen constants | Checked numeric type |
+| `flags` | IntFlag / checked wrapper | Flags wrapper | Flags wrapper | Flags enum / wrapper | Checked mask | Checked mask |
+| `variant` | Tagged dataclass union | Sealed class | Sealed class | Tagged record hierarchy | Tagged object | Discriminated union |
+| `list<T>` | list[T] | List<T> | List<T> | IReadOnlyList<T> | Array | ReadonlyArray<T> |
+| `set<T>` | set[T] | Set<T> | Set<T> | IReadOnlySet<T> | Set | Set<T> |
+| `map<K,V>` | dict[K,V] | Map<K,V> | Map<K,V> | IReadOnlyDictionary<K,V> | Map | Map<K,V> |
+| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / Memory<T> | TypedArray / Array | TypedArray / ReadonlyArray<T> |
+| `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
+| `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
+| `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
+| `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
+| `async method` | Awaitable / async def | Future | Future | Task | Promise | Promise |
+| `Stream<T>` | AsyncIterator | Stream | Stream | IAsyncEnumerable<T> | AsyncIterable | AsyncIterable<T> |
+| `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
+| `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
+| `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
+| `timestamp` | Exact wrapper + aware datetime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + DateTimeOffset conversion | bigint + Date conversion | bigint + Date conversion |
+| `duration` | Exact wrapper + timedelta conversion | Exact wrapper + Duration conversion | Exact wrapper + Duration conversion | Exact wrapper + TimeSpan conversion | bigint nanoseconds | bigint nanoseconds |
+| `uuid` | uuid.UUID | UUID wrapper | UUID wrapper | Guid | Canonical UUID string | Canonical UUID string |
+| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked linear-memory view | Checked linear-memory view |
+| `MutableDataView` | Checked write view | Checked write view | Checked write view | Scoped writable access | Checked writable memory view | Checked writable memory view |
+| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Linear-memory owner | Linear-memory owner |
+| `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
+
+Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through Number. Numeric arrays use exact contiguous representations only where available. Float32 rounding occurs at the boundary. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
+
+Collection key types are limited to bool, integer, string, enum and UUID, plus external types proven to preserve one of those key representations. Reject duplicate canonical keys. There is no portable set/map iteration order. Key wrappers are needed when host equality differs from canonical equality, such as Swift canonical-equivalent Unicode strings. JS UUID keys use canonical strings. Preserve float signed zero, infinity and NaN classification without promising NaN payload bits. UUID bytes use network order. No borrowed memory may escape a direct synchronous parameter. DataRef is read-only by default and retains its true owner. See sections 5.6, 5.8, 13 and 14 of PROJECT.md for detailed rules.
+
+### Platform coverage
+
+| Platform | Required primary targets | Evidence |
+| --- | --- | --- |
+| Linux | C, C++, Java, Kotlin, Python, Dart, Flutter, C# | Native execution |
+| Windows | C, C++, Java, Kotlin, Python, Dart, Flutter, C# | Native execution |
+| macOS | C, C++, Objective-C, Swift, Java, Kotlin, Python, Dart, Flutter, C# | Native execution |
+| Android | C, C++, Java, Kotlin, Dart, Flutter | Emulator and device smoke where required |
+| Android XR | C, C++, Java, Kotlin | SDK build and compatible emulator/device |
+| iOS / iPadOS | C, C++, Objective-C, Swift, Dart, Flutter | Simulator and device smoke where required |
+| tvOS | C, C++, Objective-C, Swift | SDK build and simulator |
+| watchOS | C, C++, Objective-C, Swift | SDK build and simulator |
+| visionOS | C, C++, Objective-C, Swift | SDK build and visionOS simulator/device |
+| Mac Catalyst | C, C++, Objective-C, Swift | SDK build and execution |
+| WebAssembly | C/C++, JS, TS, Dart/Flutter Web where supported | Node and browser execution |
+
+Flutter uses Dart bindings and platform integration, not a separate type system. WASM uses the canonical ABI lowering and generated web bindings. All platform entries remain planned until their required build and execution evidence exists.
+
+### Required UTC and optional rules
+
+Every instant crosses as signed UTC epoch microseconds, without reading the host default timezone. Convert timezone-aware inputs to UTC before crossing. Never assume a timezone for naive or ambiguous values. Return UTC-native instants when a native conversion is representable and reject precision/range loss. A calendar date crosses as Gregorian epoch days without time or timezone, and durations cross as signed nanoseconds. Apply these rules recursively in external adapters, collections, callbacks, async, streams and records.
+
+All types are non-null unless declared optional<T>. Every method argument is supplied explicitly. Only record construction may apply a declared default for an omitted field. An omitted optional without a default is absent. Explicit null means absent for an optional and an error for a required value, never a request to use a default. Preserve empty, false and zero values. Use a presence tag at the ABI for every optional layer. Do not read or release inactive payloads. Nested optional states must remain distinct even if a host's nullable type collapses them. Use typed wrappers for those cases and for nullable Objective-C collection elements. JS/TS use null for absence, reject explicit undefined for values and sparse array holes, and reserve undefined for a no-payload void return. A missing map key differs from a present key with an absent optional value. A failed invocation, business error and cancellation differ from successful absence. Apply PROJECT.md section 5.8 and the shared conformance fixtures.
+
 ## README, branding and diagrams
 
-Follow the owner's established public README style, as seen in the Haylen and XPLPC repositories. Keep the README in English with a centered original SVG logo, project name, short tagline and current status. Use a brief project presentation, a concise feature list with short descriptions, the language/platform matrix, a short workflow and documentation links. Use the actual GitHub-rendered Markdown surface and meaningful alternative text. Do not turn the README into a second technical specification. Keep implementation details, configuration and full examples in PROJECT.md or docs/.
+Follow the owner's established public README style, as seen in the Haylen and XPLPC repositories. Keep the README in English with a centered original SVG logo, project name, short tagline and current status. Use plain English and progressive learning: first the real problem, then the solution and a small labeled IDL example, then the two-way call flow, concise features, language/platform matrix, workflow and documentation links. Define technical terms on first use. Preserve technical precision without assuming prior knowledge. Use the actual GitHub-rendered Markdown surface and meaningful alternative text. Do not turn the README into a second technical specification. Keep implementation details, configuration and full examples in PROJECT.md or docs/.
 
 List planned capabilities as planned until their actual implementation and tests exist. Keep the target/platform matrix aligned with PROJECT.md. Distinguish Flutter and WASM integration targets from programming languages. Add real CI badges only when the referenced workflows exist. Add installation instructions, runnable examples, release badges and license information only when verified or authorized. Do not link to future files that do not exist.
 
-Maintain the original clean vector logo in extras/images/logo.svg. Use the existing asset directly, without external fonts, images, scripts or unnecessary duplicates. Keep the README header readable on light and dark backgrounds. Maintain simple GitHub Mermaid flowcharts in PROJECT.md for the compiler and build/distribution pipelines. Update the diagrams with the corresponding contracts and keep prose understandable without rendering. Do not introduce a documentation generator or diagram dependency solely for these assets. Check actual links, images, anchors and rendered Markdown where available. Follow the Markdown profile in the owner's skills.
+Maintain the original clean vector logo in extras/images/logo.svg. Use the existing asset directly, without external fonts, images, scripts or unnecessary duplicates. Keep the README header readable on light and dark backgrounds. Maintain simple GitHub Mermaid flowcharts in PROJECT.md beside each major feature contract, including value conversions, direct and registry calls, callbacks, async, cancellation, streams, memory, errors, compiler and build/distribution pipelines. Show both directions and meaningful failure or cleanup paths. Avoid duplicating diagrams for equivalent types. Update the diagrams with the corresponding contracts and keep prose understandable without rendering. Do not introduce a documentation generator or diagram dependency solely for these assets. Check actual links, images, anchors and rendered Markdown where available. Follow the Markdown profile in the owner's skills.
 
 ## Development commands
 
