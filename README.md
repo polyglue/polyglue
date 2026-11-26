@@ -1,113 +1,74 @@
-# PolyGlue
+<p align="center">
+    <a href="https://github.com/polyglue/polyglue" target="_blank" rel="noopener noreferrer"><img width="120" src="extras/images/logo.svg" alt="PolyGlue logo"></a>
+</p>
 
-**One definition. Multiple languages. Native interoperability.**
+<h1 align="center">PolyGlue</h1>
 
-PolyGlue is a planned cross-platform interface compiler and code generator for type-safe, bidirectional interoperability between programming languages.
+<p align="center">
+    One definition. Multiple languages. Native interoperability.
+</p>
 
-Define your data models, interfaces, callbacks, and asynchronous operations once, then generate idiomatic native bindings for multiple languages. Implementations can live in any compatible target runtime, rather than being restricted to C++.
+<p align="center">
+    <strong>Version 0.0.1 — In development</strong>
+</p>
 
-> **Development version:** 0.0.1 (unreleased).
->
-> **Project status:** Early design and development. The features, targets, and APIs described below are planned, not yet implemented or released.
+## Project
 
-## Goals
+PolyGlue is a cross-platform interface compiler and code generator designed to connect programming languages through native, strongly typed interfaces.
 
-- Python-based compiler with per-module and per-target Jinja2 template overrides.
-- Independent, modular interface definition language (IDL).
-- Bidirectional native calls without mandatory serialization or network transport.
-- Strongly typed records, enums, variants, interfaces, collections, results, callbacks, async operations, and streams.
-- Built-in date, timestamp, duration and UUID, with checked native conversions.
-- Custom external types through module-owned descriptors and host adapters, without changing the generator.
-- Explicit memory ownership, scoped data views and shared buffers with zero-copy transfers where supported.
-- Optional service discovery and replaceable implementations.
-- Per-module and per-target configuration for naming conventions, prefixes, namespaces, packages, output paths, imports, annotations, and formatting.
-- Native support libraries maintained and tested in the same repository as the generator.
-- Deterministic code generation, CMake native builds and Python-orchestrated packaging for AAR, XCFramework and other target-native formats.
-- SDK version and build number propagated to native and ecosystem packages from one product configuration.
-- Optional explicit deployment of validated SDKs to AWS S3, Cloudflare R2 and compatible object storage.
-- Local installation using uv, with future PyPI distribution only after explicit approval.
+Define your models and interfaces once, then generate bindings for multiple languages. Implement a contract in Kotlin, Swift, C++ or another supported runtime and consume it from a different language without a server or mandatory serialization.
 
-## Example
+> PolyGlue is in early development. The features and targets below describe the planned scope, not verified support.
 
-The following IDL illustrates the proposed syntax. The examples are not executable until the generator is implemented:
+## Features
 
-```typescript
-module domain;
+- 🔗 **Native interoperability:** bidirectional calls through generated interfaces and bindings.
+- 🧩 **Modular IDL:** reusable models, interfaces and independent modules.
+- 📚 **Rich types:** records, collections, enums, results, dates and custom external types.
+- ⚡ **Asynchronous operations:** native async APIs, callbacks, streams and cancellation.
+- 💾 **Shared memory:** explicit ownership and zero-copy buffers where supported.
+- 🔄 **Service discovery:** optional registry with replaceable implementations.
+- 🎨 **Customization:** per-module naming, prefixes, annotations and template overrides.
+- 🛠️ **Build tools:** one Python CLI for generation, compilation, testing and packaging.
+- 📦 **SDK distribution:** versioned AAR, XCFramework, native libraries and ecosystem packages.
+- ☁️ **Cloud deployment:** optional upload to Amazon S3, Cloudflare R2 and compatible storage.
+- ✅ **Quality:** automated cross-language, memory, concurrency and packaged-consumer tests.
 
-record User {
-    id: int64;
-    name: string;
-}
-```
+## Supported languages and platforms
 
-```typescript
-module repository;
+The following targets are planned. Each combination is confirmed only after its build and runtime tests pass.
 
-import domain.User;
+### Languages
 
-interface UserRepository {
-    async findById(id: int64): optional<User>;
-    async findAll(): list<User>;
-    async count(): int64;
-    async exists(id: int64): bool;
-}
-```
+C, C++, Java, Kotlin, Objective-C, Swift, Python, Dart, C#, JavaScript and TypeScript.
 
-A repository implemented in Kotlin could be consumed from Dart, Swift, or C++ when the corresponding runtimes are available in the same execution environment. Generated adapters would handle type conversion, object references, async completion, and lifecycle management.
+Flutter and WebAssembly are also planned integration targets.
 
-## Planned targets
+### Platforms
 
-| Language | Interoperability mechanism |
+| Platform | Primary targets |
 | --- | --- |
-| C | C ABI |
-| C++ | Native interfaces |
-| Java / Kotlin | JNI |
-| Objective-C | Objective-C++ |
-| Swift | Native Apple adapters |
-| Python | CPython adapters |
-| Dart / Flutter | FFI and platform adapters |
-| C# | .NET native interoperability |
-| JavaScript / TypeScript | WebAssembly and JavaScript adapters |
+| 🐧 Linux | C, C++, Java, Kotlin, Python, Dart, Flutter, C# |
+| 🪟 Windows | C, C++, Java, Kotlin, Python, Dart, Flutter, C# |
+| 🍎 macOS | C, C++, Objective-C, Swift, Java, Kotlin, Python, Dart, Flutter, C# |
+| 🤖 Android | C, C++, Java, Kotlin, Dart, Flutter |
+| 🥽 Android XR | C, C++, Java, Kotlin |
+| 📱 iOS and iPadOS | C, C++, Objective-C, Swift, Dart, Flutter |
+| 📺 tvOS | C, C++, Objective-C, Swift |
+| ⌚ watchOS | C, C++, Objective-C, Swift |
+| 🥽 visionOS | C, C++, Objective-C, Swift |
+| 💻 Mac Catalyst | C, C++, Objective-C, Swift |
+| 🌐 Web | WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
 
-Planned platforms include Windows, Linux, macOS, Android, Android XR, iOS, iPadOS, tvOS, watchOS, visionOS, Mac Catalyst, and WebAssembly. Actual target combinations depend on runtime and platform capabilities.
+## Workflow
 
-## Architecture
+Define → Generate → Build → Test → Package → Deploy (optional).
 
-```text
-IDL + Module Configuration
-           |
-    Python Compiler
-           |
-    Semantic IR
-           |
-    Language Backends + Templates
-           |
-    Generated Native Bindings
-           |
-    Native Support Runtime
-```
-
-The compiler and generator are build-time tools. Generated applications do not require Python unless Python is itself a selected runtime target.
-
-## Quality and testing
-
-PolyGlue plans independent CI checks for every target, real bidirectional conformance for supported types and feasible language pairs, installed-package tests, memory and concurrency regression tests and appropriate sanitizers. Shared fixtures, risk-based tests and safe build/dependency caching will keep CI efficient. Longer stress and fuzz tests will be used where they add evidence.
-
-Support will be declared only after corresponding implementation, tests and documentation are verified. See the detailed [implementation checklist](PROJECT.md#22-implementation-and-acceptance-checklist).
-
-## Planned SDK distribution
-
-The product configuration will define the SDK version and build number independently of the PolyGlue version. The planned package command will create versioned, validated native and ecosystem artifacts. An optional deploy command will upload the exact packaged artifacts to an explicitly selected S3-compatible bucket and prefix. Other deployment systems can consume the local artifact manifest. No automatic cloud upload or registry publication is planned.
-
-## Installation
-
-PolyGlue is not yet published. Development builds are for local and CI testing only. PyPI publication requires completed acceptance checks and explicit owner approval.
+See the [compiler pipeline](PROJECT.md#111-pipeline) and [SDK distribution workflow](PROJECT.md#205-python-build-orchestration-and-artifact-pipeline) for details.
 
 ## Documentation
 
 - [Project specification](PROJECT.md)
 - [Engineering and contribution rules](AGENTS.md)
 
-## Design
-
-PolyGlue is an independent project. It does not aim for compatibility with existing IDL tools and does not require Protocol Buffers.
+Installation instructions, usage examples and language guides will be added as the implementation is verified. No package has been released yet.

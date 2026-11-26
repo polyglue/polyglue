@@ -22,6 +22,7 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
 - [11. Compiler and templates](#11-compiler-and-templates)
+  - [Compiler pipeline](#111-pipeline)
   - [Template override system](#115-template-override-system-mandatory)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
 - [13. Memory and buffers](#13-memory-and-buffers)
@@ -34,10 +35,11 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
-  - [SDK deployment to S3-compatible object storage](#2010-sdk-deployment-to-s3-compatible-object-storage)
+  - [README and logo](#202-readme-and-logo)
   - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
+  - [SDK deployment to S3-compatible object storage](#2010-sdk-deployment-to-s3-compatible-object-storage)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
 - [22. Implementation and acceptance checklist](#22-implementation-and-acceptance-checklist)
   - [Repository and tooling](#221-repository-tooling-and-engineering-rules)
@@ -1781,29 +1783,28 @@ Provide sources mode (integrate into existing build) and package mode (standalon
 
 ### 11.1 Pipeline
 
-```text
-Project and module configuration
-              |
-     Source discovery / parser
-              |
-         AST + source spans
-              |
-    Symbol table / semantic resolver
-              |
-        Canonical typed IR
-              |
-    Target naming and output planner
-              |
-     Import / dependency resolver
-              |
-     Target-specific render models
-              |
-          Jinja2 templates
-              |
-      Validated output file plan
-              |
-     Atomic writes + manifest
+The compiler resolves and validates the complete selected module graph before any generated output is committed. Template overrides affect rendering, not semantic validation.
+
+```mermaid
+flowchart TD
+    config["Project and module configuration"] --> parse["Discover sources and parse IDL"]
+    idl["IDL and external type descriptors"] --> parse
+    parse --> ast["AST and source spans"]
+    ast --> semantic["Symbol and semantic resolution"]
+    deps["Source and prebuilt dependencies"] --> semantic
+    semantic --> ir["Canonical typed IR"]
+    ir --> plan["Target naming, types and output planning"]
+    plan --> imports["Resolve imports and dependencies"]
+    imports --> models["Target-specific render models"]
+    models --> render["Render Jinja2 templates"]
+    templates["Built-in and custom templates"] --> render
+    render --> validate{"Output plan valid?"}
+    validate -->|Yes| write["Atomic file writes"]
+    validate -->|No| error["Diagnostic and no successful generation"]
+    write --> manifest["Commit generation manifest"]
 ```
+
+Any validation or rendering failure stops generation. An interrupted write must not leave a successful manifest. See section 11.4.
 
 ### 11.2 Responsibilities
 
@@ -2859,7 +2860,13 @@ Keep directories meaningful. Do not create empty scaffolding just to match the t
 
 ### 20.2 README and logo
 
-README in English, following the existing project style: centered original SVG logo and short tagline, actual CI badges, Project, Workflow, How to use, Supported languages and platforms, Documentation, License. Include working IDL and generated-API examples. Mark planned features clearly. Logo: clean, modern, recognizable vector mark suggesting multiple languages joining through a bridge/glue. Works on light/dark backgrounds and small sizes, no external image dependencies.
+The README is a concise public introduction in English, following the owner's existing project style. Use the centered logo, project name, one-line tagline and current project status. Use short Project, Features, Supported languages and platforms, Workflow and Documentation sections. Each feature is a brief, objective bullet with a meaningful label and short description. Keep technical architecture, detailed configuration, ABI contracts, complete examples and implementation checklists in PROJECT.md or the applicable docs/ guide rather than duplicating them in the README.
+
+List every intended language and platform accurately, distinguish languages from integration targets, and clearly mark planned targets until actual build and execution evidence exists. Keep the public matrix consistent with section 2. Add concise installation/usage instructions only when they are runnable. Add centered CI and release badges only for real workflows or published artifacts. Add a License section only after the owner selects the license and the file exists. Never create fake badges, broken links, unsupported feature claims or fabricated examples to fill a section.
+
+The original SVG logo lives at extras/images/logo.svg. Use it directly in the README and keep it as a small, self-contained vector asset with a viewBox and accessible label. It should remain recognizable at small sizes on light and dark backgrounds. No external images, fonts, scripts or unnecessary variants. The mark combines two code brackets with a connecting element to represent native language interoperability.
+
+Use GitHub-renderable Mermaid flowcharts in PROJECT.md for the compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
 
 ### 20.3 AGENTS.md and documentation
 
@@ -3042,31 +3049,30 @@ src/polyglue/
 
 This structure is conceptual. Consolidate small functions rather than creating excessive files. Build plans are immutable data describing commands, input fingerprints, dependencies and expected outputs. The plan is inspectable before execution, supports host/target distinction, and validates requested SDKs/platforms/architectures up front.
 
-Pipeline:
+The build and distribution pipeline consumes the configured SDK version and build number throughout. The final cloud deployment is optional and explicitly invoked.
 
-```text
-Read configuration and product definition
-                  |
-Resolve IDL and native dependency closure
-                  |
-Validate host tools and target capabilities
-                  |
-Generate selected module sources
-                  |
-Plan target-specific native build slices
-                  |
-CMake configure -> compile -> stage/install
-                  |
-Ecosystem build (Gradle, Xcode, etc.)
-                  |
-Assemble final package and debug symbols
-                  |
-Inspect artifact ABI, architecture, exports, metadata
-                  |
-Install in separate consumer and execute conformance
-                  |
-Publish local artifact manifest and test evidence
+```mermaid
+flowchart TD
+    product["Product configuration and SDK version/build"] --> resolve["Resolve modules and native dependencies"]
+    resolve --> doctor["Validate host tools and target capabilities"]
+    doctor --> generate["Generate selected module sources"]
+    generate --> slices["Plan platform and architecture slices"]
+    slices --> native["CMake configure, compile and stage"]
+    native --> ecosystem["Build ecosystem packages where required"]
+    ecosystem --> assemble["Assemble final package and debug symbols"]
+    assemble --> inspect["Inspect ABI, metadata, architectures and hashes"]
+    inspect --> consumer["Install in independent consumer and test"]
+    consumer --> ready{"Required checks passed?"}
+    ready -->|No| failed["Report failure and block release"]
+    ready -->|Yes| artifact["Validated local artifact and evidence"]
+    artifact --> choice{"Explicit deploy requested?"}
+    choice -->|No| done["Keep local SDK"]
+    choice -->|Yes| upload["Upload exact packaged bytes to S3-compatible storage"]
+    upload --> verify["Verify remote hashes"]
+    verify --> complete["Write deployment completion manifest"]
 ```
+
+Each stage must stop on failure. Packaging does not implicitly deploy. The deploy command consumes the existing validated package rather than recompiling or re-archiving it. A failed consumer or deployment check must never be reported as successful.
 
 The same CLI and code path is used locally, by Makefile and in GitHub Actions. The Makefile exposes thin aliases such as setup, lint, test, build, package, docs and clean. It must not duplicate build logic or assume all SDKs are available. No hidden IDE-only steps. If generating sources for an existing project, users can still build them using their own tools without the PolyGlue CLI.
 
@@ -3432,7 +3438,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Create real independent GitHub Actions checks for all required languages and platforms, generator, interop, packaging, docs and native sanitizers. Use latest stable verified actions and least privilege.
 - [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
-- [ ] Provide the clean original SVG logo, concise owner-style README with honest status and real badges, AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
+- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete planned/verified language and platform scope, honest status and real badges when available. Keep the PROJECT.md Mermaid diagrams consistent with the compiler and distribution workflow. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
 - [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, SDK version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.

@@ -2,7 +2,7 @@
 
 ## Purpose and capabilities
 
-PolyGlue is a planned Python interface compiler and source generator for typed, bidirectional interoperability between native and managed runtimes. The current development version is 0.0.1. The repository currently contains the specification and project documentation, not a working compiler or native runtime.
+PolyGlue is a planned Python interface compiler and source generator for typed, bidirectional interoperability between native and managed runtimes. The current development version is 0.0.1. The repository currently contains the specification, project documentation and original branding, not a working compiler or native runtime.
 
 Read [PROJECT.md](PROJECT.md) before implementation. It defines product scope, all target languages and platforms, IDL semantics, module-first configuration, template overrides, ABI, native packaging, examples, test matrix and acceptance gates. Do not claim a planned capability has been implemented.
 
@@ -27,6 +27,7 @@ Current files:
 - PROJECT.md: planned architecture, specification and release acceptance.
 - README.md: public introduction and project status.
 - AGENTS.md: working rules.
+- extras/images/logo.svg: original vector logo used by the README.
 
 Planned implementation map (create directories when they contain actual functionality):
 
@@ -36,7 +37,6 @@ Planned implementation map (create directories when they contain actual function
 - examples/: shared IDL modules and real consumer/provider apps for each language.
 - tests/: compiler, generated-code, native, cross-language, memory, concurrency, installed-consumer and fuzz tests.
 - docs/: current user documentation, not implementation plans disguised as supported features.
-- extras/images/: source branding assets.
 - .github/workflows/: independent target CI and artifact checks.
 - build/ and dist/: ignored generated build and package outputs.
 
@@ -47,6 +47,14 @@ The runtime implements shared ABI mechanics, ownership, references, buffers, asy
 The type system supports built-in exact date, timestamp, duration and UUID values, with checked native conversions. Keep the built-in catalog limited to the specified common types and use external types or ordinary IDL for domain-specific values. External types use module-owned versioned descriptors, existing canonical ABI representations and explicit host-language adapters. Users must be able to add a type without editing or rebuilding the generator. Never silently truncate temporal values, invent a target mapping, evaluate descriptor code or use raw foreign pointers as integers. Follow the external type schema and tests in PROJECT.md.
 
 Modules are the unit of generation. Products aggregate modules for binary distribution without changing module identity. Use CMake for native code and the proper ecosystem tooling for Gradle, Apple, SwiftPM, Python, Dart/Flutter, .NET and JS/TS/WASM. Isolate final artifacts by SDK version, build number, platform, architecture or slice set, format, configuration and sanitizer. Keep build plans and subprocess execution in Python and reuse the same CLI locally and in CI. No duplicate build systems or speculative helper frameworks.
+
+## README, branding and diagrams
+
+Follow the owner's established public README style, as seen in the Haylen and XPLPC repositories. Keep the README in English with a centered original SVG logo, project name, short tagline and current status. Use a brief project presentation, a concise feature list with short descriptions, the language/platform matrix, a short workflow and documentation links. Use the actual GitHub-rendered Markdown surface and meaningful alternative text. Do not turn the README into a second technical specification. Keep implementation details, configuration and full examples in PROJECT.md or docs/.
+
+List planned capabilities as planned until their actual implementation and tests exist. Keep the target/platform matrix aligned with PROJECT.md. Distinguish Flutter and WASM integration targets from programming languages. Add real CI badges only when the referenced workflows exist. Add installation instructions, runnable examples, release badges and license information only when verified or authorized. Do not link to future files that do not exist.
+
+Maintain the original clean vector logo in extras/images/logo.svg. Use the existing asset directly, without external fonts, images, scripts or unnecessary duplicates. Keep the README header readable on light and dark backgrounds. Maintain simple GitHub Mermaid flowcharts in PROJECT.md for the compiler and build/distribution pipelines. Update the diagrams with the corresponding contracts and keep prose understandable without rendering. Do not introduce a documentation generator or diagram dependency solely for these assets. Check actual links, images, anchors and rendered Markdown where available. Follow the Markdown profile in the owner's skills.
 
 ## Development commands
 
