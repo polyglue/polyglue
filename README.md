@@ -38,14 +38,14 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 - ⚙️ C
 - ⚙️ C++
 - ☕ Java
-- 🟣 Kotlin
+- 🧩 Kotlin
 - 🍎 Objective-C
 - 🐦 Swift
 - 🐍 Python
 - 🎯 Dart
-- 🟪 C#
-- 🟨 JavaScript
-- 🟦 TypeScript
+- 🎵 C#
+- ⚡ JavaScript
+- 📘 TypeScript
 
 Integration targets:
 
