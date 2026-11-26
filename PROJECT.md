@@ -57,6 +57,14 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Public lifecycle control and errors](#125-public-lifecycle-control-and-errors)
   - [Handle identity, contract fingerprints and start/completion invariants](#126-handle-identity-contract-fingerprints-and-startcompletion-invariants)
 - [13. Memory and buffers](#13-memory-and-buffers)
+  - [Reference and value ownership matrix](#1321-reference-and-value-ownership-matrix)
+  - [Host-specific memory and execution rules](#1322-host-specific-memory-and-execution-rules)
+  - [Proxy identity, root pressure and cycles](#1323-proxy-identity-root-pressure-and-cycles)
+  - [Borrow scopes and aliasing](#135-borrow-scopes-and-aliasing)
+  - [DataRef storage ownership and zero-copy](#136-dataref-storage-ownership-and-zero-copy)
+  - [Memory domains and platform boundaries](#137-memory-domains-and-platform-boundaries)
+  - [Configurable resource limits and diagnostics](#138-configurable-resource-limits-and-diagnostics)
+  - [Prior-art and official platform review](#139-prior-art-and-official-platform-review)
   - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
   - [Async, callbacks, cancellation and streams in motion](#145-async-callbacks-cancellation-and-streams-in-motion)
@@ -79,6 +87,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Default profiles and installed public API conformance](#189-default-profiles-and-installed-public-api-conformance)
   - [Cross-contract and ownership regression fixtures](#1810-cross-contract-and-ownership-regression-fixtures)
   - [Cross-boundary consistency checks](#1811-cross-boundary-consistency-checks)
+  - [Type and ownership audit acceptance](#1812-type-and-ownership-audit-acceptance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -3226,19 +3235,77 @@ DataRef retains the true owner, including for subranges. Creating a reference to
 | --- | --- |
 | C | Pointer + length scoped view. Opaque owning handle |
 | C++ | span-like view. RAII reference |
-| Java/Kotlin | Scoped direct ByteBuffer wrapper. Retained owner |
+| Java/Kotlin | Checked scoped view, no unrestricted ByteBuffer escape. Retained actual storage owner |
 | Swift | Checked scoped access. Raw pointer only through explicit unsafe API. Owner object |
 | Obj-C | Checked scoped read/write wrapper. Retained owner |
 | Python | Checked scoped wrapper. Owning buffer exporter for retained memory |
 | Dart | Checked native view and owned FFI reference |
-| C# | Span-like scoped access. SafeHandle/owner for shared data |
-| JS/TS/WASM | Checked view of linear memory. Lease or reacquire after memory growth |
+| C# | Checked scoped access with actual handle/pin lease. SafeHandle/owner for shared data |
+| JS/TS/WASM | Checked linear-memory access under lease; reacquire after growth; no unrestricted borrowed TypedArray |
 
 A typed array in a JS heap is not automatically shared with WASM. Direct JVM buffers, GC pinning, Python buffer exporters, Dart finalizers and camera/GPU surfaces require specific lifetimes. Do not claim zero-copy when memory placement or runtime capabilities prevent it.
+
+#### 13.2.1 Reference and value ownership matrix
+
+The ABI must identify the owner of every allocation, reference, access lease and queued envelope. Inputs are borrowed for the immediate call unless their semantics acquire an owning reference. An accepted asynchronous operation snapshots value arguments and retains capability arguments before the initiating call returns. Successful output transfers exactly one owning result to the caller; rejected start/failure transfers no active payload. Conversions hold temporary owners and commit only after successful construction. Reference leaves inside records, variants, optionals, arrays, maps and external types are retained recursively, not copied into new provider objects. Releasing a container releases exactly the reference leaves it owns. Value copying and capability retention are distinct operations.
+
+| Resource | Required owner and release |
+| --- | --- |
+| C ABI string, bytes, record or collection | Allocator provenance and generated init/destroy; only creator's matching allocator/destroy path frees storage |
+| C++ object | Single shared control block for owning interface identity; RAII; never construct another shared_ptr from get() |
+| Host proxy | Owns one native reference; explicit idempotent close/dispose; invocation pin protects admitted work |
+| Foreign provider | Strong host root retained by native adapter; release once on permitted host domain after final ownership/execution |
+| Weak reference | Non-owning control identity; atomic upgrade or absence; no resurrection |
+| Scoped callback/view | Scope generation and actual access/execution lease; invalidate new access at scope end; protect admitted access |
+| Retained callback | Independent owning callable root; explicit owner cleanup |
+| Operation | Independent caller result, start, execution and completion-token owners; cancel does not free active work |
+| Stream/subscription | Separate owning source/subscription controls; queued items independently owned; revoke and drain separately |
+| Registry/static binding | Unique owning token plus runtime-owned provider entry; remove only matching generation |
+| DataRef/slice | Actual storage owner and range; deleter once after last owner and active lease |
+| External resource | Descriptor defines canonical ownership, matching release, host affinity and partial-failure rollback |
+
+No allocator mismatch, free/delete mismatch, cross-CRT free, or caller freeing foreign-library memory. Keep code implementing a deleter loaded until all its resources are released. Cleanup remains usable during Closing and does not depend on a live registry. Destroy functions accept valid initialized-empty values. An owning C descriptor is move-only by convention unless an explicit clone/retain operation creates another ownership right. Bitwise copying is not cloning. Clear moved-from state. Managed explicit close is idempotent per wrapper, not a guarantee that duplicated raw native tokens can be released twice. Protect user-defined provider operations against concurrent wrapper disposal with a validated invocation pin, not a non-atomic alive check.
+
+#### 13.2.2 Host-specific memory and execution rules
+
+| Host | Required implementation |
+| --- | --- |
+| C | Fixed-width checked layouts, explicit allocation/destruction, initialized outputs, no unvalidated pointer dereference, appropriate atomics/locks; no exception unwinding |
+| C++ | RAII for handles and temporary conversion/borrow leases; correct shared_ptr control block, atomic weak promotion; nonthrowing destructors, no self-drain blocking |
+| Java/Kotlin JNI | JNIEnv thread-local, JavaVM attachment lifecycle; bounded local refs; global refs only for owning roots; atomic weak global promotion; delete once on attached live JVM thread |
+| Objective-C | ARC, copied escaping blocks, explicit bridge transfer pairing, autorelease pools on foreign threads, strong promotion of weak loads; no assumption ARC breaks cycles |
+| Swift | ARC, balanced Unmanaged retains/releases, scoped pointer access, actor/sendability checks, no Swift object pointer as C identity |
+| Python | New/borrowed/stolen PyObject refs distinguished; correct interpreter thread state/GIL; pair buffer export/release; no DECREF after interpreter destruction |
+| Dart/Flutter | Native owner independent of Dart wrapper; explicit dispose; native-only finalizer release; queued callbacks own envelopes; no invocation after isolate detach |
+| C# | SafeHandle/IDisposable; correct raw handle lease, delegate/GCHandle roots through execution; bounded pinning, no managed exception across native callbacks |
+| JS/TS | Explicit disposal, runtime roots for providers/closures; weak/finalization facilities best-effort only; validate mutable buffer aliases and transfer |
+| WASM | Instance-scoped identity, checked memory range/allocation generation, growth/detachment protection, explicit shared-memory synchronization, matching allocator |
+
+JNI: resolve class/method metadata in the correct class-loader domain; retain cached jclass only when needed and clear roots on shutdown. Never compare jobject addresses as object identity; use IsSameObject or validated provider identity. Do not allocate global roots per scalar, value record, temporary collection element or repeated crossing of the same live provider. Track strong and weak roots separately. Bound local references in loops with local frames or RAII. Check pending exceptions after operations that can throw and translate before continuing; release all acquired resources on exceptional paths. Detach only threads attached by PolyGlue. Never store JNIEnv in a shared provider. Promote weak globals through NewLocalRef or NewGlobalRef before use; testing a weak handle for null does not pin the referent. GetPrimitiveArrayCritical/GetStringCritical cannot span foreign dispatch, blocking or arbitrary JNI calls. Prefer region copies for value data. NewDirectByteBuffer alone neither owns nor frees its backing native allocation. Verify directness, capacity, position/limit or explicit selected range and actual owner.
+
+Apple: pair __bridge_retained with transfer/release exactly once; __bridge alone does not transfer ownership. Copy escaping blocks and retain captured provider state until execution completes; use autorelease pools in native-created threads. Never keep Swift withUnsafeBytes pointers beyond their documented access closure. A stored Unmanaged pointer must have a deliberate retaining convention and matching release. Do not infer Sendable from reference counting, immutable wrapper fields or actor names. Retain source before scheduling work, release on the permitted executor, and avoid lock-held ARC destruction. An NSData/NSMutableData bytes pointer is only valid under the owner's real storage and mutation contract.
+
+Python: PyObject_GetBuffer and PyBuffer_Release pair once per successful export. Validate contiguity, format, dimensions, shape, strides, readonly flag, byte range and exporter ownership. Plain memoryview cannot implement a revocable borrow unless the exported backing memory remains independently owned for every derived view; default borrowed wrappers do not expose it. Promote borrowed PyObject refs before leaving the protecting interpreter context or scheduling. Track owning interpreter explicitly; PyGILState_Ensure alone is not a subinterpreter attachment strategy. Free-threaded/interpreter variants require actual capability proof; do not depend on the GIL to protect shared native state. Do not rely on cyclic GC to collect cross-runtime cycles. Avoid DECREF under core locks because destruction can execute Python code.
+
+Dart: NativeFinalizer callback is a native function callable outside the isolate, never a Dart FFI trampoline. It may release native control state and queue permitted cleanup, not enter Dart directly. NativeCallable.listener delivers asynchronously; retain queued arguments until consumed or denied. Close the callable only after no invocation can enter it; drain or reclaim denied envelopes without touching a dead isolate. Track generation per isolate/engine. A TypedData view of unmanaged memory does not itself prove ownership. For .NET, KeepAlive alone does not pin or protect a manually closed SafeHandle. Hold DangerousAddRef/DangerousRelease or a supported automatic SafeHandle marshalling lease for raw-handle access. Root delegates through all actual native calls, keep GCHandle alive until drain, and pin managed data only for its actual access lifetime. No Span escape into asynchronous execution.
+
+JS/WASM: nonshared memory growth can detach old ArrayBuffer views, shared growth may leave old view lengths unchanged. Reacquire and validate views under the owner/access lease rather than retaining stale TypedArray objects. Validate detached buffers, transfer and resizable storage, exact offsets and lengths, instance identity and thread synchronization. JS roots may be held by runtime tables, not implicit promises about GC reachability. WeakRef and FinalizationRegistry are never correctness mechanisms. Workers, realms, separate instances, WebGPU, IOSurface and Android hardware buffers require explicitly proven transport/owner adapters, not automatic pointer sharing.
+
+#### 13.2.3 Proxy identity, root pressure and cycles
+
+Preserve canonical fixed-provider identity on C++ -> managed -> C++ and reverse crossings. Identity belongs to a validated provider control record, not a language object address, jobject, recycled pointer, hashCode or JS reference equality. Use a weak, context/attachment-scoped proxy cache keyed by provider identity and public interface view where useful. A cache must not own the provider or keep wrappers alive indefinitely. Safely upgrade a live weak wrapper or create a new one; competing creation releases losing temporary roots. Multiple wrappers may legitimately represent the same canonical provider; no universal host pointer-equality promise. Avoid proxy-of-proxy chains and unbounded root creation from repeated crossings. Purge expired entries and invalidate cache admission on detach. Upcast/downcast and dynamic registry proxies retain their distinct rules.
+
+Reference counting alone cannot collect cross-language cycles. A provider retaining a callback that retains the provider, a registry entry retaining a provider that owns its registration token, or an operation holding a self-capturing completion may form a cycle invisible to host GC. Runtime control records avoid owning back-edges; use weak cache/observer entries and explicit unregister/cancel/dispose for application-owned relationships. Document the responsible owner and required cleanup. Do not silently break valid strong references or build a cross-runtime cycle collector. Diagnostics track outstanding owners and roots, with optional debug provenance, not raw payloads.
 
 ### 13.3 Test evidence
 
 Test empty and large buffers, invalid lengths, overflow, slices, misalignment where typed access applies, concurrent release, source destruction while DataRef remains alive, use after view scope, double release, aliasing, mutable borrow conflicts, allocator matching and thread-affine deleters. Verify identity and exact contents across compatible boundaries. Instrument bytes copied, allocations/deallocations, handles and outstanding operations. Instrumentation must not claim visibility into all third-party runtime allocations.
+
+#### 13.3.1 Failure and concurrency acceptance
+
+Every allocation, retain/root, pin, buffer export, queued dispatch, conversion and publication boundary has a defined failure path. Use transactional construction: track initialized elements, unwind only active values in reverse acquisition order, preserve the original failure and leave outputs initialized-empty. Allocation failure, invalid data, host exception, scheduler rejection, cancellation and detach must not leak partial results. No foreign destructor, root release or callback under registry/cache/handle locks. Pin runtime state, unlock, then release on the permitted domain. Track thread-affine releases separately from references and actual execution. A reentrant deleter can initiate close but cannot await its own drain.
+
+Require independently checked counters for handles by kind, strong/weak host roots, owner bytes, active borrows/pins, posted envelopes, pending releases, execution/completion leases and subscriptions. Inject allocation failure at meaningful construction boundaries. Repeat success and failure paths and require baseline after deterministic cooperative shutdown. GC/ARC finalizer tests are separate from explicit disposal. Counter balance is not proof of memory safety: use ASan/LSan/UBSan, TSan, CheckJNI, Python debug allocator/refcount checks, .NET GC stress, Swift strict concurrency/ARC, Dart isolate restart and WASM browser tests where applicable. Record actual blocked toolchain cases, never silently claim all-platform memory safety from documentation or counter balance alone.
 
 ### 13.4 Buffer and ownership flows
 
@@ -3289,6 +3356,49 @@ flowchart TD
     D -->|No| F["Return absent optional reference"]
     E --> G["Use provider and release reference"]
 ```
+
+### 13.5 Borrow scopes and aliasing
+
+A borrow carries scope identity, actual owner/storage identity, checked byte range, read/write permission and actual access lease. Pin the originating owner for the full lease. Validate range, underlying mutability, alignment for typed access, host accessibility and overlap against active borrows of the same storage. Overlapping read leases may coexist; an overlapping write excludes all other read/write leases. Disjoint ranges coexist only when actual storage and host synchronization permit it. Compare underlying allocation identity across slices, not wrapper addresses. External untracked aliases must be excluded by the trusted owner's explicit contract; a unique wrapper or reference count of one is not proof of exclusivity.
+
+Default access uses bounded read/write operations or scoped accessors holding the lease throughout actual use. A check followed by a freely reusable raw pointer/array is not a revocable safe view. Trusted C/C++ pointer/span access is restricted to the documented synchronous scope; copied raw pointers cannot be revoked by software, and native misuse is outside the safety guarantee. Managed safe APIs do not hand out unrevocable raw views of borrowed memory, including ByteBuffer, memoryview, Uint8List, UnsafeRawBufferPointer or TypedArray. Any explicitly named unsafe escape documents its caller obligations and does not count as safe default support. Scope closure revokes new access atomically and drains/defer-drains active access before freeing or mutating storage; never wait on one's own access lease. Async work retains DataRef or copies bytes rather than capturing a borrowed view.
+
+### 13.6 DataRef storage ownership and zero-copy
+
+DataRef is a shared owning byte capability, read-only by default. Its control record contains actual storage identity, byte capacity and range, allocator/deleter, independent native owner or host attachment, memory domain, alignment and mutability capability. Slice retains the same actual owner and validated subrange. Check offset + length against the original range without overflow. Empty views never dereference null or one-past-end addresses. Nonempty data requires valid storage. A read-only wrapper does not prevent mutation by an original owner: require immutable storage, exclusive ownership transfer or explicit externally synchronized contract; otherwise request a copy. No hidden copy for an explicit no-copy request. A write lease requires explicit mutable capability and proven exclusivity; a refcount of one is insufficient. Expose only synchronous MutableDataView while lease held; no mutable async borrow.
+
+Provide typed helpers for allocate(size), copyFrom(bytes), adoptOwned(storage, deleter, owner), slice(offset, length), retain, release/dispose, withReadAccess and withWriteAccess where supported. Target names are configurable. Adoption is trusted integration, not arbitrary integer-pointer ownership. A native vector/string move may transfer storage without copying only if its representation and allocator permit it (small-string optimization may prevent transfer). Native storage cannot reallocate while retained. Keep code and deleter host available through the last reference and lease. A host-backed buffer cannot promise access after forced host destruction: independently native-owned memory can survive if its deleter is independent; otherwise revoke access, report incomplete cleanup and never call a dead host. Define byte order explicitly for typed interpretation of raw byte buffers; DataRef itself is bytes, not typed numeric values.
+
+### 13.7 Memory domains and platform boundaries
+
+| Domain | Required behavior |
+| --- | --- |
+| Native CPU memory in one process | Shared DataRef when actual owner, addressability, alignment and lease are proven |
+| Movable managed heap | Explicit value copy or supported bounded pin/retained exporter; no permanent implicit pin |
+| Java direct buffer / Foundation data | Shared only with actual backing owner and compatible mutable-alias rules |
+| Dart FFI / .NET unmanaged allocation / Python exporter | Shared only with true owner and runtime/executor lifetime |
+| WASM linear memory | Same exact instance, valid offset/range, allocation generation and growth/lease policy |
+| JS heap, separate WASM instances or processes | No implicit address sharing; explicit copy or separately approved transport |
+| Camera/GPU/device memory | Explicit adapter, synchronization/fence, mapping and owner release; CPU mapping may require copy |
+
+Zero-copy means zero payload-byte copies on a specified path, not zero allocation, wrappers or refcount operations. Instrument actual copies, verify owner destruction, slice identity and pointer equality only where address identity is meaningful. Unsupported explicit zero-copy is a typed capability failure. Ordinary bytes/list/array retain value semantics even if an internal optimization avoids redundant copies. No claim of cross-process or GPU zero-copy from a CPU buffer abstraction.
+
+### 13.8 Configurable resource limits and diagnostics
+
+Provide typed context resource limits, with initial protective defaults: maximum value nesting 64, elements per container 1,048,576, individual string/bytes/array payload allocation 64 MiB, cumulative temporary conversion allocation 256 MiB per invocation, runtime-allocated/adopted owned buffer 256 MiB, stream pending envelopes 16 per subscription (section 14.3.1). Limits are configurable positive bounded values, not promises about platform capacity. DataRef slices retain an existing owner without allocating its entire byte range. Enforce checked length, resource budgets and actual host limits before allocation/reservation. Cumulative budget includes nested allocations and owner/descriptor overhead tracked by the runtime; it is not a total process-memory guarantee. Context may set explicit concurrent memory/operation/root budgets; by default host allocation limits and per-call/per-subscription limits apply, not an invented portable JVM or OS memory quota. Allocation/retain exhaustion returns typed failure and unwinds partial owners. No limit bypasses overflow checks or required lifecycle synchronization. Expose per-context/attachment diagnostic snapshots and optional debug provenance; do not log secrets, payloads or private addresses. No mandatory intrusive GC or extra worker pool.
+
+### 13.9 Prior-art and official platform review
+
+Snapchat/Djinni and the original Dropbox/Djinni are references, not dependencies or compatibility targets. Djinni's public documentation distinguishes copied binary values, borrowed DataView, owned DataRef, primitive arrays and futures, and notes JNI global-reference pressure. PolyGlue preserves the useful distinction while adding checked borrow admission, explicit ownership, context identity, independent execution leases and platform-specific constraints. Djinni's reported reference pressure motivates root accounting, weak cache and churn tests, not a fixed universal JNI reference limit. Its public documented API is not a proof of safe behavior in every host. Review current upstream support sources at the actual adapter implementation stage and record the revision and relevant decisions. Do not copy incompatible semantics or claim a source-level audit from the public README review.
+
+Reference material:
+- [Snapchat Djinni](https://github.com/Snapchat/djinni) and [Dropbox Djinni](https://github.com/dropbox/djinni).
+- [Android JNI tips](https://developer.android.com/ndk/guides/jni-tips) and [JNI functions](https://docs.oracle.com/en/java/javase/25/docs/specs/jni/functions.html).
+- [Apple mixed framework imports](https://developer.apple.com/documentation/swift/importing-objective-c-into-swift) and [Swift into Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c).
+- [CPython buffer protocol](https://docs.python.org/3/c-api/buffer.html) and [thread states](https://docs.python.org/3/c-api/threads.html).
+- [Dart NativeFinalizer](https://api.dart.dev/dart-ffi/NativeFinalizer/NativeFinalizer.html) and [NativeCallable.listener](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.listener.html).
+- [.NET native interop best practices](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/best-practices) and [SafeHandle lease](https://learn.microsoft.com/dotnet/api/system.runtime.interopservices.safehandle.dangerousaddref).
+- [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow).
 
 ## 14. Asynchronous operations callbacks and streams
 
@@ -3375,7 +3485,7 @@ A scoped callback has runtime-owned scope identity independent of the host calla
 
 #### 14.3.2 Stream acquisition, subscription and terminal state
 
-A stream handle is an owning capability returned by the provider; it is not an already active subscription. A subscription is created by a distinct typed subscribe/iterate operation and retains the selected source and necessary consumer/provider attachments. The C/WASM mapping table's subscription handle describes the active delivery phase, not the acquisition result. Acquiring the stream, admitting subscription, requesting demand, delivering items and terminating are separate operations. An async acquisition uses an ordinary async operation with an owning stream result; failure or cancellation before delivery releases the unclaimed stream. By default a stream handle admits at most one successful subscription during its lifetime; another attempt fails with a typed invalid-state error, even after cancellation. A replayable or multi-subscription source requires an explicit compatible contract; a new call to the source method creates another independent stream handle by default.
+A stream handle is an owning capability returned by the provider; it is not an already active subscription. A subscription is created by a distinct typed subscribe/iterate operation and retains the selected source and necessary consumer/provider attachments. The C/WASM mapping table explicitly distinguishes the owning stream handle from the active subscription handle. Acquiring the stream, admitting subscription, requesting demand, delivering items and terminating are separate operations. An async acquisition uses an ordinary async operation with an owning stream result; failure or cancellation before delivery releases the unclaimed stream. By default a stream handle admits at most one successful subscription during its lifetime; another attempt fails with a typed invalid-state error, even after cancellation. A replayable or multi-subscription source requires an explicit compatible contract; a new call to the source method creates another independent stream handle by default.
 
 Keep stream/source control metadata alive through subscription setup and inline producer termination. A terminal event is not an item and does not consume demand. Represent producer end, producer failure and consumer cancellation separately. Normal end closes new item production, drains accepted items in order subject to consumer demand, then publishes completion once. Cancellation or failure releases not-yet-admitted items; failure delivers its terminal error to a live subscriber, while an explicit consumer cancellation suppresses further user notifications as required by the host. Already admitted delivery may finish under section 12.4. A normal-end stream with queued items and no demand remains pending until demand or cancellation, not a permanently blocked shutdown. Context/attachment close revokes it and drains execution. Host adapters map pause/request/iteration to demand without unbounded intermediate queues. No synchronous blocking of managed event loops.
 
@@ -4832,6 +4942,30 @@ Add focused regressions for the remaining cross-contract risks, reusing existing
 
 Use actual compiler/runtime and installed-package evidence for backend-specific checks. Documentation and schema checks do not substitute for those tests. Keep all cases planned until the required evidence exists.
 
+### 18.12 Type and ownership audit acceptance
+
+Maintain an independent concrete lowering inventory for every built-in and legal nested type per target/profile, including paired JVM, mixed Apple and portable Dart. Record public type, actual boundary type, ownership/borrow rules, legal positions, conversions and required platform evidence. A generated declaration alone is not support. Reuse existing fixtures for equivalent requirements.
+
+| Case ID | Required observation |
+| --- | --- |
+| types.jvm-box-array | Java unsigned arrays, Kotlin bit carriers, boxed generics, optional elements and void completion |
+| types.apple-boxing | Scalar/boxed Obj-C distinction, nested optional states, Swift Result and async optional/error |
+| types.value-snapshot | Mutable containers do not alias foreign values; reference leaves retain same provider and release once |
+| types.exact-uuid-time | UUID network byte order including Guid mixed endian and full temporal extremes |
+| types.host-limits | Length/stride multiplication, cumulative budget, allocation failure and recursion rejection |
+| memory.partial-conversion | Inject failure at meaningful allocation/root/element steps; no inactive payload access; empty output, no leak |
+| memory.proxy-identity | Fixed provider round-trip, weak cache churn, competing creation and detach |
+| memory.host-roots | JNI local/global/weak balance, ARC/block roots, Python ref ownership, GCHandle/Dart/JS roots |
+| memory.borrow-alias | Overlapping slices detect actual-owner conflicts; close protects admitted access; stale view denied |
+| memory.dataref-owner | Adopt/allocate/copy/slice, allocator/deleter once, release race, forced host loss, no silent copy |
+| memory.host-pinning | JNI critical access, Python exporter, Swift pointer scope, .NET lease, Dart view and WASM growth |
+| memory.cycles | Weak runtime backedges and explicit cleanup of cross-runtime cycles; no finalizer dependency |
+| memory.unload | Outstanding release/operation prevents unload; forced host loss reports incomplete drain |
+| memory.resource-budget | Depth/count/byte bounds, typed exhaustion, counter baseline after cleanup |
+| apple.mixed-public-module | Installed Swift import Ubook and Obj-C @import Ubook; no required technical suffix; explicit separate layout validated |
+
+Test argument, result, nested ownership, failure, cancellation and detach on actual supported runtime pairs using independent values, root/owner counters, sanitizers and lifecycle evidence. Keep cases planned until actual execution; blocked evidence does not pass. Review relevant Djinni support source and official SDK rules during adapter implementation without claiming documentation alone proves correctness.
+
 ## 19. GitHub Actions
 
 ### 19.1 Workflows and independent checks
@@ -5529,10 +5663,10 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 
 ### 22.5 Built-in types and extension mechanism
 
-- [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Enforce canonical map/set equality, checked rounding and portable Dart integer profiles from sections 5.4.1–5.4.2. Verify boundaries, invalid encodings, null and empty distinctions.
+- [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Enforce the concrete lowering inventory of section 5.4.3, including host boxing, arrays, limits and nested ownership. Enforce canonical map/set equality, checked rounding and portable Dart integer profiles from sections 5.4.1–5.4.2. Verify boundaries, invalid encodings, null and empty distinctions.
 - [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct nested optional states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
 - [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. All instants cross as UTC epoch microseconds. Preserve calendar dates without timezone shifts, signed exact units, canonical UUID order and checked native conversions, including different host timezone settings.
-- [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope and ownership contracts. Do not silently copy when a zero-copy contract is requested.
+- [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope, storage identity, checked access leases, aliasing, allocator/deleter provenance and host memory domain rules under sections 13.5–13.8. Do not silently copy when a zero-copy contract is requested.
 - [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
 - [ ] Implement module-local external type descriptors and explicit host-language adapters using existing canonical ABI types. Support imports, dependencies, ownership, adapter build integration and validation without changing generator source.
 - [ ] Provide runnable scalar-backed, GeoPoint, custom-date, owned-resource and separately shared type examples, with selected-target adapters and source/prebuilt consumers. Test conversion in both directions and failures, not duplicate hand-coded bridge implementations.
