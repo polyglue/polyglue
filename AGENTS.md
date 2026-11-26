@@ -8,6 +8,8 @@ Read [PROJECT.md](PROJECT.md) before implementation. It defines product scope, a
 
 ## Owner standards
 
+Always write the product name as PolyGlue, with an uppercase P and G, in documentation, headings, branding, illustrations and user-facing text. Keep lowercase polyglue for technical identifiers such as the Python package, CLI command and repository path. Preserve language-specific identifier conventions.
+
 Follow the owner's [skills collection](https://github.com/paulocoutinhox/skills), initially reviewed at [fcca67d](https://github.com/paulocoutinhox/skills/tree/fcca67d378ee025d646aa70c2b6f514c151fa5c4). Read the current applicable skill and its relevant references before modifying the corresponding area. Do not install or update the collection automatically.
 
 - Code Developer: general engineering and the profiles for every changed language.

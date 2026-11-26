@@ -4,6 +4,8 @@
 >
 > **Status:** planned, not implemented. This document is the source of truth for implementation and review. Examples specify intended behavior. They are not evidence of an existing implementation.
 
+Always write the product name as PolyGlue, with an uppercase P and G, in documentation, headings, branding, illustrations and user-facing text. Keep lowercase polyglue for technical identifiers such as the Python package, CLI command and repository path. Preserve language-specific identifier conventions.
+
 ## Contents
 
 Start with chapters 1 through 5 if this is your first time using a cross-language generator. Chapters 6 through 11 explain generation and customization. Chapters 12 through 16 explain what happens at runtime. Chapters 17 through 22 explain the examples, tests and distribution. Section 22 is the single detailed implementation checklist. AGENTS.md holds the permanent engineering rules and matching reference tables without diagrams.
