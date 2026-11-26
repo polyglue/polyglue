@@ -18,6 +18,12 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
   - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
   - [How each value crosses languages](#59-how-each-value-crosses-languages)
+    - [Records and generic records](#records-and-generic-records)
+    - [Enums](#enums)
+    - [Flags](#flags)
+    - [Variants](#variants)
+    - [Lists and arrays](#lists-and-arrays)
+    - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
   - [SDK version and build number](#78-sdk-version-and-build-number)
@@ -100,7 +106,9 @@ Terms used throughout this document:
 | Service registry | An optional place to register and find implementations |
 | SDK | A generated and packaged library that another application can use |
 
-A record does not execute a method. An interface does not generate the business logic. A service is an interface implementation registered for discovery. These distinctions matter when choosing what to define.
+A record carries data, an enum names allowed choices, and an interface describes actions. A service is an interface implementation registered for discovery. PolyGlue generates the connection between languages, not the application's business logic.
+
+For a first project, start with a record and one interface method. Generate bindings for two languages, implement the method in one language and call it from the other. Once that works, add a second module, optional values, asynchronous methods and callbacks. Use shared buffers when the application needs to avoid copying large data. Use the registry when the application needs to find or replace an implementation at runtime. Build and package the SDK after the calls work. Deployment is optional. The later chapters explain each step in depth.
 
 ### 1.1 Required outcomes
 
@@ -330,18 +338,19 @@ Use uv add for declared dependencies and uv lock --upgrade during deliberate rev
 ```text
 module domain;
 
+enum UserStatus {
+    Active = 1,
+    Inactive = 2,
+    Blocked = 3
+}
+
 /// Represents a registered user.
 record User {
     id: int64;
     name: string;
     email: optional<string>;
     loggedIn: bool = false;
-}
-
-enum UserStatus {
-    Active = 1,
-    Inactive = 2,
-    Blocked = 3
+    status: UserStatus = UserStatus.Active;
 }
 ```
 
@@ -366,7 +375,7 @@ interface UserRepository {
 }
 ```
 
-This is a core acceptance fixture. Each target must implement and consume these contracts across module and language boundaries. The repository sample uses the User definition from section 4.1. The separate date example in section 5.6 is an alternative fixture, not a second User declaration in the same module. No JSON conversion or manually written bridge in the example.
+This is a core acceptance fixture. The user status belongs to the User record, so findByStatus filters the same data that save and findById return. loggedIn is a separate boolean, not a second account status. Each target must implement and consume these contracts across module and language boundaries. The repository sample uses the User definition from section 4.1. The separate date example in section 5.6 is an alternative fixture, not a second User declaration in the same module. No JSON conversion or manually written bridge in the example.
 
 ### 4.2 Language constructs
 
@@ -387,7 +396,7 @@ This is a core acceptance fixture. Each target must implement and consume these 
 | documentation | Structured comments copied to target documentation |
 | annotations | Typed semantic or backend-specific metadata |
 
-Support interface inheritance with cycle detection. Reject recursive value layouts without an indirection. Validate constant ranges, defaults, method signatures, overload collisions and reserved IDL identifiers. Define grammar and diagnostic source spans before publishing the syntax.
+Support interface inheritance with cycle detection. Reject recursive value layouts without an indirection. Validate constant ranges, defaults, method signatures, overload collisions and reserved IDL identifiers. A typed enum constant or default may reference a declared member such as UserStatus.Active. Resolve it during generation. Define grammar and diagnostic source spans before publishing the syntax.
 
 ### 4.3 Imports and aliases
 
@@ -447,6 +456,8 @@ flowchart TD
 
 ## 5. Type system
 
+Start with ordinary values such as integers and strings. Records group values together. Collections hold several values. Optionals say whether a value exists. Interfaces and callbacks allow calls rather than just carrying data. Buffers and references add lifetime rules. Section 5.4 is the complete type reference, and section 5.9 shows how the values actually travel and return.
+
 ### 5.1 Types to implement and test
 
 | Group | IDL types |
@@ -463,7 +474,7 @@ flowchart TD
 | Lifetime / control | `WeakRef<T>`, CancellationToken |
 | External | Explicitly declared type with per-target adapter |
 
-`void` is a return-only type, including Result success with no payload. Reject optional<void>, list<void> and other value positions containing void, except Result<void,E> as a legal success case. Null is a literal, not an independent transport type. Service discovery, constants, factories, inheritance and generic declarations are language features rather than extra wire types. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
+`void` is a return-only type, including Result success with no payload. Reject `optional<void>`, `list<void>` and other value positions containing void, except `Result<void,E>` as a legal success case. Null is a literal, not an independent transport type. Service discovery, constants, factories, inheritance and generic declarations are language features rather than extra wire types. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
 
 ### 5.2 Return mapping examples
 
@@ -2421,16 +2432,11 @@ typedef struct {
     void *context;
     void (*retain)(void *context);
     void (*release)(void *context);
-    void (*request)(
-        void *context,
-        const pg_http_request *input,
-        pg_http_completion completion,
-        void *completion_context
-    );
+    pg_status (*request)(void *context, const pg_http_request *input, pg_http_completion completion, pg_completion_token completion_token, pg_operation_handle *operation);
 } pg_http_client_vtable;
 ```
 
-The final ABI must define calling convention, status propagation, context validity, ownership of input/output, cancellation and completion lifetime before implementation. A table contains immutable function pointers and a separately owned context reference. A retained completion token remains valid for the provider's documented lifetime, including late completion after cancellation. Duplicate completions while the token is valid are rejected and any transferred payload is released exactly once according to ownership. Do not dereference a freed callback context to detect a duplicate. A call after the provider has relinquished its last valid token is an invalid use, not a supported callback pattern. This is a conceptual table, not a finalized header.
+The final ABI must define calling convention, status propagation, context validity, ownership of input/output, cancellation and completion lifetime before implementation. A table contains immutable function pointers and a separately owned context reference. A retained completion token remains valid for the provider's documented lifetime, including late completion after cancellation. Duplicate completions while the token is valid are rejected and any transferred payload is released exactly once according to ownership. Do not dereference a freed callback context to detect a duplicate. A call after the provider has relinquished its last valid token is an invalid use, not a supported callback pattern. This is a conceptual table, not a finalized header. The status, completion token and operation handle names stand for runtime-owned ABI types. The return status reports whether the start was accepted. An accepted operation publishes its final outcome through completion, including inline completion, and exposes a valid operation handle until the caller releases it. A rejected start leaves no operation or completion outstanding. The input descriptor is borrowed for the start call only. Retain or convert any values needed later before returning from start. Never store the descriptor pointer.
 
 A JNI adapter's context owns a global Java object reference. A Swift adapter owns an ARC-managed object. A Dart adapter owns an isolate-bound registration. The generated native adapter invokes the correct runtime's method. Direct references and registry lookups reuse the same mechanism.
 
@@ -2517,7 +2523,7 @@ interface ImageProcessor {
 
 Borrowed views may not escape the validated synchronous scope. DataView and MutableDataView are permitted only as direct synchronous parameters, including synchronous callback parameters under the same scope rules. Reject borrowed returns, stored fields, collection elements, async parameters and escaping captures. Use DataRef for independent or asynchronous lifetimes. A DataRef does not grant exclusive write access merely because its reference count is one. Managed wrappers must provide checked scoped access. Unrestricted raw pointers are not part of the default safe API. Couple validation to actual access so concurrent close cannot invalidate memory between the check and its use. Mutable views require exclusive access.
 
-DataRef retains the true owner, including for subranges. Last release executes the correct deleter once on an appropriate executor. Default shared access is read-only. Explicit conversion to bytes copies. Unsupported shared memory conversions must fail or request an explicit copy rather than silently copying.
+DataRef retains the true owner, including for subranges. Creating a reference to borrowed storage requires a retainable underlying owner and a legal independent lifetime. A borrowed view alone cannot be promoted to an owning buffer. An explicitly requested independent copy may create a new owner. A mutable view cannot become a shared reference to the same storage while its exclusive borrow is active. Last release executes the correct deleter once on an appropriate executor. Default shared access is read-only. Explicit conversion to bytes copies. Unsupported shared memory conversions must fail or request an explicit copy rather than silently copying.
 
 ### 13.2 Target representation examples
 
@@ -2526,9 +2532,9 @@ DataRef retains the true owner, including for subranges. Last release executes t
 | C | Pointer + length scoped view. Opaque owning handle |
 | C++ | span-like view. RAII reference |
 | Java/Kotlin | Scoped direct ByteBuffer wrapper. Retained owner |
-| Swift | Scoped UnsafeRawBufferPointer access. Owner object |
-| Obj-C | Scoped NSData-compatible access. Retained wrapper |
-| Python | Scoped buffer access / memoryview with correct exporter lifetime |
+| Swift | Checked scoped access. Raw pointer only through explicit unsafe API. Owner object |
+| Obj-C | Checked scoped read/write wrapper. Retained owner |
+| Python | Checked scoped wrapper. Owning buffer exporter for retained memory |
 | Dart | Checked native view and owned FFI reference |
 | C# | Span-like scoped access. SafeHandle/owner for shared data |
 | JS/TS/WASM | Checked view of linear memory. Lease or reacquire after memory growth |
@@ -2543,17 +2549,20 @@ Test empty and large buffers, invalid lengths, overflow, slices, misalignment wh
 
 #### DataView and MutableDataView
 
-A borrowed view is valid only during its synchronous call. Mutable access is exclusive.
+A borrowed view is valid only during its synchronous call. Read-only access permits compatible read borrows. Mutable access is exclusive. Both return paths end the borrow before the owner can dispose of its storage.
 
 ```mermaid
 flowchart TD
     A["Owner holds buffer"] --> B["Acquire read or exclusive write borrow"]
-    B --> C{"Memory and scope valid?"}
-    C -->|No| X["Reject without copying"]
-    C -->|Yes| D["Provider accesses same valid memory"]
-    D --> E["Return or error"]
+    B --> C{"Memory, scope and alias rules valid?"}
+    C -->|No| X["Release acquired lease and report error"]
+    C -->|Yes| D{"Read or exclusive write?"}
+    D -->|Read| R["Provider reads same memory"]
+    D -->|Write| W["Provider modifies same memory"]
+    R --> E["Return value or error"]
+    W --> E
     E --> F["End borrow and invalidate scoped view"]
-    F --> G["Owner retains buffer"]
+    F --> G["Owner regains access under borrow rules"]
 ```
 
 #### DataRef and explicit copies
@@ -2656,7 +2665,7 @@ Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .
 
 Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Once the provider accepts the operation, its terminal outcome is delivered through the completion contract even if it happens inline before the start function returns. Initialize caller completion state and retain the start-call resources before invoking the provider. A completion that runs inline must not free state still needed by the start call. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
-Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation, drains actual execution and queued releases, then invalidates handles and detaches the runtime. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
+Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation and drains actual execution. Then remove registrations, invalidate handles and release runtime-owned references. Drain the releases these actions schedule while the owning runtimes and executors are still available. Detach only after cleanup finishes. Host-owned references that still require the runtime must be closed or keep it alive until safe release. Cleanup must remain available while new business calls are blocked. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
 
 ### 14.5 Async, callbacks, cancellation and streams in motion
 
@@ -2832,7 +2841,7 @@ No reflection or network is required. Multiple registrations can coexist. Use ex
 | unregister(token) | Removes only that registration |
 | missing provider | Typed runtime failure |
 
-Default duplicate registration is an error unless explicit replace/override policy is specified. A scoped override restores a previous registration only when that override is deliberately removed, not when a call fails. Do not silently retry a failed call against another provider. Existing operations and stream subscriptions retain their selected provider. New dynamic calls use the current provider. Removing a registration does not invalidate an otherwise valid fixed reference. Runtime shutdown cancels/drains operations before releasing adapters.
+Default duplicate registration is an error unless explicit replace/override policy is specified. A registry retains its active registration and any deliberately stacked previous registration. Unregistering a hidden stacked entry removes it, so it cannot be restored later. Stale tokens cannot remove newer registrations. Replacing without a scoped override releases the old registry ownership. A scoped override restores a previous registration only when that override is deliberately removed, not when a call fails. Do not silently retry a failed call against another provider. Existing operations and stream subscriptions retain their selected provider. New dynamic calls use the current provider. Removing a registration does not invalidate an otherwise valid fixed reference. Runtime shutdown cancels/drains operations before releasing adapters.
 
 Tests: both get/proxy modes. Replacement and explicit scoped restoration. Multiple instances. Nested contexts. ABI mismatch. Concurrent registration, lookup, removal and invocation. Stale registration tokens. Runtime reload. Callback reentrancy. Final release outside locks.
 
@@ -2886,7 +2895,8 @@ flowchart TD
     E --> G
     G --> H["Invoke B and return result"]
     F --> I["Release A when last owner finishes"]
-    H -->|Remove scoped override| J["Restore A only if explicitly stacked"]
+    E -->|Explicitly remove scoped override| J["Restore previous retained provider if still registered"]
+    J --> C
 ```
 
 #### Runtime shutdown
@@ -2897,11 +2907,14 @@ Stop accepting work before detaching any runtime or destroying its callbacks.
 flowchart TD
     A["Shutdown requested"] --> B["Reject new calls and registrations"]
     B --> C["Request cancellation"]
-    C --> D["Drain actual execution and queued releases"]
-    D --> E{"Safe to detach?"}
-    E -->|Yes| F["Invalidate handles and release adapters"]
-    F --> G["Detach runtime"]
+    C --> D["Drain actual execution"]
+    D --> E{"Execution and ownership safe?"}
     E -->|No| X["Report shutdown failure and keep resources alive"]
+    E -->|Yes| F["Remove registrations, invalidate handles, release adapters"]
+    F --> H["Drain releases on live owning executors"]
+    H --> I{"All required cleanup finished?"}
+    I -->|No| X
+    I -->|Yes| G["Detach runtime"]
 ```
 
 ## 16. Language-specific integration
@@ -2936,7 +2949,7 @@ The implementation function above is illustrative. Examples must supply a real i
 
 ### 16.2 Concrete provider-to-consumer example
 
-A handwritten Kotlin repository implements the generated interface from the shared JVM configuration in section 7.4. The executable sample uses a small deterministic in-memory store, not a real database dependency. This reduced excerpt illustrates the generated suspend API:
+A handwritten Kotlin repository implements the generated interface from the shared JVM configuration in section 7.4. The executable sample uses a small deterministic in-memory store, not a real database dependency. This example shows all repository methods from section 4.1. UserStore is a handwritten in-memory implementation supplied by the sample:
 
 ```kotlin
 class AndroidUserRepository(private val store: UserStore) : KotlinUserRepository {
@@ -2944,9 +2957,19 @@ class AndroidUserRepository(private val store: UserStore) : KotlinUserRepository
 
     override suspend fun findAll(): List<User> = store.findAll()
 
+    override suspend fun findByStatus(status: UserStatus): List<User> = store.findByStatus(status)
+
+    override suspend fun save(user: User): User = store.save(user)
+
+    override suspend fun saveAll(users: List<User>): List<User> = store.saveAll(users)
+
     override suspend fun count(): Long = store.count()
 
     override suspend fun exists(id: Long): Boolean = store.exists(id)
+
+    override suspend fun delete(id: Long): Boolean = store.delete(id)
+
+    override suspend fun deleteAll() = store.deleteAll()
 }
 ```
 
@@ -3291,16 +3314,21 @@ Every target must have runnable provider and consumer examples. Use simple UI on
 ### 17.2 HTTPBin
 
 ```text
+record HttpHeader {
+    name: string;
+    value: string;
+}
+
 record HttpRequest {
     url: string;
     method: string;
-    headers: map<string, string>;
+    headers: list<HttpHeader>;
     body: optional<DataRef>;
 }
 
 record HttpResponse {
     status: int32;
-    headers: map<string, string>;
+    headers: list<HttpHeader>;
     body: DataRef;
 }
 
@@ -3309,7 +3337,7 @@ interface HttpClient {
 }
 ```
 
-Send a real HTTPS request to https://httpbin.org/get or /post using a provider in a different runtime. Display status, headers and body. Test error, timeout, cancellation and async completion. Deterministic CI uses a local HTTP fixture with the same contract. A separate live smoke checks the actual public service. Do not make deterministic tests rely on public network availability.
+Send a real HTTPS request to https://httpbin.org/get or /post using a provider in a different runtime. Display status, headers and body. Headers are a list rather than a map so repeated fields such as Set-Cookie are not overwritten. HTTP header name matching is case-insensitive in the HTTP implementation, not a change to IDL string equality. Check repeated response headers with the existing local fixture. A non-success HTTP status is a response, not an ABI failure. Test error, timeout, cancellation and async completion. Deterministic CI uses a local HTTP fixture with the same contract. A separate live smoke checks the actual public service. Do not make deterministic tests rely on public network availability.
 
 ### 17.3 Camera and grayscale
 
@@ -3348,11 +3376,11 @@ CI uses deterministic known-pixel fixtures, padded strides, odd sizes and invali
 
 ### 17.4 Fake login and repository
 
-A minimal login form or CLI submits fictional username/password values, calls the Auth implementation defined by the Result example in section 5.3 in another runtime, and receives a populated User with id, name, email and loggedIn. Use one fixed fictional account and an invalid-credentials case. No server, account database or authentication framework is required. Invalid credentials return a typed LoginError. Never log passwords. Include the domain/repository async list, optional, integer, bool and void methods from section 4.
+A minimal login form or CLI submits fictional username/password values, calls the Auth implementation defined by the Result example in section 5.3 in another runtime, and receives a populated User with id, name, email, loggedIn and status. Use one fixed fictional account and an invalid-credentials case. No server, account database or authentication framework is required. Invalid credentials return a typed LoginError. Never log passwords. Include the domain/repository async list, optional, integer, bool and void methods from section 4.
 
 ### 17.5 Cross-language application acceptance
 
-Every language has a documented cross-language caller and implementation case, with repeatable commands. Include Flutter Android to Kotlin, Apple to Swift, native to Dart callback/provider, JVM to C++, Python to C++, C# to C++, JS to WASM and their supported reverse directions. Test switching providers without modifying the consumer. Exercise callbacks, cancellation, shared memory and shutdown. The conformance suite, not just UI demos, covers the full type and pair matrix.
+Every language has a documented cross-language caller and implementation case, with repeatable commands. Include Flutter Android to Kotlin, Apple to Swift, native to Dart callback/provider, JVM to C++, Python to C++, C# to C++, JS to WASM and their supported reverse directions. Test switching providers without modifying the consumer, including unregistering a hidden override before restoration. Exercise callbacks, cancellation, shared memory and shutdown. The conformance suite, not just UI demos, covers the full type and pair matrix.
 
 ### 17.6 Example application flows
 
@@ -4197,7 +4225,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
-- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases before runtime detach.
+- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
 - [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, explicit replacement/scoped restoration, tokens and missing-service errors. No implicit alternate-provider retry.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.

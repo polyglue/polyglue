@@ -14,9 +14,9 @@
 
 ## Project
 
-Imagine a mobile app written in Flutter that needs to use an Android feature written in Kotlin and an iOS feature written in Swift. Normally, developers need to write connecting code for each language and keep their data models, method signatures and error handling in sync.
+Applications often use more than one programming language. For example, a Flutter app may need to call Android code written in Kotlin and iOS code written in Swift. Those languages cannot call each other's code directly without a connection. Developers often write that connecting code by hand and must keep it in sync whenever their data or methods change.
 
-PolyGlue is designed to solve that problem. Define your data and methods once, then generate the code that connects the selected programming languages. Write the actual implementation in one language and use it from another.
+PolyGlue is a code generator designed to solve that problem. Describe the data and methods once. PolyGlue generates the connecting code for the languages you choose. You write the actual feature in one language and use it from another.
 
 The goal is to make native cross-language calls feel like ordinary method calls, without requiring a server or converting every call into JSON (a text-based data format).
 
@@ -26,7 +26,7 @@ The goal is to make native cross-language calls feel like ordinary method calls,
 
 An IDL (Interface Definition Language) describes data and methods without choosing a programming language. A record groups related values, an enum names the possible choices, and an interface describes the methods an object must provide. The generator turns this definition into code for each selected language.
 
-For example, suppose an app needs to find a user by ID. This is the proposed IDL for a small lookup API:
+For example, suppose an app needs to find a user by ID. This is a small, standalone example of the proposed IDL syntax:
 
 ```text
 module domain;
@@ -43,7 +43,7 @@ interface UserLookup {
 }
 ```
 
-Here, User describes the data, optional means a value may be absent, and async means the operation may finish later. The generator creates the equivalent types and connecting code for the chosen languages. Your application provides the actual lookup implementation.
+Here, `User` describes the data, `int64` is a whole number, `optional` means a value may be absent, and `async` means the operation may finish later. The generator creates the equivalent types and connecting code for the chosen languages. Your application provides the actual lookup implementation.
 
 ```mermaid
 flowchart LR
@@ -101,7 +101,7 @@ Flutter and WebAssembly are integration targets. Flutter uses Dart, and WebAssem
 
 Define → Generate → Build → Test → Package → Deploy (optional).
 
-Start with an IDL contract, choose your languages, generate the bindings, implement your methods and test the resulting SDK. Packaging and cloud deployment are separate steps.
+Start with an IDL contract and choose two languages. Generate the connecting code (bindings), implement a method, and call it from the other language. Build and test the result. When it is ready to share, package it as an SDK. Uploading the SDK to cloud storage is optional.
 
 ## Documentation
 
