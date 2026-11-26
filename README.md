@@ -2,7 +2,7 @@
     <a href="https://github.com/polyglue/polyglue"><img width="100" src="extras/images/logo.svg" alt="PolyGlue logo"></a><br>
     <strong>PolyGlue</strong><br>
     Connect programming languages with native, type-safe code generation.<br>
-    <sub>Version 0.0.1 · In development</sub>
+    <sub>Version 0.0.1</sub>
 </p>
 
 ## Project
@@ -16,8 +16,6 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 <p align="center">
     <img width="740" src="extras/images/how-it-works.svg" alt="PolyGlue generates Swift and Kotlin bindings so iOS and Android apps can each use the same C++ source code.">
 </p>
-
-> PolyGlue is in early development. The features and targets below are planned, not verified support.
 
 ## Features
 
@@ -33,7 +31,7 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 - 📦 **SDK packaging:** versioned native libraries, AARs, XCFrameworks and language packages.
 - ☁️ **Deploy:** upload validated SDKs to Amazon S3, Cloudflare R2 and compatible storage.
 
-## Supported languages
+## Languages
 
 - ⚙️ C
 - ⚙️ C++
@@ -52,11 +50,11 @@ Integration targets:
 - 🦋 Flutter
 - 🌐 WebAssembly
 
-## Supported platforms
+## Platforms
 
 Linux, Windows, macOS, Android, Android XR, iOS, iPadOS, tvOS, watchOS, visionOS, Mac Catalyst, Web and Node.js.
 
-Choose the languages and targets for your project and compile the generated code with the appropriate toolchains. See the [target matrix](PROJECT.md#2-supported-languages-and-platforms) for planned runtime and build coverage.
+Choose the languages and targets for your project and compile the generated code with the appropriate toolchains. See the [target matrix](PROJECT.md#2-supported-languages-and-platforms) for runtime and build coverage.
 
 ## Documentation
 
