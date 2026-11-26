@@ -11,7 +11,11 @@ PolyGlue is a code generator that allows different programming languages to call
 
 Define your data types and interfaces once in a common definition language (IDL). PolyGlue generates the native bindings for each selected language, removing the need to write and maintain the connecting code by hand.
 
-For example, implement a feature in C++, Kotlin or Swift and call it from Flutter, Python or another compatible language. Calls work in both directions, without a server or mandatory JSON serialization.
+For example, share the same C++ code between an iOS app written in Swift and an Android app written in Kotlin. Calls work in both directions within each app, without a server or mandatory JSON serialization.
+
+<p align="center">
+    <img width="740" src="extras/images/how-it-works.svg" alt="PolyGlue generates Swift and Kotlin bindings so iOS and Android apps can each use the same C++ source code.">
+</p>
 
 > PolyGlue is in early development. The features and targets below are planned, not verified support.
 
