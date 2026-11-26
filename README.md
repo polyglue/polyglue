@@ -85,6 +85,6 @@ Support the ongoing development of this project through [GitHub Sponsors](https:
 
 ## License
 
-The license has not been finalized yet.
+This project is licensed under the [MIT License](LICENSE).
 
 Made with ❤️ by [Paulo Coutinho](https://github.com/paulocoutinhox).
