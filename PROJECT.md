@@ -11,6 +11,8 @@
 - [3. Developer workflow and distribution](#3-developer-workflow-and-distribution)
 - [4. IDL language](#4-idl-language)
 - [5. Type system](#5-type-system)
+  - [Built-in date and time types](#56-built-in-date-and-time-types)
+  - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
@@ -368,7 +370,7 @@ Generic source types are instantiated consistently. C uses concrete generated ty
 | Named | record, enum, flags, interface |
 | Special memory | DataView, MutableDataView, DataRef |
 | Errors | Result<T,E> |
-| Time and identity | timestamp, duration, uuid |
+| Time and identity | date, timestamp, duration, uuid |
 | Behavior | callback, async method, Stream<T> |
 | Lifetime / control | WeakRef<T>, CancellationToken |
 | External | Explicitly declared type with per-target adapter |
@@ -396,7 +398,7 @@ For JavaScript and TypeScript, use bigint when exact 64-bit integer representati
 - Integer values must not silently truncate. Define floating-point NaN, infinity and signed zero semantics.
 - Specify collection equality, hashing, supported map keys, duplicate entries, ordering and nesting limits.
 - Distinguish null, absent, empty and zero; enums and flags have a documented unknown-value policy.
-- Define timestamp and duration units and UUID byte order; test exact round trips.
+- Define date, timestamp and duration units and UUID byte order; test exact round trips as specified in section 5.6.
 - Result<T,E> represents business success or failure; runtime/ABI failures use a separate status. No cross-ABI exception unwinding.
 - External types require declared import paths, ABI representation, marshaller, ownership and tests for each target. No unsupported target fallback.
 
@@ -471,6 +473,7 @@ Rules: all integral conversions validate range and type (Python bool is not acce
 | Stream<T> | Subscription handle | Async stream | Flow-compatible publisher / Kotlin Flow | Subscription block / AsyncSequence |
 | WeakRef<T> | Weak handle | Weak interface reference | Generated weak handle | Generated weak handle |
 | CancellationToken | Shared token handle | Token wrapper | Token wrapper | Token wrapper |
+| date | int64_t epoch days | chrono::year_month_day | LocalDate | Calendar-date value / DateComponents conversion |
 | timestamp | int64_t UTC microseconds | chrono-based checked wrapper | Instant or exact wrapper | Exact wrapper / Date conversion |
 | duration | int64_t nanoseconds | chrono duration | Duration or exact wrapper | Exact wrapper / Duration conversion |
 | uuid | 16-byte value | UUID value wrapper | UUID | NSUUID / UUID |
@@ -493,6 +496,7 @@ Rules: all integral conversions validate range and type (Python bool is not acce
 | Stream<T> | AsyncIterator | Stream | IAsyncEnumerable<T> | AsyncIterable<T> |
 | WeakRef<T> | generated weak handle | generated weak handle | generated weak handle | generated weak handle |
 | CancellationToken | token wrapper | token wrapper | CancellationToken adapter | AbortSignal adapter |
+| date | datetime.date | Calendar-date value | DateOnly | Calendar-date value |
 | timestamp | exact wrapper / datetime conversion | exact microseconds / DateTime conversion | exact wrapper / DateTimeOffset conversion | bigint microseconds / Date conversion |
 | duration | exact wrapper / timedelta conversion | exact nanoseconds / Duration conversion | exact wrapper / TimeSpan conversion | bigint nanoseconds |
 | uuid | uuid.UUID | checked UUID value | Guid with canonical byte ordering | checked UUID value |
@@ -504,6 +508,245 @@ Nested optional values cannot collapse distinct absence states; either use a tag
 ### 5.5 Per-type acceptance
 
 Generate shared fixtures with a stable case identifier for each scalar, composite and advanced type, and legal nested combinations. Run each valid fixture as argument, return value, record field, collection element and async result where its lifetime allows it. Test both native-to-managed and managed-to-native implementations; then the supported non-C++ pairs. Reject forbidden borrowed-view escapes, invalid ranges, unknown tags and unsupported external mappings. No backend may mark a type supported just because it can generate a declaration.
+
+### 5.6 Built-in date and time types
+
+Date and time interoperability is a built-in feature, not a user-required extension. Distinguish an instant from a calendar date and a duration; never interpret a date as a local midnight timestamp. Use the proleptic Gregorian calendar, UTC and POSIX-style epoch semantics (no distinct leap-second encoding).
+
+| IDL type | Canonical value | Meaning |
+| --- | --- | --- |
+| timestamp | int64 microseconds since 1970-01-01T00:00:00Z | Exact UTC instant |
+| date | int64 epoch days since 1970-01-01 | Calendar date, without time or timezone |
+| duration | int64 nanoseconds | Signed elapsed time |
+| uuid | 16 bytes in canonical network order | UUID value |
+
+The portable date range is years 0001 through 9999 inclusive, enforced at conversion. Timestamp and duration support the full canonical integer range via exact value wrappers where a host's native type cannot represent it. Native conversions must reject overflow or precision loss by default, not silently truncate, normalize or change timezones. Explicit rounding or truncation is a separate documented application choice. Do not use floating-point seconds as the canonical ABI representation.
+
+Example IDL:
+
+```text
+module domain;
+
+record User {
+    id: int64;
+    name: string;
+    birthday: optional<date>;
+    createdAt: timestamp;
+    sessionDuration: duration;
+    identifier: uuid;
+}
+```
+
+#### 5.6.1 Native date and time integration
+
+| Target | Calendar date | UTC instant | Duration |
+| --- | --- | --- | --- |
+| C | Checked epoch-day value | int64 microseconds | int64 nanoseconds |
+| C++ | std::chrono::year_month_day | sys_time<microseconds> or exact wrapper | chrono::nanoseconds |
+| Java | java.time.LocalDate | java.time.Instant | java.time.Duration |
+| Kotlin/JVM | java.time.LocalDate | java.time.Instant | java.time.Duration or explicit Kotlin Duration adapter |
+| Objective-C | Generated calendar-date value | Exact value plus NSDate conversion | Exact nanosecond value |
+| Swift | Generated calendar-date value or validated DateComponents conversion | Exact value plus Foundation.Date conversion | Swift.Duration conversion |
+| Python | datetime.date | Exact value plus timezone-aware datetime conversion | Exact value plus timedelta conversion |
+| Dart / Flutter | Generated calendar-date value | Exact value plus UTC DateTime conversion | Exact value plus Duration conversion |
+| C# | DateOnly | Exact value plus DateTimeOffset conversion | Exact value plus TimeSpan conversion |
+| JavaScript / TypeScript | Generated calendar-date value | bigint microseconds plus Date conversion | bigint nanoseconds |
+| WASM | Canonical integer representation | Canonical i64 | Canonical i64 |
+
+The table specifies required supported public conversions. Use idiomatic host-native objects directly when the conversion preserves the entire advertised contract or when checked range/precision restrictions are explicitly selected; otherwise expose a generated exact value wrapper with convenient native conversion methods. Do not silently reduce timestamps to milliseconds for JS Date or round nanoseconds to microseconds/ticks for Python, Dart or .NET. A timezone-aware date-time received from a host is normalized to the same UTC instant. Reject ambiguous naive date-times unless the caller explicitly provides a timezone. Calendar dates do not carry an implicit timezone. Timezone identifiers and local/zoned date-times with DST ambiguity are not synonyms for timestamp; if needed, model them explicitly as records or external types. No extra timezone library in core.
+
+Native-friendly mapping profiles may be provided by the built-in adapter catalog, using the same external-type mechanism below; select them per module and target. Keep the default representation exact. Document checked conversion methods, including lower-precision and out-of-range rejection.
+
+#### 5.6.2 Date conformance
+
+Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond values, values beyond the JS safe-integer range, signed extremes, invalid ranges, leap years (including 1900 and 2000), month/day validation, year boundaries, calendar date stability across timezone changes, UTC offset normalization, naive input rejection, DST ambiguous/nonexistent local times in applicable native conversion tests, precision loss, invalid Date/NaN, UUID canonical byte order and signed duration arithmetic overflow. Test dates in records, optionals, lists, maps as values, results, callbacks, async and streams; compare canonical values independently, not formatted local strings. Date keys in sets/maps require portable equality and hashing before they can be enabled.
+
+### 5.7 Custom and external type extension system
+
+Users must be able to add new reusable types without modifying, forking, rebuilding or publishing a new version of the Python generator. Ordinary records, enums, flags, variants, interfaces and generic declarations already define project-owned types in IDL. External types additionally expose existing host-language classes or value types through an explicit portable representation and native adapters. Both are first-class module symbols. Use a stable, documented declarative descriptor schema and a small adapter API. Do not require a Python plugin for an ordinary new type or copy the built-in backend templates just to integrate one.
+
+#### 5.7.1 Portable representation
+
+Use an existing valid PolyGlue type as the canonical boundary representation: a scalar, record, enum, variant, collection, DataRef or typed interface reference. An external type has a stable logical identity and a checked mapping to this representation in every selected target. Reuse the generated ABI, ownership and conversion machinery rather than adding arbitrary raw ABI layouts for each external type. An external value may map to a canonical record; an opaque resource must map to an owning typed interface or supported handle contract, never a foreign raw pointer encoded as int64. Borrowed representations are allowed only within the existing scoped synchronous borrow rules; reject unsafe nested/async uses. Generic external type families are allowed when their concrete type parameters and canonical substitutions are fully validated; no open generics at an ABI boundary.
+
+The external type's value equality, hashing, ordering, precision, range and validation semantics come from its documented logical contract. Enable equality/hash/map-key operations only if the representation and adapters preserve those semantics on every selected target. External types with unverified semantics cannot be used as portable set elements/map keys. No automatic JSON fallback, reflection-based conversion, stringification or hidden copy.
+
+#### 5.7.2 Complete module-local example
+
+Illustrative extension: expose an existing application-specific geographic point class as GeoPoint in all selected languages. This is a normal user-owned extension, not a new PolyGlue built-in.
+
+```text
+modules/geo/
+├── module.yaml
+├── idl/
+│   └── geo.idl
+├── types/
+│   └── geo-point.yaml
+├── adapters/
+│   ├── cpp/
+│   │   ├── geo-point-adapter.hpp
+│   │   └── geo-point-adapter.cpp
+│   ├── kotlin/
+│   │   └── GeoPointAdapter.kt
+│   └── swift/
+│       └── GeoPointAdapter.swift
+└── tests/
+```
+
+Module configuration:
+
+```yaml
+module:
+  name: geo
+  version: "1.0.0"
+sources: [idl/**/*.idl]
+external_types:
+  - types/geo-point.yaml
+targets:
+  cpp:
+    output: ../../native/geo
+    namespace: app::geo
+    include_prefix: app/geo
+  kotlin:
+    output: ../../android/generated/geo
+    package: com.app.geo
+  swift:
+    output: ../../apple/Geo
+    module: AppGeo
+```
+
+IDL defines the portable representation and uses the external symbol declared by the descriptor:
+
+```text
+module geo;
+
+record GeoPointValue {
+    latitude: float64;
+    longitude: float64;
+}
+
+interface LocationService {
+    current(): GeoPoint;
+    async history(): list<GeoPoint>;
+    async update(point: GeoPoint): Result<GeoPoint, string>;
+}
+```
+
+The descriptor (types/geo-point.yaml):
+
+```yaml
+schema_version: 1
+name: GeoPoint
+version: "1.0.0"
+representation: geo.GeoPointValue
+semantics: value
+ownership: value
+targets:
+  cpp:
+    type: "app::maps::GeoPoint"
+    includes: ["app/maps/geo-point.hpp"]
+    adapter:
+      type: "app::maps::GeoPointAdapter"
+      includes: ["geo-point-adapter.hpp"]
+      to_representation: toRepresentation
+      from_representation: fromRepresentation
+    build:
+      include_directories: [../adapters/cpp]
+      sources: [../adapters/cpp/geo-point-adapter.cpp]
+  kotlin:
+    type: com.app.maps.GeoPoint
+    imports: [com.app.maps.GeoPoint, com.app.maps.GeoPointAdapter]
+    adapter:
+      type: com.app.maps.GeoPointAdapter
+      to_representation: toRepresentation
+      from_representation: fromRepresentation
+    build:
+      sources: [../adapters/kotlin/GeoPointAdapter.kt]
+  swift:
+    type: AppMaps.GeoPoint
+    imports: [AppMaps]
+    adapter:
+      type: GeoPointAdapter
+      to_representation: toRepresentation
+      from_representation: fromRepresentation
+    build:
+      sources: [../adapters/swift/GeoPointAdapter.swift]
+```
+
+The descriptor paths resolve relative to the descriptor itself. The adapter sources and external AppMaps/application classes are user-owned; generated files never overwrite them. The fixture must supply real host types and dependency declarations. The example selects only C++, Kotlin and Swift, but the descriptor must cover every additional selected public target before generation; required C ABI and JNI/Apple bridge representations derive from GeoPointValue rather than requiring another application class in C. If a product exposes GeoPoint publicly in C, Java, Objective-C or another language, it needs an explicit mapping or explicit opt-in to the canonical representation as that target's public type. No implicit fallback.
+
+#### 5.7.3 Adapter contract
+
+Each adapter converts the existing host type to the canonical generated value and back. Both directions are required; identity adapters may be declared explicitly when types are identical. Generated callers invoke these functions using the target's normal type system, not string-based runtime reflection. Conversion failures become the standard contextual runtime conversion error, never default coordinates or an unrelated business Result error.
+
+Illustrative Kotlin adapter (the application provides GeoPoint and generated module provides GeoPointValue):
+
+```kotlin
+package com.app.maps
+
+import com.app.geo.GeoPointValue
+
+object GeoPointAdapter {
+    fun toRepresentation(value: GeoPoint): GeoPointValue {
+        validate(value.latitude, value.longitude)
+
+        return GeoPointValue(value.latitude, value.longitude)
+    }
+
+    fun fromRepresentation(value: GeoPointValue): GeoPoint {
+        require(value.latitude.isFinite() && value.latitude in -90.0..90.0)
+        require(value.longitude.isFinite() && value.longitude in -180.0..180.0)
+
+        return GeoPoint(value.latitude, value.longitude)
+    }
+
+    private fun validate(latitude: Double, longitude: Double) {
+        require(latitude.isFinite() && latitude in -90.0..90.0)
+        require(longitude.isFinite() && longitude in -180.0..180.0)
+    }
+}
+```
+
+The sample shares validation between both directions. Adapters must be callable on the declared executor; no implicit cross-thread access or blocking I/O. If conversion creates native resources, declare and enforce ownership, cleanup on partial failure, and required executor. DataRef conversions retain the owner without implicit copies; view conversions obey scoped lifetime. An adapter failure must not leak a partially converted collection or interface handle.
+
+| Target | Adapter integration |
+| --- | --- |
+| C | Checked C function pair and explicit owned-value cleanup where needed |
+| C++ | Typed class/static methods, includes and CMake targets |
+| Java / Kotlin | Typed static/object functions, imports, Gradle dependencies and JNI canonical bridge |
+| Objective-C | Typed class methods or C functions, headers, ARC and module imports |
+| Swift | Static functions, module imports, SwiftPM/source dependencies |
+| Python | Explicit imported module and typed conversion callables |
+| Dart / Flutter | Explicit package imports and conversion functions, native/web capability selection |
+| C# | Static methods, namespace/assembly and project/package references |
+| JS / TS | Explicit ESM exports, imports, runtime validation and declarations |
+| WASM | Canonical native representation plus JS adapter and checked memory conversion |
+
+Adapters are handwritten in the host language, not arbitrary snippets evaluated by the generator. User-owned native dependency targets, includes and sources integrate with the CMake graph; managed dependencies use the corresponding ecosystem tooling. Build paths and dependencies are explicit and validated. No new generator backend is needed for a new type that uses an existing canonical representation. Adding a fundamentally new ABI primitive or language backend is a separate compiler feature, not promised by this extension contract.
+
+#### 5.7.4 Discovery, module sharing and diagnostics
+
+- Load descriptor files through external_types in module.yaml, resolve logical symbols before output planning, and allow normal imports of geo.GeoPoint in dependent modules.
+- Ship a versioned descriptor schema and validate names, type references, duplicate symbols, adapter signatures through compile tests, target coverage, supported representation, dependency cycles, build paths, ownership, annotations and generic instantiations.
+- Record external logical identity, version, canonical representation fingerprint, ABI fingerprint, per-target public type/import/adapter metadata and source/dependency hashes in module manifests. Source/prebuilt consumers must use compatible descriptors and artifacts. Changing an adapter implementation invalidates relevant build caches; changing the canonical ABI or logical semantics requires compatibility review.
+- Resolve adapter imports and includes in the defining module, not from the importing module's naming defaults. Support external descriptors in separate repositories through the existing source/prebuilt dependency system.
+- No arbitrary Python imports or execution during generation, unsafe YAML tags, implicit dependency installation or arbitrary shell commands. Type descriptors are data; source adapters and build integration are explicitly trusted developer inputs.
+- Report a missing mapping with module, logical type, target, referencing IDL location and descriptor path. Reject incompatible or invalid mappings before writing output. Actual adapter signature mismatch is a build failure, not silently accepted.
+
+#### 5.7.5 Developer experience and documentation
+
+Provide a schema reference and a complete working guide in docs/external-types.md, with examples/external-types/ demonstrating date mapping, GeoPoint, a resource-owning external type and a separately distributed type module. Include the smallest descriptor for a scalar-backed type, adapter templates or sample code per language, source/package integration, validation, test fixtures, failure cases and how to extend an existing descriptor for another target. Reuse the built-in catalog for standard types; users do not need to create adapters for common date, timestamp, duration or UUID operations.
+
+Proposed commands (implement with the existing CLI, not a separate tool):
+
+```bash
+polyglue validate --module geo
+polyglue generate --module geo
+polyglue config show --module geo --target cpp
+polyglue test --module geo --target cpp
+```
+
+Publish the descriptor schema with the generator package, document exact adapter signatures, provide clear validation diagnostics and ensure generation works from an installed wheel using only user-owned descriptor/adapter files. No separate plugin manager or dynamic registration framework is needed for ordinary custom types.
 
 ## 6. Modules and dependencies
 
@@ -2304,7 +2547,8 @@ All backends consume the same IDL fixtures and named test cases. Generate fresh 
 | Collections | Empty/large/nested, duplicates, map keys, arrays |
 | Named types | Records, enums, flags, variants, constants, defaults, generic instantiations |
 | Optional / Result | Missing, present, success, error, void success, nested values |
-| External types | Adapter conversion, invalid input, lifetime |
+| Date/time and UUID | Calendar dates, UTC instants, precision, duration, timezone and canonical UUID bytes |
+| External types | Descriptor resolution, both conversion directions, invalid input, lifetime, custom source/prebuilt module |
 | Interfaces | Identity, multiple objects, inheritance, factory, both directions |
 | Async | Every valid return category, inline and delayed completion, error, cancel |
 | Callbacks | Scoped, retained, one-shot, thread affinity, return values where supported |
@@ -2343,6 +2587,29 @@ Unit parser/AST/IR/config tests, semantic errors and source spans, snapshots/gol
 ### 18.4 Completion evidence
 
 No finite test suite proves that all possible defects are absent. The acceptance standard is complete explicit conformance coverage, reproducible test evidence and zero known blocking defects. Never hide a failing or skipped required test. Every defect receives a regression test before it is closed.
+
+### 18.5 Exhaustive declared type and language-pair coverage
+
+Maintain a checked-in, machine-readable inventory of every built-in type, external fixture type and valid usage category. Generate expected case IDs from the inventory, target capability rules and actual runtime coexistence matrix. The test harness must compare expected cases with observed executions and fail on missing, skipped or duplicated required results. Coverage is exhaustive over the declared finite fixture matrix and supported capabilities; arbitrary unbounded generic nesting or all possible values cannot be exhaustively enumerated. Use property tests, bounded nesting and fuzzing for the remaining input space.
+
+For each feasible ordered pair A -> B (A consumes, B implements), test all supported types with independently computed expected values. Reverse B -> A is a separate required direction. Native C/C++ loopback is a useful baseline but is not a substitute for actual cross-language pairs. A JNI -> Dart or Swift -> Python path is tested when both runtime hosts actually coexist, including their native bridge; unsupported platform/runtimes require an explicit reason and may not be marked passing.
+
+| Usage | Required verification |
+| --- | --- |
+| Input and output | A constructs input; B checks exact values and returns independently constructed output; A checks it |
+| Round trip | A -> B -> A, with canonical comparison and independent expected values |
+| Record/collection | Every valid field/element type, nested optional/list/map/result/variant and generic substitution |
+| Async | Every permitted return type, inline and delayed completion, failure and cancellation |
+| Callback / stream | Reverse calls, repeated values, ordering, cancellation and ownership |
+| Borrowed data | Sync-only scoped view, mutation exclusivity and rejected escape |
+| Owned data | DataRef across async, retained slice, copy count, owner release and teardown |
+| Invalid values | Range, encoding, tags, null, overflow, conversion failure and invalid lifetime |
+| Custom type | Descriptor-only addition, host adapters, separate module import, canonical conversion and cleanup |
+| Packaged artifact | Repeat applicable cases from clean installed consumers using final binary/package |
+
+Test actual values from each language, not just a universal C fixture reflected unchanged back to itself. Include distinct sentinel values and provider-side assertions to detect reversed fields, signedness, wrong time unit, accidental defaulting and unexpected copies. Use reproducible seeds, exact numeric comparisons except explicitly defined float tolerance, canonical date/UUID representations and test failure injection for partial collection conversion. For each external type fixture, test no changes to generator source, module-specific naming/template overrides, descriptor schema errors, missing target, incompatible ABI, adapter compile error, both conversions, async/callback lifetimes and source/prebuilt package consumption.
+
+Report coverage by ordered pair, platform, type, usage, case ID and source revision. Required case coverage must be 100% of the declared feasible matrix before release; this is not a claim that all conceivable defects are impossible. Ordinary type/adapter tests run in each relevant language CI, and an aggregate interop check fails if any required pair or type lacks evidence.
 
 ## 19. GitHub Actions
 
@@ -2856,6 +3123,9 @@ Explicit remaining design decisions to settle with proof-of-concept and tests: e
 - [ ] Module-specific paths, prefixes, dependencies and imports work in independent source/prebuilt builds.
 - [ ] All required target languages and feasible directions pass actual generated-code conformance.
 - [ ] All types, valid nested types and async return categories have evidence; forbidden combinations fail explicitly.
+- [ ] Built-in date, timestamp, duration and UUID native conversions preserve canonical values or reject precision/range loss.
+- [ ] Custom external types work from user-owned descriptors and adapters without changing the generator; all selected mappings, imports, packaging and lifetime tests pass.
+- [ ] Every required ordered language pair and type/usage case has execution evidence; missing cases fail aggregate CI.
 - [ ] DataView, MutableDataView, DataRef, callbacks, cancellation, streams and service replacement pass lifecycle tests.
 - [ ] HTTP, camera/grayscale and login examples are runnable; device-dependent claims have appropriate evidence.
 - [ ] Memory, ownership, leaks, deadlocks, races, use-after-free and other defined failure cases have automated tests.
