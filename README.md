@@ -1,7 +1,7 @@
 <p align="center">
     <a href="https://github.com/polyglue/polyglue"><img width="180" src="extras/images/logo.svg" alt="PolyGlue logo"></a><br>
     <strong>PolyGlue</strong><br>
-    Generate native type-safe bindings from a single definition to connect programming languages across platforms.
+    Generate type-safe native bindings across languages and platforms.
 </p>
 
 ## Project
