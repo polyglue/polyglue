@@ -12,15 +12,17 @@ Define your data models, interfaces, callbacks, and asynchronous operations once
 
 ## Goals
 
-- Python-based compiler with customizable Jinja2 templates.
+- Python-based compiler with per-module and per-target Jinja2 template overrides.
 - Independent, modular interface definition language (IDL).
 - Bidirectional native calls without mandatory serialization or network transport.
-- Strongly typed records, enums, interfaces, collections, results, callbacks, async operations, and streams.
-- Explicit memory ownership, borrowed data views, and shared buffers with zero-copy transfers where supported.
+- Strongly typed records, enums, variants, interfaces, collections, results, callbacks, async operations, and streams.
+- Built-in date, timestamp, duration and UUID, with checked native conversions.
+- Custom external types through module-owned descriptors and host adapters, without changing the generator.
+- Explicit memory ownership, scoped data views and shared buffers with zero-copy transfers where supported.
 - Optional service discovery and replaceable implementations.
 - Per-module and per-target configuration for naming conventions, prefixes, namespaces, packages, output paths, imports, annotations, and formatting.
 - Native support libraries maintained and tested in the same repository as the generator.
-- Deterministic code generation and integration with existing build systems.
+- Deterministic code generation, CMake native builds and Python-orchestrated packaging for AAR, XCFramework and other target-native formats.
 - Distribution through PyPI, local installation, and standalone tooling.
 
 ## Example
@@ -87,9 +89,9 @@ The compiler and generator are build-time tools. Generated applications do not r
 
 ## Quality and testing
 
-PolyGlue aims to provide independent CI jobs for every supported language, platform-specific integration tests, cross-language conformance tests, memory and ownership validation, copy tracking, concurrency stress tests, fuzzing, sanitizers, and performance benchmarks.
+PolyGlue plans independent CI checks for every target, real bidirectional conformance for supported types and feasible language pairs, installed-package tests, memory and concurrency regression tests and appropriate sanitizers. Shared fixtures, risk-based tests and safe build/dependency caching will keep CI efficient. Longer stress and fuzz tests will be used where they add evidence.
 
-Support will be declared only after the corresponding implementation and tests are available.
+Support will be declared only after corresponding implementation, tests and documentation are verified. See the detailed [implementation checklist](PROJECT.md#22-implementation-and-acceptance-checklist).
 
 ## Installation
 

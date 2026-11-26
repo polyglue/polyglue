@@ -27,13 +27,25 @@
 - [16. Language-specific integration](#16-language-specific-integration)
 - [17. Example applications](#17-example-applications)
 - [18. Test specification](#18-test-specification)
+  - [Coverage and test design policy](#180-coverage-and-test-design-policy)
 - [19. GitHub Actions](#19-github-actions)
+  - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
   - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
-- [22. Release acceptance checklist](#22-release-acceptance-checklist)
+- [22. Implementation and acceptance checklist](#22-implementation-and-acceptance-checklist)
+  - [Repository and tooling](#221-repository-tooling-and-engineering-rules)
+  - [Compiler and IDL](#222-compiler-idl-and-diagnostics)
+  - [Modules and configuration](#223-module-system-configuration-and-output-planning)
+  - [Templates and annotations](#224-templates-and-annotations)
+  - [Built-in and external types](#225-built-in-types-and-extension-mechanism)
+  - [Runtime and ownership](#226-native-abi-ownership-and-runtime)
+  - [Language backends](#227-language-specific-backends-and-platform-support)
+  - [Build and artifacts](#228-cmake-python-build-tool-and-binary-artifacts)
+  - [Applications and conformance](#229-real-applications-and-conformance)
+  - [CI and delivery](#2210-ci-performance-documentation-and-final-delivery)
 
 ## 1. Product and scope
 
@@ -67,6 +79,14 @@ PolyGlue is a cross-platform interface compiler and source-code generator, writt
 | Universal cross-runtime sync dispatch | Do not promise where thread or isolate constraints make it unsafe |
 
 Use original implementations. Preserve required third-party notices when dependencies are used; do not copy existing generator or runtime source. Prefer fewer dependencies and a small, well-tested runtime. No unverified feature claims.
+
+### 1.3 Engineering boundaries
+
+The final implementation must be small, direct and maintainable. Use the simplest architecture that satisfies the explicit requirements. Do not add features, dependencies, extension frameworks, generators, wrappers or tests just to demonstrate activity. Every component must serve a real consumer, a documented contract or a credible failure mode.
+
+Implement only the new final contract. Remove replaced implementations, obsolete configuration, compatibility aliases, version-detection branches, dead code and unused dependencies together with their callers. Do not preserve old PolyGlue APIs, IDL, configuration, manifest or ABI formats. Version and ABI checks remain necessary to reject incompatible current artifacts safely, not to route old versions to legacy code. Never hide failure with default values, silent retries, alternate implementation selection, ignored errors or compatibility workarounds. Explicit template inheritance, a deliberately selected provider override and safe resource finalization are defined behavior, not error-recovery fallbacks. Unsupported operations must fail with useful diagnostics.
+
+Follow the owner rules in AGENTS.md. Review actual impact, fix substantiated problems and do not perform unrelated speculative refactors. Preserve user data, unrelated work, security and release authorization.
 
 ## 2. Supported languages and platforms
 
@@ -107,7 +127,7 @@ Flutter is an integration target, not a separate language. JavaScript and TypeSc
 | Mac Catalyst | C, C++, Objective-C, Swift | SDK build and execution |
 | WebAssembly | C/C++, JS, TS, Dart/Flutter Web where supported | Node and browser execution |
 
-The table is a required coverage plan, not verified support. Each combination requires a capability entry and actual evidence. Native visionOS support is independent of Flutter; native Flutter visionOS is conditional on upstream SDK/engine support. Flutter Web uses JS/WASM adapters rather than dart:ffi. Additional runtime combinations require explicit tests.
+The table is a required coverage plan, not verified support. SDK floors in examples are illustrative until the current toolchain matrix is validated. Each combination requires a capability entry and actual evidence. Native visionOS support is independent of Flutter; native Flutter visionOS is conditional on upstream SDK/engine support. Flutter Web uses JS/WASM adapters rather than dart:ffi. Additional runtime combinations require explicit tests.
 
 Build-only, emulator/simulator and physical-device evidence must be reported separately. An unavailable runner is a blocker, not a pass.
 
@@ -162,7 +182,7 @@ compiler.validate()
 compiler.generate()
 ```
 
-Use a standalone installed CLI as the baseline. A bundled executable without a separately installed Python is optional after the wheel works. Do not publish packages before all required release gates and owner authorization.
+Use a standalone installed CLI as the baseline. A bundled executable without a separately installed Python is optional only if a real deployment need justifies it after the wheel works. Do not publish packages before all required release gates and owner authorization.
 
 ### 3.3 Tooling
 
@@ -415,7 +435,7 @@ interface Auth {
 }
 ```
 
-C++ can use a project Result implementation compatible with C++20 (std::expected only when available); Swift uses Result when the error meets Swift requirements, other targets use a native or generated tagged result. Business errors do not become unexpected exceptions.
+Use one C++20-compatible Result representation. Swift uses Result when the error meets Swift requirements and a generated tagged result otherwise. Other targets use a native or generated tagged result. Business errors do not become unexpected exceptions.
 
 ### 5.4 Complete type mapping contract
 
@@ -503,11 +523,11 @@ Rules: all integral conversions validate range and type (Python bool is not acce
 | external | Declared adapter | Declared adapter | Declared adapter | Declared adapter |
 | DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
 
-Nested optional values cannot collapse distinct absence states; either use a tagged wrapper or reject the unsupported nesting explicitly. Set/map keys must have portable equality and hashing. For 1.0 restrict keys to bool, integer, string, enum and UUID unless a portable equality policy has been proven. Do not use object identity for value keys. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit; the exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
+Nested optional values cannot collapse distinct absence states; either use a tagged wrapper or reject the unsupported nesting explicitly. Set/map keys must have portable equality and hashing. For the initial implementation restrict keys to bool, integer, string, enum and UUID unless a portable equality policy has been proven. Do not use object identity for value keys. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit; the exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
 
 ### 5.5 Per-type acceptance
 
-Generate shared fixtures with a stable case identifier for each scalar, composite and advanced type, and legal nested combinations. Run each valid fixture as argument, return value, record field, collection element and async result where its lifetime allows it. Test both native-to-managed and managed-to-native implementations; then the supported non-C++ pairs. Reject forbidden borrowed-view escapes, invalid ranges, unknown tags and unsupported external mappings. No backend may mark a type supported just because it can generate a declaration.
+Use the shared conformance inventory and risk-based coverage policy in section 18. Each built-in and external fixture type must cross every feasible ordered language pair. Test argument, result, record, collection and async conversion paths where legal and distinct. Reuse representative nested fixtures instead of multiplying equivalent cases. No backend may mark a type supported just because it generates a declaration.
 
 ### 5.6 Built-in date and time types
 
@@ -559,7 +579,7 @@ Native-friendly mapping profiles may be provided by the built-in adapter catalog
 
 #### 5.6.2 Date conformance
 
-Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond values, values beyond the JS safe-integer range, signed extremes, invalid ranges, leap years (including 1900 and 2000), month/day validation, year boundaries, calendar date stability across timezone changes, UTC offset normalization, naive input rejection, DST ambiguous/nonexistent local times in applicable native conversion tests, precision loss, invalid Date/NaN, UUID canonical byte order and signed duration arithmetic overflow. Test dates in records, optionals, lists, maps as values, results, callbacks, async and streams; compare canonical values independently, not formatted local strings. Date keys in sets/maps require portable equality and hashing before they can be enabled.
+Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond values, values beyond the JS safe-integer range, signed extremes, invalid ranges, leap years (including 1900 and 2000), month/day validation, year boundaries, calendar date stability across timezone changes, UTC offset normalization, naive input rejection, DST ambiguous/nonexistent local times in applicable native conversion tests, precision loss, invalid Date/NaN, UUID canonical byte order and signed duration arithmetic overflow. Test dates in records, optionals, lists, maps as values, results, callbacks, async and streams; compare canonical values independently, not formatted local strings. Calendar-date keys and other non-listed key types remain unavailable unless portable equality and hashing are explicitly specified and proven.
 
 ### 5.7 Custom and external type extension system
 
@@ -567,7 +587,7 @@ Users must be able to add new reusable types without modifying, forking, rebuild
 
 #### 5.7.1 Portable representation
 
-Use an existing valid PolyGlue type as the canonical boundary representation: a scalar, record, enum, variant, collection, DataRef or typed interface reference. An external type has a stable logical identity and a checked mapping to this representation in every selected target. Reuse the generated ABI, ownership and conversion machinery rather than adding arbitrary raw ABI layouts for each external type. An external value may map to a canonical record; an opaque resource must map to an owning typed interface or supported handle contract, never a foreign raw pointer encoded as int64. Borrowed representations are allowed only within the existing scoped synchronous borrow rules; reject unsafe nested/async uses. Generic external type families are allowed when their concrete type parameters and canonical substitutions are fully validated; no open generics at an ABI boundary.
+Use an existing valid PolyGlue type as the canonical boundary representation: a scalar, record, enum, variant, collection, DataRef or typed interface reference. An external type has a stable logical identity and a checked mapping to this representation in every selected target. Reuse the generated ABI, ownership and conversion machinery rather than adding arbitrary raw ABI layouts for each external type. An external value may map to a canonical record; an opaque resource must map to an owning typed interface or supported handle contract, never a foreign raw pointer encoded as int64. Borrowed representations are allowed only within the existing scoped synchronous borrow rules; reject unsafe nested/async uses. Generic external types may reuse the existing concrete generic instantiation mechanism. Do not create a second generic system. No open generics at an ABI boundary.
 
 The external type's value equality, hashing, ordering, precision, range and validation semantics come from its documented logical contract. Enable equality/hash/map-key operations only if the representation and adapters preserve those semantics on every selected target. External types with unverified semantics cannot be used as portable set elements/map keys. No automatic JSON fallback, reflection-based conversion, stringification or hidden copy.
 
@@ -1100,7 +1120,7 @@ None of these choices is imposed on domain or repository.
 | Module | Swift, Objective-C, JS/TS |
 | Assembly | C# |
 | Imports | Public import path, include prefix, strategy, module maps, exports |
-| Templates | Override directory and fallback policy |
+| Templates | Override directory and explicit inheritance policy |
 | Formatting | Indentation, line endings, final newline, brace style where supported |
 | Annotations | Defaults, automatic attributes, target-specific overrides |
 | Visibility | Exported/public/private/internal symbols |
@@ -1729,7 +1749,7 @@ class LanguageBackend(Protocol):
     def build_render_models(self, module, context): ...
 ```
 
-The protocol is illustrative; freeze actual interfaces with tests. Keep the implementation small and share only genuinely common logic. Each backend owns naming, types, imports, layout, annotations, marshalling and templates. Plugins via Python entry points are explicit trusted opt-in, not necessary for built-in targets.
+The protocol is illustrative; freeze actual interfaces with tests. Keep the implementation small and share only genuinely common logic. Each backend owns naming, types, imports, layout, annotations, marshalling and templates. Do not implement a general plugin framework. Built-in backends, template overrides and declarative external types cover the requested extension use cases.
 
 Template example:
 
@@ -1754,10 +1774,10 @@ targets:
   cpp:
     templates:
       directory: ./custom/templates/cpp
-      fallback_to_builtin: true
+      inherit_builtin: true
 ```
 
-Use StrictUndefined. All imports/types/names are resolved in Python before rendering. Custom template selection and resource paths must be validated. Templates and plugins are trusted developer code; never load them implicitly from untrusted IDL.
+Use StrictUndefined. All imports/types/names are resolved in Python before rendering. Custom template selection and resource paths must be validated. Templates are explicitly trusted developer inputs. Never load them implicitly from untrusted IDL.
 
 ### 11.4 Generation guarantees
 
@@ -1801,7 +1821,7 @@ defaults:
     cpp:
       templates:
         directory: ./templates/cpp
-        fallback_to_builtin: true
+        inherit_builtin: true
 ```
 
 ```yaml
@@ -1813,10 +1833,10 @@ targets:
       overrides:
         interface.hpp.j2: ./templates/special/repository-interface.j2
         CMakeLists.txt.j2: ./templates/special/repository-cmake.j2
-      fallback_to_builtin: true
+      inherit_builtin: true
 ```
 
-Only matching template IDs are overridden; all other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID: explicit mapping in module target, module target directory, module-wide inherited mapping/directory, project target defaults, project-wide defaults, then built-in catalog. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured fallback_to_builtin: false disallows use of the built-in catalog for that target's effective set; missing required templates fail before any outputs are written. A missing explicitly mapped file always fails, even if fallback is enabled. Validate unknown IDs and conflicting overrides.
+Only matching template IDs are overridden; all other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID: explicit mapping in module target, module target directory, module-wide inherited mapping/directory, project target defaults, project-wide defaults, then built-in catalog. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured inherit_builtin: false disallows use of the built-in catalog for that target's effective set; missing required templates fail before any outputs are written. A missing explicitly mapped file always fails. An existing selected template that fails to parse or render is an error. Never try another template after a failure. Validate unknown IDs and conflicting overrides.
 
 #### 11.5.2 Custom template workflow
 
@@ -1834,12 +1854,12 @@ Export does not overwrite existing custom files without explicit authorization. 
 
 Publish a versioned render-model contract with examples for every public template. Backend code supplies names, includes/imports, type declarations, annotations, ownership and ABI-specific render metadata; Jinja2 is presentation, not a second semantic compiler. StrictUndefined, deterministic rendering, documented filters/macros and no implicit environment or timestamp dependence. Use a restricted filesystem loader with explicit roots, normalized relative IDs and no traversal/symlink escape. Templates may reference catalog partials through a documented namespace or allowed relative ID; prevent accidental recursive inclusion and report its chain.
 
-Custom templates are trusted local developer input, not a security sandbox. A template cannot declare a new output path, change the validated file plan or bypass capability/ABI validation. Runtime source replacement requires an explicit separate runtime integration and compatibility checks. A custom template that changes ABI-visible code must be validated by downstream compilation and ABI checks; do not certify arbitrary overrides based on rendering alone.
+Custom templates are trusted local developer input, not a security sandbox. A template cannot declare a new output path, change the validated file plan or bypass capability/ABI validation. Custom templates cannot replace the runtime implementation. Runtime changes follow the normal source development and validation process. A custom template that changes ABI-visible code must be validated by downstream compilation and ABI checks; do not certify arbitrary overrides based on rendering alone.
 
 #### 11.5.4 Acceptance tests
 
 - Single-file override retains all other built-ins; partial override and multiple modules with different overrides.
-- Project/module precedence, correct relative paths, strict missing template behavior, duplicate/unknown ID and fallback disabled.
+- Project/module precedence, correct relative paths, strict missing template behavior, duplicate/unknown ID and inheritance disabled.
 - Override of nested partials and generated build files; stable manifest fingerprints and invalidation when content changes.
 - Syntax error, undefined variables, context schema mismatch, traversal, recursive inclusion and deterministic rerender.
 - Generated outputs compile and run in each target, including an actual package consumer using customized source/build templates.
@@ -1857,7 +1877,7 @@ Required ABI rules:
 - Explicit ownership for every argument and return, allocator/deallocator pairing and checked length/offset arithmetic.
 - No C++ STL layout, foreign object memory layout or exception crossing the ABI directly.
 - One compatible shared runtime per context; detect unintended duplicate instances.
-- Explicit close/dispose and safe finalizer fallback. Never rely on finalizers alone.
+- Explicit close/dispose and safe finalization for abandoned resources. Never rely on finalizers alone.
 - Define identity, strong and weak references, refcount overflow, cycles and thread-affine destruction.
 
 Buffer-specific rules are in section 13; asynchronous lifecycle rules are in section 14.
@@ -2031,10 +2051,7 @@ Proposed Kotlin registration:
 
 ```kotlin
 val registry = ServiceRegistry.global
-val registration = registry.register(
-    HttpClient.TYPE,
-    AndroidHttpClient()
-)
+val registration = registry.register(HttpClient.TYPE, AndroidHttpClient())
 ```
 
 Dart resolution:
@@ -2084,7 +2101,7 @@ C, Java, Objective-C and JS/TS expose equivalent typed descriptors or generated 
 5. The consumer's generated adapter constructs a typed proxy around the snapshot. Invocations use its function table rather than method-name strings.
 6. The provider's adapter schedules or executes the actual method on its runtime. Completion returns through the consumer's generated adapter.
 
-No reflection or network is required. Multiple registrations can coexist. Use explicit scoped registries, optional global convenience and optional parent fallback. A context must be shared intentionally; an unrelated runtime cannot see its providers.
+No reflection or network is required. Multiple registrations can coexist. Use explicit scoped registries and an optional global convenience. No implicit search through parent registries or substitute provider after a failure. A context must be shared intentionally; an unrelated runtime cannot see its providers.
 
 ### 15.4 Replacement semantics
 
@@ -2097,9 +2114,9 @@ No reflection or network is required. Multiple registrations can coexist. Use ex
 | unregister(token) | Removes only that registration |
 | missing provider | Typed runtime failure |
 
-Default duplicate registration is an error unless explicit replace/override policy is specified. Do not silently retry a failed call against another provider. Existing operations and stream subscriptions retain their selected provider; new dynamic calls use the current provider. Removing a registration does not invalidate an otherwise valid fixed reference. Runtime shutdown cancels/drains operations before releasing adapters.
+Default duplicate registration is an error unless explicit replace/override policy is specified. A scoped override restores a previous registration only when that override is deliberately removed, not when a call fails. Do not silently retry a failed call against another provider. Existing operations and stream subscriptions retain their selected provider; new dynamic calls use the current provider. Removing a registration does not invalidate an otherwise valid fixed reference. Runtime shutdown cancels/drains operations before releasing adapters.
 
-Tests: both get/proxy modes; replacement and fallback; multiple instances; nested contexts; ABI mismatch; concurrent registration, lookup, removal and invocation; stale registration tokens; runtime reload; callback reentrancy; final release outside locks.
+Tests: both get/proxy modes; replacement and explicit scoped restoration; multiple instances; nested contexts; ABI mismatch; concurrent registration, lookup, removal and invocation; stale registration tokens; runtime reload; callback reentrancy; final release outside locks.
 
 ## 16. Language-specific integration
 
@@ -2126,10 +2143,7 @@ class DartHttpClient implements HttpClient {
   }
 }
 
-final registration = ServiceRegistry.global.register(
-  HttpClient.type,
-  DartHttpClient(),
-);
+final registration = ServiceRegistry.global.register(HttpClient.type, DartHttpClient());
 ```
 
 The implementation function above is illustrative; examples must supply a real implementation.
@@ -2161,10 +2175,7 @@ class AndroidUserRepository(
 Register the implementation in the shared Android runtime during plugin initialization:
 
 ```kotlin
-val registration = ServiceRegistry.global.register(
-    UserRepository.TYPE,
-    AndroidUserRepository(database)
-)
+val registration = ServiceRegistry.global.register(UserRepository.TYPE, AndroidUserRepository(database))
 ```
 
 Dart consumes the same contract and the imported domain model:
@@ -2535,6 +2546,16 @@ Every language has a documented cross-language caller and implementation case, w
 
 ## 18. Test specification
 
+### 18.0 Coverage and test design policy
+
+Test actual contracts and credible failure modes. Every test must identify a public behavior, invariant, boundary, platform integration risk or previously observed defect. A test must fail when that behavior breaks, not merely duplicate implementation logic or assert editorial wording. Use real generated adapters and actual language runtimes. Do not invent unlikely cases that have no reachable code path, test trivial getters, duplicate assertions in multiple suites, add arbitrary sleeps, or grow a test matrix solely to increase counts or coverage percentages.
+
+Use the smallest set of meaningful fixtures that proves all supported types, directions and distinct behaviors. Share IDL, canonical expected values and parameterized tests across languages. Cover each type in each feasible ordered pair, then exercise nested values, callback, async, stream and ownership paths according to the distinct conversion and lifetime risks. Reuse a fixture or result where it proves multiple requirements. Do not multiply every scalar by every annotation, collection, OS, compiler, build mode and scheduler when those dimensions exercise the same code path. Do test each platform-specific adapter, ABI, loader and runtime lifecycle where it differs. Never omit a required type, direction or distinct failure mode to save time.
+
+Write a regression test for a real bug at the lowest useful boundary, and integration coverage when the bug crosses layers. Prefer deterministic barriers, injected failures, local fixtures and bounded property tests. Keep expensive stress/fuzz/sanitizer runs purposeful and time-bounded. Benchmark actual hot paths (native invocation, copying, buffer lifetime and async scheduling), not trivial operations. Add a performance threshold only after a meaningful baseline exists. Measure test and build duration before optimizing; remove redundant work, not evidence. No arbitrary target for line coverage is a substitute for conformance.
+
+The required finite case inventory and actual execution evidence must reach 100% of supported contracts before approval. No finite suite proves every conceivable input, schedule or future defect. Record unsupported combinations with a concrete technical reason and record unavailable execution as blocked, not passed.
+
 ### 18.1 Shared conformance suite
 
 All backends consume the same IDL fixtures and named test cases. Generate fresh bindings, compile them, execute real implementations and compare actual results. Maintain a machine-readable matrix indexed by type, direction, platform, runtime, operation and case ID; every claimed combination has evidence or an explicit unsupported reason.
@@ -2555,9 +2576,9 @@ All backends consume the same IDL fixtures and named test cases. Generate fresh 
 | Modules | Source/prebuilt, import aliases, independent paths, dependency graph |
 | Naming / annotations | Golden source plus actual compiler checks |
 | Buffers | DataView, MutableDataView, DataRef, bytes, alias/copy/lifetime rules |
-| Registry | Lookup, fixed/dynamic references, override, fallback, concurrent teardown |
+| Registry | Lookup, fixed/dynamic references, override, explicit scoped restoration, concurrent teardown |
 
-Exercise legal nested compositions (e.g. optional<list<User>>, list<optional<User>>, Result<Page<User>, Error>) and reject forbidden combinations. Add boundary and randomized tests. Every backend pair that can coexist must run both directions, not just separate language-to-C tests.
+Exercise legal nested compositions (e.g. optional<list<User>>, list<optional<User>>, Result<Page<User>, Error>) and reject forbidden combinations. Select cases for distinct conversion, nullability and ownership behavior. See section 18.5 for the pair matrix.
 
 ### 18.2 Memory safety and concurrency
 
@@ -2585,11 +2606,11 @@ Unit parser/AST/IR/config tests, semantic errors and source spans, snapshots/gol
 
 ### 18.4 Completion evidence
 
-No finite test suite proves that all possible defects are absent. The acceptance standard is complete explicit conformance coverage, reproducible test evidence and zero known blocking defects. Never hide a failing or skipped required test. Every defect receives a regression test before it is closed.
+No finite test suite proves that all possible defects are absent. The acceptance standard is complete explicit conformance coverage, reproducible test evidence and zero known blocking defects. Never hide a failing or skipped required test. Every substantiated defect affecting behavior receives a targeted regression test before it is closed, unless an existing test already proves the same failure and fix. Documentation-only findings require appropriate document validation, not unrelated runtime tests.
 
 ### 18.5 Exhaustive declared type and language-pair coverage
 
-Maintain a checked-in, machine-readable inventory of every built-in type, external fixture type and valid usage category. Generate expected case IDs from the inventory, target capability rules and actual runtime coexistence matrix. The test harness must compare expected cases with observed executions and fail on missing, skipped or duplicated required results. Coverage is exhaustive over the declared finite fixture matrix and supported capabilities; arbitrary unbounded generic nesting or all possible values cannot be exhaustively enumerated. Use property tests, bounded nesting and fuzzing for the remaining input space.
+Maintain a checked-in, machine-readable inventory of every built-in type, external fixture type and valid usage category. Derive expected case IDs from a small shared fixture inventory, target capability rules and actual runtime coexistence matrix. Use ordinary data files and the existing test tools rather than a separate testing framework. The test harness must compare expected cases with observed executions and fail on missing, skipped or duplicated required results. Coverage is exhaustive over the declared finite fixture matrix and supported capabilities; arbitrary unbounded generic nesting or all possible values cannot be exhaustively enumerated. Use property tests, bounded nesting and fuzzing for the remaining input space.
 
 For each feasible ordered pair A -> B (A consumes, B implements), test all supported types with independently computed expected values. Reverse B -> A is a separate required direction. Native C/C++ loopback is a useful baseline but is not a substitute for actual cross-language pairs. A JNI -> Dart or Swift -> Python path is tested when both runtime hosts actually coexist, including their native bridge; unsupported platform/runtimes require an explicit reason and may not be marked passing.
 
@@ -2640,11 +2661,11 @@ Report coverage by ordered pair, platform, type, usage, case ID and source revis
 | packaging | Wheel/sdist install, resource availability, CLI from clean environment; independent native and ecosystem package consumer matrix |
 | httpbin-live | External HTTP smoke with separate network failure reporting |
 
-Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only add README badges for real workflows. Each job regenerates its inputs and fails if required tests did not execute. Do not replace real test jobs with echo commands, empty matrices or allow-failure.
+Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only add README badges for real workflows. Generate inputs from the current revision or reuse identical verified generation artifacts from the same run. Each job fails if its required tests did not execute. Do not replace real test jobs with echo commands, empty matrices or allow-failure.
 
 ### 19.2 CI rules
 
-PR and main runs execute mandatory checks. Expensive fuzzing and extended platform coverage also run nightly and before release; release gates require all mandatory evidence on the exact candidate SHA. Use the latest stable verified toolchains and actions under section 3.7, pinned to reviewed revisions; use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
+PR and main runs execute the required deterministic compiler, target, conformance and package checks for the implemented scope. Run independent jobs concurrently and reuse build outputs safely. Bounded sanitizer regression checks remain mandatory for native changes. Run longer stress/fuzz and extended device matrices only on deliberate manual validation or before an authorized release. Do not create unnecessary scheduled jobs. Release gates require all mandatory evidence on the exact candidate SHA. Use the latest stable verified toolchains and actions under section 3.7, pinned to reviewed revisions; use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
 
 Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/test matrix, build logs and benchmark data as artifacts. Confirm jobs actually ran, inspect failures, fix root causes, rerun and record the SHA. Platform/runner unavailability remains an explicit blocker. Do not claim a passing run from a queued workflow or successful compilation alone.
 
@@ -2684,7 +2705,25 @@ Document exact commands and pinned toolchains once implemented; do not claim tha
 
 ### 19.5 Package-level CI gates
 
-Every language workflow must call the same Python orchestration commands used locally. Add independent artifact checks for CMake installation, AAR/JAR, XCFramework/SwiftPM, wheel, Dart/Flutter, NuGet and npm/WASM. Build requested release slices, inspect format and architecture, install into a separate consumer with no source-tree fallback and run representative conformance, async, ownership and sample scenarios. Full conformance runs on generated code and again on packaged artifacts wherever required. Test both clean and incremental builds, corrupted/missing artifacts, unavailable SDKs, incorrect architecture, stale manifests, failed commands and sanitizer contamination. Verify debug-symbol matching and release optimization/stripping where applicable. Upload actual distributable and reports tied to commit SHA. Do not publish externally from ordinary CI. On main, preserve complete runs; PR cancellation may cancel superseded revisions but never mark them passing.
+Every language workflow must call the same Python orchestration commands used locally. Add independent artifact checks for CMake installation, AAR/JAR, XCFramework/SwiftPM, wheel, Dart/Flutter, NuGet and npm/WASM. Build requested release slices, inspect format and architecture, install into a separate consumer with no source-tree fallback and run representative conformance, async, ownership and sample scenarios. Run full conformance through the final packaged artifact where practical, avoiding a second identical run against source. Where source and binary integration exercise distinct behavior, add focused checks for each. Verify every advertised packaging path independently. Test both clean and incremental builds, corrupted/missing artifacts, unavailable SDKs, incorrect architecture, stale manifests, failed commands and sanitizer contamination. Verify debug-symbol matching and release optimization/stripping where applicable. Upload actual distributable and reports tied to commit SHA. Do not publish externally from ordinary CI. On main, preserve complete runs; PR cancellation may cancel superseded revisions but never mark them passing.
+
+### 19.6 Fast CI and cache policy
+
+Use supported GitHub Actions and ecosystem caches rather than inventing a cache service. Verify the latest stable action versions when implementing the workflows and pin their reviewed release commits as required by section 3.7.
+
+| Cache | Scope and invalidation |
+| --- | --- |
+| uv | uv dependency/download cache keyed by host, Python, uv and uv.lock |
+| CMake / native | Pinned dependency sources and compiler cache (ccache or sccache only if measured useful), isolated by OS, architecture, compiler, SDK, flags and sanitizer |
+| Gradle / JVM / Android | Gradle-supported dependency/build caches, lockfiles, wrapper, JDK, AGP, Kotlin and NDK versions |
+| Apple / SwiftPM | Dependency checkout/download cache keyed by Package.resolved, Xcode/SDK and architecture. Cache DerivedData only if safe, useful and validated |
+| Dart / Flutter | pub download cache keyed by SDK and lockfile |
+| .NET | NuGet package cache keyed by SDK, platform and lockfile |
+| Node / Emscripten | npm download cache and supported Emscripten cache keyed by lockfile, SDK, OS and architecture |
+
+Do not cache secrets, signing materials, test verdicts or unverified final binaries. Never use a cached test result as evidence of execution on a new revision. Restore dependency downloads and compiler outputs only when their real input identity matches. Do not share release/debug/sanitizer artifacts or host/target binaries. Use immutable same-run artifacts for generated code, native libraries and test packages needed by several jobs, with SHA and manifest checks. Ordinary tests run after restoring caches. A cache miss must still work from a clean checkout. Use broad restore keys only for dependency downloads whose checksums and lockfile resolution are revalidated, never for ABI-sensitive binaries.
+
+Keep workflows readable, use reusable setup only for actual repeated work, use parallel independent language jobs and avoid reinstalling SDKs/dependencies or rebuilding identical native slices multiple times. Avoid uncontrolled matrix multiplication and oversubscription. Set bounded timeouts, cancel superseded PR runs when appropriate, retain meaningful logs and artifact reports, and measure cold/warm CI duration and cache hits. Fix a measured bottleneck rather than adding speculative tooling. Do not skip tests based on a cache hit or use path filters that omit affected transitive consumers.
 
 ## 20. Repository documentation and branding
 
@@ -2757,7 +2796,7 @@ Documentation files cover getting started, IDL grammar and type system, modules/
 
 CMake is the authoritative native build system for C, C++, JNI, Objective-C/Objective-C++, native FFI support, and WASM. SwiftPM, Gradle, Xcode, Flutter, .NET and Python packaging remain the native ecosystem entry points where appropriate; Python orchestrates them and CMake builds their native components. Do not force pure managed-language or frontend sources through CMake.
 
-Use target-based modern CMake with a documented minimum version chosen from the supported SDK/toolchain matrix, initially 3.25 or newer. C++20 and C11 are the language baselines. Use CMakePresets.json for reproducible common development configurations and CMakeUserPresets.json (ignored) for local customizations. Cross-compilers, sysroots, target architecture and SDK selection are explicit and validated at configure time.
+Use target-based modern CMake with a documented minimum version chosen from the supported SDK/toolchain matrix, chosen at implementation from the current stable CMake and required SDK compatibility. C++20 and C11 are the language baselines. Use CMakePresets.json for reproducible common development configurations and CMakeUserPresets.json (ignored) for local customizations. Cross-compilers, sysroots, target architecture and SDK selection are explicit and validated at configure time.
 
 Required layout (create files only when their functionality is implemented):
 
@@ -2858,7 +2897,7 @@ Keep core runtime dependency-free apart from the standard library and mandatory 
 - Support preinstalled dependency targets, local source overrides and an offline cache; fail explicitly if a required dependency is unavailable in offline mode.
 - Select the latest stable verified releases under section 3.7, then pin exact revisions or archive hashes; record dependency versions, licenses, source hashes and build options in artifact metadata.
 - Separate test-only dependencies, such as a native test framework if justified, from public installed targets. Do not install or link them into production libraries.
-- Do not add a second dependency manager merely to match another project. CPM or Conan integration may be supported behind the same CMake target interface if a concrete need is demonstrated and the complete corresponding CI matrix passes. Do not require both.
+- Do not add a second dependency manager merely to match another project. Do not implement CPM or Conan integration unless the owner requests a concrete need. Do not require both.
 - Resolve SDK-specific dependencies through the ecosystem tool: Gradle/Maven, SwiftPM, uv/pip, NuGet, pub, npm, and official SDKs. Use lockfiles or equivalent pinned versions appropriate to each ecosystem. No hidden downloads at generation time.
 - Cross-compiling dependencies must use the same target sysroot, ABI, compiler/runtime, sanitizer and deployment floor as the product. Never link host binaries into target outputs. Separate caches by toolchain and target.
 - User-owned native implementation dependencies remain the user's responsibility; expose explicit target-based integration instead of rewriting their build files.
@@ -3094,6 +3133,8 @@ AGENTS.md must cover architecture, code ownership, repository organization, Git 
 
 ## 21. Implementation phases and reviews
 
+Use the detailed checklist in section 22 as the implementation backlog. Check an item only when its implementation, meaningful tests and documentation are complete. Record evidence in the normal test reports and commit history rather than a task diary or another tracking framework. Before starting a phase, read the relevant specification and direct/transitive consumers. Implement a coherent vertical slice and verify it before extending the next target. Do not create empty scaffolding or placeholder success jobs.
+
 | Phase | Deliverables | Gate |
 | --- | --- | --- |
 | 0 — specification | PROJECT.md, detailed examples, scope review | No missing discussed feature; unresolved choices explicitly recorded |
@@ -3105,32 +3146,127 @@ AGENTS.md must cover architecture, code ownership, repository organization, Git 
 | 6 — applications and docs | HTTP, camera, login per target, SVG, README, AGENTS.md, complete docs | Executable examples and accurate documentation |
 | 7 — stabilization | Full CI, sanitizer, fuzz, stress, performance and deep reviews | All release acceptance gates green on candidate SHA |
 
-Every phase includes implementation, automated tests, review and fixes. Tests are developed alongside the feature, not deferred to phase 7. Do not expand scope with unnecessary frameworks or abstractions. Review runtime contracts and compiler configuration before locking public APIs.
+Every phase includes implementation, purposeful automated tests, review and fixes. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
 
 Explicit remaining design decisions to settle with proof-of-concept and tests: exact grammar, concrete ABI declarations, safe handle representation, detailed type mapping (especially unsigned/64-bit web values), executor policies, shared JVM/Apple artifact strategies, stream backpressure configuration and registry duplicate/override API. These are engineering design gates, not permission to drop requirements.
 
-## 22. Release acceptance checklist
+## 22. Implementation and acceptance checklist
 
-- [ ] Generator is installable and usable locally/offline; official packaging validated.
-- [ ] Latest stable dependencies, SDKs and GitHub Actions verified, locked and tested; any unavoidable older direct version explicitly approved.
-- [ ] Dash-based filename policy validated, with only documented language/tool-required exceptions.
-- [ ] Partial and individual template overrides, precedence, template export/check and custom build templates are proven in every target.
-- [ ] CMake structure, dependency resolution, install/export and independent consumers work without changing consumer settings.
-- [ ] Python CLI generates, builds, tests and packages every target; clean/incremental and failure behavior proven.
-- [ ] AAR/JAR, XCFramework/SwiftPM, desktop libraries, native wheels, Dart/Flutter, NuGet and npm/WASM outputs are inspected and consumed in separate test projects.
-- [ ] Every required IDL construct, configuration option, naming feature and annotation is implemented and tested.
-- [ ] Module-specific paths, prefixes, dependencies and imports work in independent source/prebuilt builds.
-- [ ] All required target languages and feasible directions pass actual generated-code conformance.
-- [ ] All types, valid nested types and async return categories have evidence; forbidden combinations fail explicitly.
-- [ ] Built-in date, timestamp, duration and UUID native conversions preserve canonical values or reject precision/range loss.
-- [ ] Custom external types work from user-owned descriptors and adapters without changing the generator; all selected mappings, imports, packaging and lifetime tests pass.
-- [ ] Every required ordered language pair and type/usage case has execution evidence; missing cases fail aggregate CI.
-- [ ] DataView, MutableDataView, DataRef, callbacks, cancellation, streams and service replacement pass lifecycle tests.
-- [ ] HTTP, camera/grayscale and login examples are runnable; device-dependent claims have appropriate evidence.
-- [ ] Memory, ownership, leaks, deadlocks, races, use-after-free and other defined failure cases have automated tests.
-- [ ] All required CI jobs pass on the exact release revision; no hidden mandatory skips.
-- [ ] Deep review completed for every language, platform, runtime, ABI and generated API.
-- [ ] Logo, README, AGENTS.md, documentation and capability matrix accurately match verified support.
-- [ ] Owner authorizes license and separately approves the exact development version, tag/release (if requested) and production package publication. Normal CI must never publish.
+This is the detailed delivery checklist, grouped by responsibility rather than a second architecture specification. All boxes are initially unchecked. Each item requires actual implementation, the applicable tests from section 18 and current documentation. Mark only completed work with evidence. Do not create one test per checkbox when an existing test proves several requirements. No publication is authorized by checking these boxes.
 
-Completion means reproducible evidence for every acceptance gate, not a claim of mathematically bug-free software.
+### 22.1 Repository, tooling and engineering rules
+
+- [ ] Create the real Python src package, pyproject.toml, uv.lock, CLI entry point and required package resources using the latest stable verified CPython, uv and dependencies. Keep runtime dependencies minimal and development groups separate.
+- [ ] Add the actual Makefile targets, EditorConfig, Ruff and target-specific formatter settings. Verify single-line calls, signatures and string literals, clear blank-line separation, English code and rare useful comments.
+- [ ] Enforce dash-based multiword filenames and directory names, except documented language/tool requirements. Keep Python initializers empty and avoid TYPE_CHECKING and legacy imports.
+- [ ] Add a focused gitignore covering build/dist, caches, virtual environments, local IDE state, credentials and temporary outputs. Keep lockfiles, required wrappers, fixtures and source assets tracked.
+- [ ] Confirm current stable dependency/action/SDK versions from official sources, pin resolved releases and document any approved incompatibility. Do not add unnecessary tools or automatic update workflows.
+- [ ] Keep a single current contract. Remove old implementations, compatibility branches, aliases, unused configuration, redundant abstractions and orphaned callers whenever a contract changes.
+
+### 22.2 Compiler, IDL and diagnostics
+
+- [ ] Implement source discovery, UTF-8 grammar, comments/docs, source spans, AST, symbol table, semantic validation and canonical typed IR with deterministic ordering.
+- [ ] Support modules, imports, aliases, grouped and wildcard imports with ambiguity checks, public/private visibility, constants and validated defaults.
+- [ ] Implement records, enums, flags, variants, interfaces, inheritance, callbacks, factories/static operations and concrete generics. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
+- [ ] Implement async declarations, typed errors/Result, streams, cancellation and weak references with explicit legal usage rules. Reject borrowed types in escaping/async positions.
+- [ ] Provide clear diagnostics with file, line, relevant symbol, module and target. Validate the entire selected plan before writing; fail on invalid config, type mapping, name, path or missing dependency.
+- [ ] Expose CLI generate, validate, config show, list targets, version and local Python API. Support project, individual module and selected target invocation, including source dependency closure and installed/offline generation.
+
+### 22.3 Module system, configuration and output planning
+
+- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking and config-relative paths.
+- [ ] Support independent Domain, Repository and Network module configurations and IDL sources, with correct import resolution regardless of physical paths, prefixes and package names.
+- [ ] Implement source and prebuilt dependencies, transitive resolution, compatible canonical symbol metadata and artifact validation. Reject duplicate or incompatible artifacts without trying old formats.
+- [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings.
+- [ ] Resolve names/includes/imports before rendering, including Java/Kotlin shared JVM artifact ownership, Swift/Obj-C shared or distinct models and JS/TS shared runtime declarations.
+- [ ] Detect case-folded filename collisions, reserved names, overlapping outputs, path traversal, invalid symlinks and incompatible dependency identities. Preserve user-owned files.
+- [ ] Write files deterministically and atomically, preserve unchanged files, record owned outputs and remove obsolete generated files safely when requested. Emit real module manifests and fingerprints.
+
+### 22.4 Templates and annotations
+
+- [ ] Package Jinja2 templates for every target, including models, interfaces, proxies, providers, marshalling and build/package metadata. Keep business rules and type/import resolution in Python, not templates.
+- [ ] Implement module/target directory and individual template overrides, explicit inheritance of unmodified templates, documented IDs, StrictUndefined, partials, export/list/check and content fingerprinting.
+- [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
+- [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments. Enforce actual semantics where applicable, not comments alone.
+- [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes.
+- [ ] Verify customized templates, imports, naming and generated build files compile in each applicable target. Test one representative real override path per distinct backend behavior.
+
+### 22.5 Built-in types and extension mechanism
+
+- [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Verify boundaries, invalid encodings, null and empty distinctions.
+- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, exact tags, equality/hash constraints and invalid cases.
+- [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. Preserve calendar versus UTC semantics, signed exact units, canonical UUID order and checked native conversions.
+- [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope and ownership contracts. Do not silently copy when a zero-copy contract is requested.
+- [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
+- [ ] Implement module-local external type descriptors and explicit host-language adapters using existing canonical ABI types. Support imports, dependencies, ownership, adapter build integration and validation without changing generator source.
+- [ ] Provide runnable scalar-backed, GeoPoint, custom-date, owned-resource and separately shared type examples, with selected-target adapters and source/prebuilt consumers. Test conversion in both directions and failures, not duplicate hand-coded bridge implementations.
+
+### 22.6 Native ABI, ownership and runtime
+
+- [ ] Define and implement the versioned C ABI, fixed-width layout, typed function tables, opaque handles, logical IDs and contract fingerprints. Reject incompatible artifacts, with no compatibility translation.
+- [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
+- [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
+- [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
+- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Keep active provider/argument references until execution cannot access them.
+- [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Never block event loops or dispatch unsafe synchronous cross-thread calls.
+- [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, explicit replacement/scoped restoration, tokens and missing-service errors. No implicit alternate-provider retry.
+- [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
+
+### 22.7 Language-specific backends and platform support
+
+- [ ] C: C11 headers, typed ABI calls/handles, cleanup, C/C++ inclusion, static/shared builds and independent C consumer/provider tests.
+- [ ] C++: C++20 value types, RAII, interfaces/proxies, awaitables, exceptions translated at ABI, namespace/includes and installed CMake consumers.
+- [ ] Java: JNI type conversions, global/local reference handling, native threads, exact unsigned/Unicode values, CompletableFuture, callback lifetime and desktop JAR consumption.
+- [ ] Kotlin: JVM and Android bindings, suspend/Flow, cancellation, unsigned types, shared artifact ownership, JNI lifecycle and installed AAR/JAR consumers.
+- [ ] Objective-C: ARC, protocols/blocks, prefixes, selectors, nullability, Foundation mappings, Swift import annotations and framework consumers.
+- [ ] Swift: idiomatic protocols, async throws, actor isolation, ARC, continuation safety, native date/buffer conversions and SwiftPM/XCFramework consumers.
+- [ ] Python: explicit modules, CPython thread state/refcounts/buffer exporters, asyncio, clean installed wheel and native-to-Python provider tests.
+- [ ] Dart: native FFI, explicit web adapter, exact integers, callbacks on correct isolate, DataRef lifetime, hot-restart/shutdown and independent package consumers.
+- [ ] Flutter: plugin lifecycle, Android Kotlin provider, Apple Swift provider, native-to-Dart calls, desktop C++ and web integration. Build and run real examples.
+- [ ] C#: precise interop layout, SafeHandle, rooted delegates, Task/cancellation, GC behavior, native provider and installed NuGet consumer.
+- [ ] JavaScript: actual ESM runtime, JS provider, Promise/BigInt, managed references, browser and Node execution, npm package consumption.
+- [ ] TypeScript: strict declarations matching runtime exports, typed providers/proxies, negative type fixtures and actual JS runtime execution.
+- [ ] WASM: generated C/C++ exports and loader, linear memory bounds/growth, BigInt, ownership, JS callbacks and browser/Node artifact tests.
+- [ ] Verify the advertised desktop matrix for Linux, Windows and macOS with actual toolchains, native loaders and packaged execution.
+- [ ] Verify Android and Android XR SDK/ABI/device or emulator evidence. Verify iOS/iPadOS, tvOS, watchOS, visionOS and Mac Catalyst independently, separating device, simulator and build-only results.
+- [ ] Maintain a concise capability matrix with every feasible ordered language pair, type and distinct usage case, actual platform evidence and explicit unsupported/blocker reasons. Do not infer support from a declaration.
+
+### 22.8 CMake, Python build tool and binary artifacts
+
+- [ ] Create organized target-based CMake infrastructure with options, dependencies, warnings, sanitizer modes, installation/export rules and appropriate toolchain files. Keep parent projects unaffected.
+- [ ] Implement native dependency resolution using standard CMake and pinned FetchContent/find_package, with local and offline inputs where needed. No unnecessary dependency managers or native libraries in core.
+- [ ] Implement Python doctor/build/test/package/run/clean and inspectable build plans. Use real SDK commands, explicit arguments, expected artifacts, bounded parallelism and contextual failures.
+- [ ] Isolate builds by product, platform, SDK variant, architecture, configuration and sanitizer. Verify incremental invalidation, clean build equivalence, missing output rejection and safe owned cleanup.
+- [ ] Build and inspect C/C++ desktop static/shared libraries, headers and relocatable CMake exports. Install and run an independent consumer after relocating the package.
+- [ ] Build Java/Kotlin desktop JAR and Android AAR with native architecture slices, required dependencies and release/R8 rules. Inspect classes, native binaries, alignment and real clean consumers.
+- [ ] Build Objective-C/Swift XCFramework for requested Apple SDK slices, keeping device/simulator/Catalyst distinct. Validate Info.plist, Mach-O platform/architecture, headers/modules and matching debug symbols as applicable.
+- [ ] Generate valid local and remote SwiftPM integration with archive/checksum and no fabricated URL. Test a separate Swift and Objective-C consumer.
+- [ ] Build the pure Python generator wheel/sdist and target-specific native bindings wheels. Inspect archive metadata/resources and install outside the source tree.
+- [ ] Build and validate Dart/Flutter packages and plugins, .NET NuGet packages, JS/TS npm packages and WASM binaries/loader assets. Run real installed consumers.
+- [ ] Record package manifests, hashes, exact toolchains, dependencies and evidence. No stale artifacts or cross-architecture/sanitizer contamination.
+
+### 22.9 Real applications and conformance
+
+- [ ] Create shared example modules for domain, repository, auth, network and media, generating all bridges from IDL and using small real handwritten providers.
+- [ ] Build real HTTPBin requests with typed status/headers/body, cancellation and error behavior across a language boundary. Use deterministic local HTTP fixtures for routine CI and a separate deliberate live smoke.
+- [ ] Implement camera capture where supported and grayscale processing in another language, with checked pixel format/stride/dimensions and buffer ownership. Test deterministic image fixtures and distinguish hardware evidence.
+- [ ] Implement a fake login form or CLI invoking a foreign provider, returning populated User and typed invalid-credential errors. Never log credentials.
+- [ ] Implement repository methods returning records, lists, optionals, integers, bool and void asynchronously across modules and runtimes.
+- [ ] Run every supported type across every feasible ordered caller/provider language pair with independent expected values, both directions and distinct async/callback/stream/ownership cases.
+- [ ] Test relevant invalid inputs and actual failure modes, with bounded deterministic tests and property/fuzz coverage only where useful. Reuse shared fixtures. Reject missing expected case IDs.
+- [ ] Run appropriate sanitizer and runtime diagnostics, verify actual instrumentation, test memory and concurrency regression paths and document any blocked hardware/toolchain checks.
+
+### 22.10 CI performance, documentation and final delivery
+
+- [ ] Create real independent GitHub Actions checks for all required languages and platforms, generator, interop, packaging, docs and native sanitizers. Use latest stable verified actions and least privilege.
+- [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
+- [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
+- [ ] Provide the clean original SVG logo, concise owner-style README with honest status and real badges, AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
+- [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, all language guides and example execution.
+- [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
+- [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.
+- [ ] Clean temporary files, stale build outputs, abandoned scripts, obsolete generated files, unused dependencies and unrelated scaffolding within the authorized scope. Preserve user-owned files, source assets and required evidence. Review final diff and repository tree.
+- [ ] Verify every applicable checklist item has real test/documentation evidence and every required CI check passes on the candidate SHA. Report any blocker honestly instead of marking complete.
+- [ ] Keep development version 0.0.1 until the owner authorizes a change. Obtain owner approval for the license and separate approval for any tag, release or registry upload. Never publish automatically.
+
+Completion means 100% of the defined, feasible acceptance cases are implemented, tested and documented. It does not mean an infinite input space has been exhaustively tested.
