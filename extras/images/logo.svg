@@ -1,12 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">PolyGlue symbol</title>
-  <defs>
-    <clipPath id="outline">
-      <path d="M58 9.5Q64 6 70 9.5L108 31.5Q114 35 114 42V86Q114 93 108 96.5L70 118.5Q64 122 58 118.5L20 96.5Q14 93 14 86V42Q14 35 20 31.5Z"/>
-    </clipPath>
-  </defs>
-  <g clip-path="url(#outline)">
-    <path fill="#6654E8" d="M60.5 0V35Q60.5 43.5 69 43.5H79Q80.5 43.5 80.5 45V59Q80.5 60.5 79 60.5H49Q40.5 60.5 40.5 69V83Q40.5 91.5 49 91.5H59Q60.5 91.5 60.5 93V128H0V0Z"/>
-    <path fill="#16B89A" transform="rotate(180 64 64)" d="M60.5 0V35Q60.5 43.5 69 43.5H79Q80.5 43.5 80.5 45V59Q80.5 60.5 79 60.5H49Q40.5 60.5 40.5 69V83Q40.5 91.5 49 91.5H59Q60.5 91.5 60.5 93V128H0V0Z"/>
+  <title id="title">PolyGlue</title>
+  <g fill="none" stroke="#7957F5" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 103V25h30a22 22 0 0 1 0 44H20"/>
+    <path d="M108 43H97a30 30 0 0 0 0 60h11V74H94"/>
   </g>
 </svg>
