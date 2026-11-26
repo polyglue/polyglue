@@ -27,8 +27,8 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 - 🔄 **Services:** optional registration, discovery and replacement of implementations.
 - 🎨 **Customization:** module-specific naming, prefixes, annotations and template overrides.
 - 🛠️ **Build tools:** generate, compile and test with one Python command-line tool.
-- 📦 **SDK packaging:** versioned native libraries, AARs, XCFrameworks and language packages.
-- ☁️ **Deploy:** distribute validated SDKs through configurable storage destinations or your own release pipeline.
+- 📦 **Library packaging:** versioned native libraries, AARs, XCFrameworks and language packages.
+- ☁️ **Deploy:** distribute validated libraries through configurable storage destinations or your own release pipeline.
 
 ## Languages
 

@@ -14,6 +14,8 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
 - [2. Supported languages and platforms](#2-supported-languages-and-platforms)
 - [3. Developer workflow and distribution](#3-developer-workflow-and-distribution)
 - [4. IDL language](#4-idl-language)
+  - [Static operations and factories](#46-static-operations-and-factories)
+  - [Inheritance, properties, overloads and generic specialization](#47-inheritance-properties-overloads-and-generic-specialization)
 - [5. Type system](#5-type-system)
   - [Complete type mapping contract](#54-complete-type-mapping-contract)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
@@ -28,6 +30,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
     - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
+  - [Operational defaults and diagnostics](#763-operational-defaults-and-diagnostics)
   - [Library and build configuration](#77-library-and-build-configuration)
   - [Library version and build number](#78-library-version-and-build-number)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
@@ -37,12 +40,15 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
   - [Unified library public entry points](#105-unified-library-public-entry-points)
+  - [Shared target artifact ownership](#106-shared-target-artifact-ownership)
+  - [Composition of libraries](#107-composition-of-libraries)
 - [11. Compiler and templates](#11-compiler-and-templates)
   - [Compiler pipeline](#111-pipeline)
   - [Template override system](#115-template-override-system-mandatory)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
   - [Call and return across the ABI](#123-call-and-return-across-the-abi)
   - [Contexts, attachments and admission](#124-contexts-attachments-and-admission)
+  - [Public lifecycle control and errors](#125-public-lifecycle-control-and-errors)
 - [13. Memory and buffers](#13-memory-and-buffers)
   - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
@@ -62,6 +68,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
   - [Deterministic lifecycle race fixtures](#188-deterministic-lifecycle-race-fixtures)
   - [Default profiles and installed public API conformance](#189-default-profiles-and-installed-public-api-conformance)
+  - [Cross-contract and ownership regression fixtures](#1810-cross-contract-and-ownership-regression-fixtures)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -139,7 +146,7 @@ For a first project, start with a record and one interface method. Generate bind
 
 **Convention over configuration, without sacrificing configurability.** Every supported configurable aspect of generation, public API design, source layout, formatting, integration and packaging must have a documented deterministic default when it can safely be inferred. A minimal project must work without copying a large configuration template. The consumer may override every applicable presentation or integration default at the appropriate scope. An explicit override replaces that setting only. Do not require a setting merely to enable customary language behavior.
 
-**Language-native public APIs.** Generate independently planned public APIs for every selected language, not literal transliterations of C ABI names or another language's syntax. Swift must not expose Objective-C prefixes, Kotlin must not inherit JNI names, and Dart must not expose C handles as ordinary application types. Public calls use native types, error and async conventions whenever they preserve the canonical contract. The application selects the implementation language independently of the public language. No compromise to ownership, type precision, ABI compatibility or executor safety is permitted to make a signature appear idiomatic.
+**Language-native public APIs.** Generate independently planned public APIs for every selected language, not literal transliterations of C ABI names or another language's syntax. Swift must not expose generated Objective-C prefixes by default (explicit overrides are supported), Kotlin must not inherit JNI names, and Dart must not expose C handles as ordinary application types. Public calls use native types, error and async conventions whenever they preserve the canonical contract. The application selects the implementation language independently of the public language. No compromise to ownership, type precision, ABI compatibility or executor safety is permitted to make a signature appear idiomatic.
 
 **One library, one public entry point by default.** An explicitly selected library may aggregate several IDL modules into a single native public import surface without erasing their logical identities. Independent modules remain usable without a library definition. A library is not a new IDL namespace, service registry or network boundary. See sections 7.7 and 10.5.
 
@@ -316,7 +323,7 @@ uv run --locked polyglue test --target cpp --sanitizer thread
 uv run --locked polyglue run --target flutter --platform android
 ```
 
-Use explicit module/target selection for standalone generation and explicit library selection for library source assembly and binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous library/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
+Use explicit module/target selection for standalone generation and explicit library selection for library source assembly and binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous library/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Use verified incremental reuse by default with input fingerprint validation, support an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
 
 ### 3.5 Development version and release authorization
 
@@ -426,7 +433,7 @@ This is a core acceptance fixture. The user status belongs to the User record, s
 | callback | Typed callable with a synchronous or asynchronous completion contract and explicit lifetime |
 | async | Asynchronous method or callback, independent of return type |
 | const | Typed constant |
-| static / factory | Explicitly bound factory or static method, not implicit global lookup |
+| static | Explicitly bound operation without an instance receiver; a factory returns an owning interface reference |
 | public / private | Export visibility |
 | generic parameters | Concrete instantiation and ABI specialization |
 | documentation | Structured comments copied to target documentation |
@@ -471,7 +478,7 @@ interface PagedUserRepository {
 }
 ```
 
-Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Specialization identity comes from the fully qualified generic definition and canonical type arguments, not from the importing module or rendered name. In the example, repository owns its concrete Page<User> artifacts if they are not already supplied by a dependency. If independently generated modules need the same specialization in one product, they must import it from one shared owning module. Use an explicit named concrete specialization in that shared module, with its declaration syntax finalized alongside the generic grammar in phase 1. Do not silently emit several public classes for the same specialization or change ownership depending on the selected target. A prebuilt dependency can only supply specializations recorded in its manifest. Never modify it to add a new one. Reject conflicting owners and open generics at a concrete binary boundary.
+Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Specialization identity comes from the fully qualified generic definition and canonical type arguments, not from the importing module or rendered name. In the example, repository owns its concrete Page<User> artifacts if they are not already supplied by a dependency. If independently generated modules need the same specialization in one product, they must import it from one shared owning module. Use an explicit named concrete specialization in that shared module as specified in section 4.7. Do not silently emit several public classes for the same specialization or change ownership depending on the selected target. A prebuilt dependency can only supply specializations recorded in its manifest. Never modify it to add a new one. Reject conflicting owners and open generics at a concrete binary boundary.
 
 ### 4.5 Constants, inheritance and factory flow
 
@@ -489,6 +496,56 @@ flowchart TD
     H --> I["Caller receives converted return"]
     B -->|Invalid| X["Compile-time diagnostic"]
 ```
+
+### 4.6 Static operations and factories
+
+A static operation is an explicitly bound typed operation without an instance receiver. It is not a service lookup and does not belong to an instance's virtual method table. Use static before async when both modifiers are present. A factory is an ordinary operation returning an owning interface reference, not a separate keyword or wire type. The name create is only a convention.
+
+```text
+module repository;
+
+import domain.ProductChapter;
+
+interface ProductChapterHelper {
+    @swift.name("index(of:in:)")
+    static getIndexByChapterIdAndList(chapterId: int64, chapters: list<ProductChapter>): int32;
+}
+
+interface ProductChapterRepository {
+    static async create(catalogId: int64): ProductChapterRepository;
+    async findAll(): list<ProductChapter>;
+}
+```
+
+This is an alternative fixture assuming the imported domain type exists. Generate a separate typed static contract and descriptor, identified by the declaring logical interface plus a static-contract discriminator. An all-static interface needs no empty instance proxy. An interface's static and instance providers may be implemented in different hosts. A factory does not imply a singleton, automatic registration or construction in the caller's language.
+
+The embedding application explicitly supplies a fixed static implementation to a generated context-bound facade or binds it as the default static implementation for that contract in the selected context. Validate canonical contract, context, owner and executor before publishing a binding. Use the same reference, operation and execution machinery as ordinary interfaces. Default binding has one slot per declaring contract per context, not a service stack. Duplicate binding fails without mutation. No dynamic replacement, priority, restoration or Service Registry lookup. Removing the binding ends class-level discovery; independently retained fixed facades remain valid while their actual provider is Open. Rebinding after explicit removal has a new unique control identity. Detach revokes bindings whose binding owner or actual provider belongs to the closing attachment. Closing the context revokes all bindings. Applications needing dynamic replacement use ordinary registered interfaces.
+
+Generate convenient class/type-level syntax where the language permits it and the embedding application has explicitly selected a default context and bound implementation. An absent or ambiguous context or binding reports a typed error. Never choose the last initialized context, a thread ID or an arbitrary language. Multiple contexts can always use explicitly bound facade objects. In Swift an all-static helper owns the short name; a mixed interface uses a separate static companion, default suffix Statics, so the native instance protocol does not collide. C exposes typed operations taking a bound static handle. Class-level convenience generation and companion naming are configurable. The static binding's lifetime is controlled explicitly, and no package import initializes a runtime.
+
+Illustrative Swift calls after explicit initialization:
+
+```swift
+import Ubook
+
+let index = try ProductChapterHelper.index(of: chapterId, in: chapters)
+let repository = try await ProductChapterRepositoryStatics.create(catalogId: catalogId)
+let chapters = try await repository.findAll()
+```
+
+Static operations obey the same synchronous executor checks, async completion, error and ownership contracts as instance operations. A synchronous static method does not guarantee cross-isolate execution. Use static async when scheduling is required. Prove direct facade injection, duplicate and missing binding, async factory, context isolation, removal with surviving fixed facades, provider detach and separate instance/static identity using actual host compilers. Freeze exact API spelling in implementation.
+
+### 4.7 Inheritance, properties, overloads and generic specialization
+
+**Inheritance.** Use interface Child : Parent for a single base. Support multiple bases only when the canonical method set, identity and target mapping are unambiguous. Reject cycles, conflicting inherited declarations and unrepresentable target mappings. Inherited identical operations retain the declaring operation identity. A derived provider implements all inherited instance operations. An upcast retains the same underlying implementation through a validated base-contract view; no duplicate provider or registration. Explicit downcast succeeds only for an advertised compatible interface view. No cross-language RTTI guesses. Static bindings are not inherited through instance tables. Registry registration is exact-interface only; registering Child does not implicitly register Parent.
+
+**Properties.** Record fields remain values. Readonly prevents public mutation; mutable record profiles still have independent value semantics. Interface methods may be exposed as properties through explicit target metadata only where a synchronous zero-argument getter or one-argument setter can preserve type, errors and ownership. A property never introduces implicit caching, a change event or blocking async work. If the language cannot express the error contract (for example a throwing Swift setter), require ordinary methods. No new property wire type.
+
+**Overloads.** Distinguish operations by ordered canonical argument types, declaring interface and instance/static discriminator. Parameter names, return type alone, async modifier alone or display name cannot distinguish overloads. Reject target collisions after lowering, including JVM erasure, Obj-C selectors, Swift argument labels and C symbols. C uses stable signature-derived symbol identifiers for overloads. A language lacking faithful overload support requires explicit distinct target names or a proven typed surface, not silently numbered methods or value-based guessing. Adapters dispatch by resolved operation identity.
+
+**Generics.** Use an explicit concrete specialization declaration in the owning module, for example specialize common.Page<domain.User> as UserPage;. This declares an alias and artifact owner, not a different canonical record. Canonical identity is the generic definition plus ordered canonical arguments. Reject conflicting owners, infinite expansions, unbound parameters and incompatible aliases. Ownership is independent of target filtering and graph traversal. Preserve legal indirect layouts, with bounded conversion. Reject recursive by-value layouts. Freeze the exact grammar with positive and negative tests in phase 1. Do not implement competing legacy syntaxes.
+
+All the forms above use the existing typed IR, ABI and runtime machinery. The parser distinguishes logical aliases, target annotations and runtime binding. Any grammar adjustment requires updating the examples and conformance inventory together.
 
 ## 5. Type system
 
@@ -1231,7 +1288,11 @@ dependencies:
 
 A prebuilt manifest includes enough canonical contract information to resolve imported symbols (not just hashes), plus public include/import locations and ABI compatibility information. Validate actual artifacts, dependency closure and versions. Do not duplicate imported types.
 
-Use the fully qualified logical module and symbol name as identity, independent of physical directory, output names and version. Require a unique logical module name across the dependency closure, with qualified module names available for independently distributed libraries. Distinguish semantic identity, contract fingerprint and target ABI fingerprint. Check the current manifest schema and contract/ABI fingerprints directly. No old-schema reader or compatibility translation.
+Use the fully qualified case-sensitive logical module and symbol name as identity, independent of physical directory, output names and version. Module names use dot-separated ASCII identifier segments; declaration/member identifiers are ASCII identifier tokens. Reject invalid or reserved IDL identifiers rather than normalizing them. Resolve dotted module imports against the declared graph, not filesystem paths. Dependency aliases cannot rename canonical identities. Target casing and escaping happen only after logical resolution. Require a unique logical module name across the dependency closure, with qualified module names available for independently distributed libraries. Distinguish semantic identity, contract fingerprint and target ABI fingerprint. Check the current manifest schema and contract/ABI fingerprints directly. No old-schema reader or compatibility translation.
+
+#### 6.2.1 Module versions and dependency identity
+
+module.name is required and matches every IDL module declaration in its source roots. module.version is optional for local source-only modules; absence is recorded as unversioned, not 0.0.0 or the tool version. A separately distributed prebuilt module requires an explicit MAJOR.MINOR.PATCH module version and validated contract/ABI fingerprints. A packaged library may contain local unversioned source modules; its release version never fills module versions. Project version is optional application metadata. Source dependencies resolve from explicit manifest paths and logical identity. An optional exact dependency version constraint is checked against the manifest, not resolved by downloading another version. Reject conflicting logical IDs, incompatible fingerprints and competing artifact owners in the selected closure. Deduplicate identical references to the same owner. Version equality alone is not compatibility.
 
 ### 6.3 Manifest
 
@@ -1273,7 +1334,7 @@ Illustrative excerpt. The full schema must include canonical type definitions, r
 - Import a type by alias, grouped import and wildcard. Detect ambiguity.
 - Change a domain output path, prefix or package and regenerate repository imports correctly.
 - Reject incompatible duplicates, missing targets, invalid cycles, incompatible manifests and unavailable generated artifacts.
-- Confirm that identical logical symbols have stable identity regardless of casing or path.
+- Confirm stable logical identity regardless of generated target casing or path. IDL identifiers themselves are case-sensitive: User and user are distinct logical declarations and may cause a target collision.
 
 ### 6.5 Module imports and dependency flow
 
@@ -1307,9 +1368,9 @@ From lowest to highest priority:
 5. Explicit target settings inside that module.
 6. Declaration annotations for supported properties.
 
-Library public entry-point identities and exposure rules are assembly settings, not inherited module naming overrides. They are resolved separately from module defaults. A library can specify its public module, package, namespace, facade aliases and export set without mutating a defining module's physical name. Module-level explicit naming and declaration annotations still control the defining symbols. Multiple libraries can consume the same module with distinct public facades. For different actual module render configurations, stage isolated outputs keyed by the effective configuration; never overwrite another library's files. Prebuilt modules cannot be renamed or recompiled by consumer defaults; use compatible public aliases or explicitly rebuild from source.
+Library public entry-point identities and exposure rules are assembly settings, not inherited module naming overrides. They are resolved separately from module defaults. A library can specify its public module, package, namespace, facade aliases and export set. A source module's derived standalone physical scope may be planned in the unified library scope under section 10.5. Explicit defining-module names and prebuilt names are never silently rewritten. Module-level explicit naming and declaration annotations still control the defining symbols. Multiple libraries can consume the same module with distinct public facades. For different actual module render configurations, stage isolated outputs keyed by the effective configuration; never overwrite another library's files. Prebuilt modules cannot be renamed or recompiled by consumer defaults; use compatible public aliases or explicitly rebuild from source.
 
-Project defaults and module defaults use the same defaults key. Apply shared settings before target-specific settings at each level. Normalize naming shorthand before merging, for example methods: camelCase means methods: {case: camelCase}. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
+Project, library and module defaults use the same defaults key, with shared settings and nested targets. Library defaults are configured at libraries.<id>.defaults. Apply shared settings before target-specific settings at each level. Normalize naming shorthand before merging, for example methods: camelCase means methods: {case: camelCase}. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
 
 ### 7.2 Global configuration
 
@@ -1350,7 +1411,7 @@ defaults:
         files: snake_case
 ```
 
-Global defaults must not enable undeclared targets automatically. A standalone module explicitly selects its public targets. An explicitly selected library declares its public targets and requests the necessary source-module generation closure for those targets, even when the modules rely on inherited target defaults rather than repeating target blocks. A module may explicitly constrain a target; incompatible requests fail rather than silently dropping required symbols. Determinism, ABI validation, ownership safety, ARC where required, nullability correctness and strict concurrency checks are mandatory invariants, not options to disable.
+Global defaults must not enable undeclared targets automatically. A standalone module explicitly selects its public targets. An explicitly selected library declares its public targets and requests the necessary source-module generation closure for those targets, even when the modules rely on inherited target defaults rather than repeating target blocks. A module may explicitly disable a target with enabled: false; incompatible public library requests fail. Missing target blocks inherit the selected library's target plan. A module target block selects a standalone target unless enabled: false; inherited defaults alone do not select targets. Internal bridge representations do not imply a public target. Determinism, ABI validation, ownership safety, ARC where required, nullability correctness and strict concurrency checks are mandatory invariants, not options to disable.
 
 ### 7.3 Domain module configuration
 
@@ -1415,7 +1476,7 @@ targets:
     output: ../../native/domain/wasm
 ```
 
-The model_source and implementation_source settings express intentional artifact ownership. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on which targets happen to be selected for a particular command. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
+The model_source and implementation_source settings express artifact ownership. Section 10.6 specifies automatic paired-target defaults and explicit independent mode. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on command-level target filters. Resolve paired-target ownership from the complete declared module or library target set before filtering. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
 
 ### 7.4 Repository module configuration
 
@@ -1613,6 +1674,28 @@ Defaults output contains all applicable presentation and integration settings, i
 | Tests | Full required contract coverage, real selected target evidence | Selection of local test scope, sanitizer/configuration, bounded resources; no release bypass |
 
 Derived defaults are deterministic and schema-validated. Required business intent, target selection, public release coordinates, credentials, platform capability and safe executor choice are not guessed. Every applicable configurable property has a documented override path; options that cannot be implemented without changing the IDL contract or breaking security are not offered. A user may configure a safe policy, not disable required validation, reference checks, type precision, deterministic generation or platform restrictions. Preserve security defaults and explicit failure semantics from sections 12–15.
+
+#### 7.6.3 Operational defaults and diagnostics
+
+Keep presentation/build options, context creation options and declaration semantics distinct. Runtime defaults are passed through typed initialization or provider/subscription options; no second hidden global configuration. A generator must not mutate the policy of an explicitly supplied live context.
+
+| Setting | Built-in default |
+| --- | --- |
+| Native linkage | static for standalone native libraries where valid; required platform adapter/shared-runtime linkage takes precedence |
+| Generation and build | incremental reuse of validated matching fingerprints; explicit clean supported |
+| Parallel jobs | auto, max(1, detected available logical CPU count), subject to configured resource limits |
+| Logging | info; diagnostics on stderr; debug/quiet configurable |
+| Diagnostics | human-readable; JSON on request |
+| Visibility | IDL declarations public unless private; generated marshalling helpers internal |
+| Dispatch | existing owning executor; no per-call threads; explicit affinity where required |
+| Registry | Reject; no implicit context creation |
+| Direct callback | scoped |
+| Stream | ordered bounded lossless demand (section 14.3.1) |
+| Deployment | disabled until explicitly selected |
+
+Define generation.incremental, build.incremental, build.jobs, diagnostics.format, diagnostics.log_level and target build.linkage in the schema. Use --jobs, --clean, --diagnostics and --log-level for command-local overrides of applicable operational settings. They do not override canonical semantics or security invariants. Config --format json is distinct from build/package artifact --format. Unavailable CPU count resolves to one job. Positive resource limits must be enforced; job count alone does not guarantee bounded memory.
+
+Diagnostics have stable symbolic codes, severity, message, source path, line/column/span where applicable, related locations, module/target/library context and actionable guidance. Examples: CONFIG_UNKNOWN_KEY, IDL_UNRESOLVED_SYMBOL, NAME_COLLISION, ABI_INCOMPATIBLE, OUTPUT_UNOWNED and TOOLCHAIN_MISSING. Sort diagnostics deterministically by location and code. JSON emits structured records rather than scraped terminal text; ordinary result output stays separate. Exit 0 for success, 2 for invalid input/configuration, 1 for operation/build/test failure and host-conventional interruption status. Keep one typed code registry. Redact secrets and sensitive arguments; generated files remain free of machine-specific paths. Local diagnostic paths are allowed. Never downgrade errors to hide a missing toolchain or target failure.
 
 ### 7.7 Library and build configuration
 
@@ -2109,7 +2192,7 @@ Plan public names from the IDL declaration and target naming policy before compu
 
 For Swift, Objective-C swift_names.enabled, remove_prefix and remove_suffix are all true by default. Generate explicit NS_SWIFT_NAME metadata for representable types and methods and NS_SWIFT_ASYNC_NAME where supported, using the resolved Swift signature rather than relying on importer heuristics. The native Swift backend uses the same planned Swift names and argument labels. When a wrapper is required for async, ownership, nullable values or another importer limitation, emit the wrapper with the same public signature and keep the imported bridge symbol internal or appropriately refined. A shared imported model has one canonical type; do not emit an independent public Swift type with the same role. Avoid underscored compiler-only re-export attributes as a required public strategy. See sections 9.3 and 10.5.
 
-Swift parameters use their resolved camelCase names as argument labels by default. Explicitly configure a per-target label policy or declaration/parameter override to omit labels, change individual labels or express natural prepositions. A full @swift.name annotation specifies the complete base name and ordered external argument labels, with _ for an omitted label. It does not change parameter order, arity, value types, instance/static semantics or async/error contract. Internal parameter names may differ from external labels. Validate the Swift name grammar, argument count, reserved identifiers, constructor/static context and overload conflicts before emission; Objective-C selector collisions are independently checked. If both a full-signature annotation and a parameter label override specify the same label inconsistently, fail with both source locations. Simple @swift.name("User") remains valid for a type, and a simple method name override retains resolved labels.
+Swift parameters use their resolved camelCase names as argument labels by default. Configure argument_labels.policy under the Swift target as parameter_names (default), omit_first or omit_all. Use @swift.label("of") or @swift.label("_") on a parameter to override its label. A conflicting full @swift.name signature and explicit parameter label is an error. Completion/error bridge parameters are excluded from logical label arity. Explicitly configure a per-target label policy or declaration/parameter override to omit labels, change individual labels or express natural prepositions. A full @swift.name annotation specifies the complete base name and ordered external argument labels, with _ for an omitted label. It does not change parameter order, arity, value types, instance/static semantics or async/error contract. Internal parameter names may differ from external labels. Validate the Swift name grammar, argument count, reserved identifiers, constructor/static context and overload conflicts before emission; Objective-C selector collisions are independently checked. If both a full-signature annotation and a parameter label override specify the same label inconsistently, fail with both source locations. Simple @swift.name("User") remains valid for a type, and a simple method name override retains resolved labels.
 
 ```text
 interface ProductChapterRepository {
@@ -2132,7 +2215,7 @@ let chapters = try await repository.findAll(catalogId: product.catalogId, ascend
 let index = try helper.index(of: chapter.chapterId, in: chapters)
 ```
 
-A synchronous method may cross only a supported synchronous execution path; choose an async IDL method for a helper that can run on a different executor. The naming example does not introduce a static IDL service or promise synchronous cross-isolate calls. An actual static method is supported only where the IDL grammar and ownership contract define it, not inferred from a Djinni call site.
+A synchronous method may cross only a supported synchronous execution path; choose an async IDL method for a helper that can run on a different executor. The naming example uses instance operations; section 4.6 defines the explicitly bound static form. Synchronous operations never imply safe cross-isolate dispatch.
 
 | Objective-C emitted name | Swift public name |
 | --- | --- |
@@ -2286,14 +2369,14 @@ flowchart TD
 | Objective-C type | DOMUser |
 | Swift module/type | AppDomain.User |
 | Dart public import | package:app_domain/app_domain.dart |
-| Python import | app_domain.User |
+| Python import | app_domain.user.User (defining module), app_domain.api.User (unified public entrypoint) |
 | C# namespace/type | App.Domain.User |
 
 Plan all generated symbols before rendering any file. The repository refers to the defining domain module's planned artifacts, including prebuilt manifests, not a guessed relative path.
 
 ### 10.2 Expected cross-module output
 
-For the repository contract in section 4, using the naming overrides in section 7.2 where relevant. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The shared JVM layout uses KotlinUserRepository as defined in section 7.4.
+For the repository contract in section 4, using naming overrides in sections 7.2–7.5 where relevant. The C# declaration uses the optional I prefix from section 8.2, not the default. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The shared JVM layout uses KotlinUserRepository as defined in section 7.4.
 
 **C**
 
@@ -2545,6 +2628,47 @@ In modular mode, expose selected modules through their own configured package/mo
 
 Alongside module manifests, emit a library API manifest derived from the resolved public plan. Include library ID, selected targets, api.mode, exported canonical declaration IDs, target public qualified names and signatures, actual defining artifact owners, import/include/entrypoint names, required dependencies, runtime/ABI identity, visibility, effective config fingerprint and the owned files/content hashes. Version/build identity is included only for packaging as defined in section 7.8. Different libraries with the same logical type may have distinct physical presentation plans; the runtime must still validate matching logical identity and compatible ABI before sharing a handle. A naming-only change does not alter the logical ID or canonical operation contract, but can change source/binary public compatibility, selectors, JVM class identities and package fingerprints. Distinguish those changes from ABI compatibility. Build plans and installed consumer checks use actual names and fingerprinted artifacts. Never silently publish a changed public API under already committed immutable package coordinates.
 
+### 10.6 Shared target artifact ownership
+
+Compute ownership from the complete declared target set, effective configuration and actual artifact identity before CLI filtering. The plan assigns one owner for every model, interface, adapter, runtime implementation and package/build metadata file. An internal dependency target emits only required files unless also publicly selected. All ownership rules are discoverable and configurable. Reject incompatible ownership rather than creating duplicate classes or runtimes.
+
+| Combination | Automatic default for the same package/library | Explicit alternative |
+| --- | --- | --- |
+| Java + Kotlin, shared JVM package | Java owns shared value models and CompletableFuture interface; Kotlin owns distinct suspend interface with Kotlin prefix | Separate packages/models, explicit interface affixes or one public contract target |
+| Objective-C + Swift | Swift owns native Swift models/contracts; Obj-C owns its prefixed API in a distinct Clang module | model_source: objc shares representable imported models; explicit independent modules |
+| JavaScript + TypeScript | JavaScript owns ESM implementation and package metadata; TypeScript contributes declarations/type exports | Separate packages with explicitly selected implementation owners/loaders |
+| Dart + Flutter | Dart owns shared typed models/API; Flutter owns plugin metadata and exports the Dart API | Explicit separate Dart package dependency |
+
+For Java/Kotlin, the paired default is derived only when both are declared in a shared physical JVM package, not when a command happens to select one. Kotlin-only modules own their value models and use short UserRepository names. With paired targets the Kotlin interface prefix Kotlin is configurable. The two callable contracts share one canonical descriptor; typed adapters bridge suspend and CompletableFuture, never cast between unrelated interfaces. Java-owned models retain their actual JVM field types. Use checked conversions where needed or explicitly choose separate model layouts. No duplicate class files. Validate erasure, mangling and actual mixed-language consumers.
+
+For Apple, the native Swift module is the default owner of Swift contracts. Objective-C remains callable through its own prefixed public API. Use separate Clang module scope and supported importer refinement/unavailability where needed so an imported protocol cannot collide with the native Swift protocol in its public surface. Swift imported names follow swift_names defaults when visible. In the default native model profile, the two public host value types are distinct and converted using the canonical representation; never claim they are the same object. In model_source: objc, the imported type is the sole Swift model owner; expose a qualified public typealias where needed. Native Swift callable contracts remain the default unless an explicitly selected imported-contract profile proves identical signatures, async/errors and ownership. Compile actual Swift and Objective-C imports, including optional/error cases and collisions.
+
+For JS/TS, emit one ESM runtime, package metadata and loader per shared artifact, with .d.ts matching real exports and actual descriptor values. TypeScript-only generation still supplies executable JS, whether owned by its backend or explicitly declared JS dependency. A declaration file alone is not a provider. Dart/Flutter share one canonical Dart API for the same package integration. Native FFI and Web adapter selection does not duplicate models. Test target-filtered generation, then full generation; ownership and names must not drift or leave stale duplicate files.
+
+### 10.7 Composition of libraries
+
+Libraries may declare explicit assembly dependencies on other libraries in the same project:
+
+```yaml
+libraries:
+  core:
+    modules: [domain, repository]
+    targets: [cpp, swift, kotlin]
+  media:
+    modules: [audio, video]
+    targets: [cpp, swift, kotlin]
+  application:
+    modules: [network, helper]
+    dependencies: [core, media]
+    targets: [cpp, swift, kotlin]
+```
+
+Library dependencies do not replace IDL module imports. Resolve both graphs before rendering; reject unknown IDs, cycles, missing public targets and conflicting owners. A dependency library uses its own resolved configuration and actual artifacts; a consumer cannot regenerate its types with consumer defaults. When multiple linked libraries need one logical module, designate one defining artifact owner through an explicit dependency edge. Deduplicate references to that owner, not unrelated compiled copies with matching names. Different physical presentation plans remain valid for separately consumed libraries, or proven compatible alias/adapter plans, not accidental duplicate class identities in one process.
+
+Expose required public signature types where the target supports faithful re-export; other dependency APIs remain in their own entrypoint by default. Explicit api.exports may re-export a dependency using the existing alias/export rules. If a host cannot transparently re-export a prebuilt type, preserve its defining import and report an incompatible unified plan where the requested export cannot be implemented. Do not duplicate models to simulate re-export. Record exact dependency fingerprints, artifact ownership and ecosystem dependency declarations. Existing external prebuilt module manifests remain the supported external dependency mechanism; no new remote resolver or package registry.
+
+Linked libraries share a native core/context only through deliberate embedding initialization. Package import must not instantiate another core. Independent contexts remain supported. If separately linked static runtime copies exist, reject cross-copy handles; test shared linkage does not create accidental copies. Library dependency order is not registry priority or runtime ownership. Closing a library's attachment leaves unrelated live attachments intact. Full shutdown belongs to the explicit context owner (sections 12.4 and 15.9).
+
 ## 11. Compiler and templates
 
 ### 11.1 Pipeline
@@ -2693,7 +2817,7 @@ targets:
       inherit_builtin: true
 ```
 
-Only matching template IDs are overridden. All other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID from highest to lowest precedence: explicit module target, module target defaults, module-wide defaults, project target defaults, project-wide defaults, then built-in catalog. Each layer has its own explicitly mapped files and directory. Do not merge the directories into one path or skip module target defaults. Resolve the same layer order for an included partial, unless the selected template explicitly references a documented built-in namespace. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured inherit_builtin: false disallows use of the built-in catalog for that target's effective set. Missing required templates fail before any outputs are written. A missing explicitly mapped file always fails. An existing selected template that fails to parse or render is an error. Never try another template after a failure. Validate unknown IDs and conflicting overrides.
+Only matching template IDs are overridden. All other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID from highest to lowest precedence: explicit module target, module target defaults, module-wide defaults, selected library target defaults, library-wide defaults, project target defaults, project-wide defaults, then built-in catalog. Standalone module generation has no library layer. Library-only facade templates use library target/wide defaults, project target/wide defaults and built-ins, without arbitrary member-module ownership. Each layer has its own explicitly mapped files and directory. Do not merge directories into one path or skip module or library target defaults. Resolve the same layer order for an included partial, unless the selected template explicitly references a documented built-in namespace. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured inherit_builtin: false disallows use of the built-in catalog for that target's effective set. Missing required templates fail before any outputs are written. A missing explicitly mapped file always fails. An existing selected template that fails to parse or render is an error. Never try another template after a failure. Validate unknown IDs and conflicting overrides.
 
 #### 11.5.2 Custom template workflow
 
@@ -2716,7 +2840,7 @@ Custom templates are trusted local developer input, not a security sandbox. A te
 #### 11.5.4 Acceptance tests
 
 - Single-file override retains all other built-ins. Partial override and multiple modules with different overrides.
-- Project/module precedence, correct relative paths, strict missing template behavior, duplicate/unknown ID and inheritance disabled.
+- Project/library/module precedence, correct relative paths, strict missing template behavior, duplicate/unknown ID and inheritance disabled.
 - Override of nested partials and generated build files. Stable manifest fingerprints and invalidation when content changes.
 - Syntax error, undefined variables, context schema mismatch, traversal, recursive inclusion and deterministic rerender.
 - Generated outputs compile and run in each target, including an actual package consumer using customized source/build templates.
@@ -2733,7 +2857,7 @@ flowchart TD
     A["Required template ID"] --> B["Inspect module target overrides"]
     B --> C{"Explicit mapping or matching file?"}
     C -->|Yes| F["Select declared template"]
-    C -->|No| D["Inspect inherited module and project layers"]
+    C -->|No| D["Inspect inherited module, library and project layers"]
     D --> E{"Matching inherited template?"}
     E -->|Yes| F
     E -->|No| G{"Built-in inheritance allowed?"}
@@ -2874,7 +2998,7 @@ The C ABI must distinguish the lifetime of the native context, the lifetime of e
 | Operation/delivery | Selected provider, caller, participating callback/stream attachments and unique completion state | Terminal result and actual execution lifetime are tracked separately |
 | Registration/subscription | Unique control identity; resource owner and relevant host attachment identities | Removal ends new discovery or delivery; already admitted execution retains its resources |
 
-The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
+The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, explicit static binding/acquisition, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
 
 Contexts and attachments have Opening, Open, Closing and Closed states. Opening admits no business work. Closing is irreversible for that generation: reject new work, allow idempotent cleanup, drain admitted execution and required releases; Closed retains only the validation/control metadata necessary for safe late release. A failed or timed-out drain remains Closing and can be inspected or resumed by the owner; it must not reopen or be reported as closed. A successful replacement/restart attaches a new generation. A host object wrapper may outlive its target attachment, but it cannot resurrect its adapter.
 
@@ -2896,6 +3020,26 @@ stateDiagram-v2
 #### Cooperative shutdown and external host termination
 
 The embedding application must coordinate teardown before destroying an executor, interpreter, isolate or WASM instance. The runtime cannot promise to keep an externally destroyed host alive or execute its cleanup code after destruction. Cooperative close is the normal supported path. Where the platform can revoke a host unexpectedly, atomically revoke its admission, reject stale dispatch/completion envelopes without entering the host, release independently owned native resources when safe and report any cleanup that cannot be completed. Do not claim that an externally destroyed host drained successfully; document the actual platform lifecycle guarantee and test the supported path. A surviving native context must not unload code or free memory still accessible by an admitted native execution. No automatic retry, provider resurrection or fabricated successful cleanup.
+
+### 12.5 Public lifecycle control and errors
+
+Expose equivalent typed lifecycle operations on every target. Context-control authority is distinct from an ordinary context reference; attachment close authority is distinct from registry/static binding or interface ownership. Releasing a facade never closes an unrelated context or attachment.
+
+| Operation (semantic name) | Contract |
+| --- | --- |
+| createContext(options) | Explicit new isolated context, returns owning control |
+| attach(context, executor) | Attach current host domain to a compatible Open context |
+| defaultRegistry(attachment) | Obtain default registry for explicitly selected attachment |
+| createRegistry(attachment) | Create independent registry and close authority |
+| bindStatic(attachment, descriptor, implementation) | Explicit binding per section 4.6 |
+| closeAttachment(control) | Revoke admission and initiate asynchronous cooperative attachment drain |
+| shutdownContext(control) | Revoke all admission and initiate full cooperative shutdown |
+| release(reference) | Release only the specified owned reference |
+| awaitClosed(control) | Await actual execution and required release drain; report incomplete drain on timeout |
+
+Freeze concrete names and ABI layouts in phase 2. Facades do not require raw pointers in application code. Close requests racing with each other converge on one irreversible transition. Close can be initiated from work that must itself drain, but awaiting that drain from the same work must fail with a typed reentrant-wait error or be deferred to an external owner. Never block an executor on work requiring that executor. Timeout bounds waiting, not execution ownership; the owner can resume awaiting later. External host destruction follows section 12.4.
+
+Distinct error codes include invalid argument/descriptor, incompatible contract/ABI, invalid origin, stale handle, closed context/attachment/registry, missing service, duplicate registration, missing/duplicate static binding, unsupported synchronous invocation, reentrant wait, conversion/precision failure, resource exhaustion, scheduler failure, provider failure and cancellation. Business Result remains separate. C uses status and owned error details; managed APIs use native exceptions or explicit typed results consistent with public signatures. Details include stable symbolic code, logical contract/operation identity and safe message. Do not transport foreign exception objects or sensitive arguments. Release owned details once. Numeric status values and binary detail layouts are ABI gates, not permission to merge error semantics.
 
 ## 13. Memory and buffers
 
@@ -3050,11 +3194,28 @@ Specify scoped, retained or one-shot lifetime and the allowed executor. A scoped
 interface Camera {
     async start(): void;
     async stop(): void;
-    frames(): Stream<CameraFrame>;
+    async frames(): Stream<CameraFrame>;
 }
 ```
 
-Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. Use one bounded subscription contract, not a new streaming framework. Default to demand/backpressure for lossless streams. Camera previews may explicitly select latest-frame behavior with a bounded queue and immediate release of dropped frames. No unbounded camera frame queue. A stream may terminate before producing any value. Lossless demand controls production and delivery, including when the queue is empty. Normal end-of-stream drains accepted values in order before the terminal notification. Error or cancellation stops delivery of pending values and releases them under the documented terminal policy. A consumer cancellation releases the subscription only after the actual producer and any in-flight delivery are safe to detach. A queue-full condition must pause a cooperative lossless producer or fail an invalid producer, not silently discard events. An explicit latest-frame preview policy may replace a queued frame and release the displaced owner.
+Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. Use one bounded subscription contract, not a new streaming framework. Default to demand/backpressure for lossless streams. Camera previews may explicitly select latest-frame behavior with a bounded queue and immediate release of dropped frames. No unbounded camera frame queue. A stream may terminate before producing any value. Lossless demand controls production and delivery, including when the queue is empty. Normal end-of-stream drains accepted values in order before the terminal notification. Error or cancellation stops delivery of pending values and releases them under the documented terminal policy. Consumer cancellation revokes delivery immediately; actual producer and in-flight delivery retain resources until safe cleanup as defined in section 14.3.1. A queue-full condition must pause a cooperative lossless producer or fail an invalid producer, not silently discard events. An explicit latest-frame preview policy may replace a queued frame and release the displaced owner.
+
+#### 14.3.1 Default delivery and callback scope
+
+A returned stream handle supports one subscription by default, ordered lossless delivery, no replay or automatic initial event and demand-based backpressure. The provider explicitly documents hot/shared or cold/independent upstream production. Do not start upstream production on the bridge's behalf before subscription. Each consumer has a separate subscription identity. An unclaimed returned stream releases its owning handle. Do not infer broadcast or replay from the host stream type.
+
+| Option | Default | Override |
+| --- | --- | --- |
+| Pending stream capacity | 16 item envelopes per subscription, including posted not-yet-admitted items | Positive validated bounded capacity; optional byte budget |
+| Latest-frame pending capacity | 1, only if explicitly selected | Configurable where the chosen policy defines it |
+| Concurrent delivery | One admitted delivery per subscription | Explicit supported ordering/concurrency policy |
+| Overflow | Lossless asynchronous backpressure; reject invalid overproduction | Explicit bounded drop policy only |
+| Replay/current value | None | Explicit source semantics |
+| Listener example pending capacity | 16 events per serialized source | Application-defined bounded delivery policy |
+
+Capacity and policy are typed runtime options; fixed item counts alone do not bound arbitrary payload bytes. Reserve capacity before posting, consume demand at admission and release reservations exactly once on delivery, rejection, enqueue failure or cancellation. A lossless producer waits asynchronously, never blocks a host event loop. No unbounded posted queue may bypass capacity. Cancellation revokes admission and releases queued unadmitted items. Actual producer and admitted delivery retain resources until safe. A consumer cancel completion acknowledges revocation and target-required cleanup at the supported boundary; self-cancel cannot await its own execution. Provide nonblocking revocation and a separate external drain barrier when necessary. Full attachment close always waits for actual work and mandatory releases. No terminal item after cancellation or duplicate terminal completion.
+
+A scoped callback has runtime-owned scope identity independent of the host callable's reference count. For a sync enclosing call, close admission when it returns; for an async enclosing operation, when actual provider execution ends, not when the caller cancels its Future. A previously admitted callback retains its own execution resources until finished. A stored wrapper or copied handle cannot extend scoped admission. Reject statically detectable escapes and reject stale scope invocation dynamically. One-shot means at most one admission; it is scoped by default, not an implicit forever-retained listener. A separately owning one-shot value needs explicit ownership transfer into a legal owning position and cleanup even if never invoked. Do not retry a failed admitted one-shot.
 
 ### 14.4 Operation state and threading
 
@@ -3272,7 +3433,7 @@ final subscription = changes.listen((level) {
 await subscription.cancel();
 ```
 
-For a portable multi-subscriber source, each call to levelChanges creates a logical stream that supports an independent subscription. A shared/hot source may fan out values to those subscriptions explicitly; a cold source may start independent production. Document whether the initial current value is emitted or only changes are delivered, whether any replay exists and what happens to upstream production after the last subscriber leaves. Do not infer broadcast behavior, replay or a shared subscription from the host Stream/Flow type. A source must select an explicit per-subscriber bounded queue and backpressure policy as defined in section 14.3. The example emits subsequent changes only, with no replay and one subscription per returned stream; cancellation affects that subscription, not other subscribers.
+For a portable multi-subscriber source, each call to levelChanges creates a logical stream that supports an independent subscription. A shared/hot source may fan out values to those subscriptions explicitly; a cold source may start independent production. Document whether the initial current value is emitted or only changes are delivered, whether any replay exists and what happens to upstream production after the last subscriber leaves. Do not infer broadcast behavior, replay or a shared subscription from the host Stream/Flow type. A source uses the documented bounded lossless default unless it explicitly selects another supported per-subscriber policy under section 14.3. The example emits subsequent changes only, with no replay and one subscription per returned stream; cancellation affects that subscription, not other subscribers.
 
 A dynamic service proxy resolves the provider when the stream-returning method is invoked, not on each item or automatic resubscription. The async acquisition in this example is intentional: obtaining a stream object can require executing a foreign provider on its own executor. An async method returning Stream<T> maps to the target's async result containing the stream (for example Future<Stream<T>> in Dart); the outer operation and inner subscription have separate lifetimes. A synchronous Stream<T> return remains legal only when acquisition can execute safely synchronously, and must not be silently queued to satisfy a synchronous signature. An existing stream or listener subscription stays attached to its original event source even if a new provider is registered. Rebind explicitly by canceling the old subscription, resolving the new provider and subscribing again. Do not silently migrate subscriptions or duplicate events when a service is replaced or restored.
 
@@ -3378,7 +3539,7 @@ auto response = co_await client->request(request);
 C#:
 
 ```csharp
-var client = ServiceRegistry.Global.Get<IHttpClient>();
+var client = ServiceRegistry.Global.Get<HttpClient>();
 var response = await client.RequestAsync(request);
 ```
 
@@ -3992,15 +4153,15 @@ app_repository_plugin/
 
 ### 16.14 C# backend
 
-**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods, I interface prefix and Async suffix configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
+**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods and Async suffix by default; I interface prefix is opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
 
 **Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Span/ReadOnlySpan scoped borrowed access. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
 
 **Provider and consumer:** `Task<T>`/Task for async, typed delegates, IAsyncEnumerable and CancellationToken adapter. Use completion sources with asynchronous continuation scheduling where needed. Exactly-once completion. Map cancellation without prematurely releasing active native resources. Use stable unmanaged entrypoints or rooted delegates. Exceptions never cross native ABI. Managed provider registration works from C++/Dart where the .NET host is available. Do not assume arbitrary embedding. Specify supported .NET hosting and NativeAOT modes separately.
 
 ```csharp
-using var registration = registry.Register<IUserRepository>(implementation);
-var repo = registry.Get<IUserRepository>();
+using var registration = registry.Register<UserRepository>(implementation);
+var repo = registry.Get<UserRepository>();
 var users = await repo.FindAllAsync();
 ```
 
@@ -4221,7 +4382,7 @@ record CameraFrame {
 interface Camera {
     async start(): void;
     async stop(): void;
-    frames(): Stream<CameraFrame>;
+    async frames(): Stream<CameraFrame>;
 }
 
 interface ImageProcessor {
@@ -4457,6 +4618,32 @@ Test the minimal config and one intentional customized config per distinct backe
 | library.version | Source-only library needs no fabricated release metadata; package requires explicit valid version/build and propagates exact values |
 
 For Swift compile and execute a fresh consumer containing import Ubook and the repository/helper call-site fixture. Verify both the native Swift module and the Objective-C importer path with actual Apple SDK tooling. For Java and Kotlin verify real class/package ownership, not only archive contents. For Python keep all __init__.py files empty and exercise the explicit api module from an installed wheel. For C/C++, check self-contained umbrella headers and installed CMake targets. For Dart/Flutter, C# and JS/TS/WASM, validate native package imports and real calls through the packaged library. Reuse existing conformance fixtures; do not build another test framework. Mark cases planned until executed with real evidence.
+
+### 18.10 Cross-contract and ownership regression fixtures
+
+Extend the existing finite case inventory, reusing prior fixtures when they already prove the requirement.
+
+| Case ID | Required observation |
+| --- | --- |
+| idl.logical-case | User and user distinct; target casing does not alter identity; collisions reported |
+| idl.static-binding | Explicit static facade/default binding works; duplicate fails; registry override has no effect |
+| idl.static-factory | Async factory returns owning instance; removal and detach differ; contexts isolated |
+| idl.inheritance | Base view preserves provider identity; exact registry key; reject ambiguity |
+| idl.overload | Correct canonical operation IDs; reject return-only/erasure/selector conflicts |
+| idl.specialization | Shared owner generates once; competing owner rejected |
+| idl.property | Compatible explicit property preserves types/errors; unsafe mapping rejected |
+| config.library-template | Library target/wide precedence and path origins; standalone omits library layer |
+| config.module-version | Unversioned source works; prebuilt version required; no inherited library version |
+| api.jvm-shared | Automatic joint ownership, distinct Java/Kotlin contracts, standalone and override |
+| api.apple-shared | Native Swift and Obj-C coexist; imported-model profile has one Swift type owner |
+| api.js-ts-shared | One runtime/package owner; TS-only generation executable |
+| api.library-composition | Build actual dependency once; reject cycles, conflicting owners and incompatible exports |
+| runtime.close-reentrant | Initiate close in admitted work; self-wait fails/deferred; external drain awaits actual release |
+| callback.scope-expiration | Stored wrapper cannot extend scope; admitted work safe; unused one-shot released |
+| stream.default-capacity | Demand, bounded queue, explicit latest policy and cancellation preserve ownership |
+| diagnostics.structured | Stable codes, related spans, JSON, nonzero exit, redaction |
+
+Prove static, inheritance, factory and overload behavior using actual native and managed providers on feasible targets. Verify target-filtered and complete paired plans. Install composed libraries into a fresh consumer and exercise dependencies, real calls and partial close of a surviving shared context. Report real compiler/runtime restrictions rather than fake static calls or blocking event loops.
 
 ## 19. GitHub Actions
 
@@ -5109,7 +5296,7 @@ Use the detailed checklist in section 22 as the implementation backlog. Check an
 
 Every phase includes implementation, purposeful automated tests, review and fixes. Define the complete canonical type and ownership contract before extending managed backends. Prove representative advanced types, external adapters, streams and registry operations in C/C++ before porting them. Each new backend implements the established contracts and library version/build propagation instead of deferring all advanced features to the final phase. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
 
-Explicit remaining design decisions to settle with proof-of-concept and tests: exact grammar, concrete ABI declarations, safe handle representation, detailed type mapping (especially unsigned/64-bit web values), executor policies, shared JVM/Apple artifact strategies, stream backpressure configuration and registry duplicate/override API. These are engineering design gates, not permission to drop requirements.
+Explicit implementation gates to settle with proof-of-concept and tests: complete grammar against the specified constructs, concrete ABI declarations and numeric status codes, safe handle representation, exact unsigned/64-bit web conversions, actual executor capabilities, compiler-proven JVM/Apple ownership layouts, bounded stream implementation and concrete idiomatic lifecycle/registry/static facade signatures. Defaults and semantic policies are fixed by sections 4, 7, 10, 12, 14 and 15; changes require specification review, not convenient implementation fallbacks. These are engineering design gates, not permission to drop requirements.
 
 ## 22. Implementation and acceptance checklist
 
@@ -5128,9 +5315,9 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 
 - [ ] Implement source discovery, UTF-8 grammar, comments/docs, source spans, AST, symbol table, semantic validation and canonical typed IR with deterministic ordering.
 - [ ] Support modules, imports, aliases, grouped and wildcard imports with ambiguity checks, public/private visibility, constants and validated defaults.
-- [ ] Implement records, enums, flags, variants, interfaces, inheritance, callbacks, factories/static operations and concrete generics. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
+- [ ] Implement records, enums, flags, variants, interfaces, inheritance/base views, callbacks, explicit static bindings/factories, overload IDs, property mappings and named concrete generics under sections 4.6–4.7. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
 - [ ] Implement async declarations, typed errors/Result, streams, cancellation and weak references with explicit legal usage rules. Reject borrowed types in escaping/async positions.
-- [ ] Provide clear diagnostics with file, line, relevant symbol, module and target. Validate the entire selected plan before writing. Fail on invalid config, type mapping, name, path or missing dependency.
+- [ ] Provide clear diagnostics with stable symbolic codes, structured JSON, file/span, related locations, symbol, module, library and target. Validate the entire selected plan before writing. Fail on invalid config, type mapping, name, path or missing dependency.
 - [ ] Expose CLI generate, validate, config defaults/schema/resolved, list targets, version and local Python API. Support project, individual module and selected target invocation, including source dependency closure, explicit standalone versus project defaults and installed/offline generation.
 
 ### 22.3 Module system, configuration and output planning
@@ -5140,14 +5327,14 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement source and prebuilt dependencies, transitive resolution, compatible canonical symbol metadata and artifact validation. Reject duplicate or incompatible artifacts without trying old formats.
 - [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings. All applicable presentation settings must have documented defaults and granular overrides. Enforce C++ camelCase defaults and independent language-native public signatures.
 - [ ] Resolve names/includes/imports before rendering, including Java/Kotlin shared JVM artifact ownership, Swift/Obj-C shared or distinct models and JS/TS shared runtime declarations.
-- [ ] Implement libraries and --library selection, unified public entrypoint by default, modular mode, export closure, validated aliases, independent library API manifests, collision diagnostics and isolated output plans. Test real installed imports across every selected language.
+- [ ] Implement libraries and --library selection, unified public entrypoint by default, modular mode, export closure, validated aliases, independent library API manifests, collision diagnostics and isolated output plans. Implement shared artifact ownership defaults, library dependency graph and module-version checks. Test real installed imports across every selected language.
 - [ ] Detect case-folded filename collisions, reserved names, overlapping outputs, path traversal, invalid symlinks and incompatible dependency identities. Preserve user-owned files.
 - [ ] Write files deterministically and atomically per file, reject unowned collisions, invalidate incomplete generation, preserve unchanged files, record owned outputs and remove obsolete generated files safely when requested. Emit real module manifests and fingerprints.
 
 ### 22.4 Templates and annotations
 
 - [ ] Package Jinja2 templates for every target, including models, interfaces, proxies, providers, marshalling and build/package metadata. Keep business rules and type/import resolution in Python, not templates.
-- [ ] Implement module/target directory and individual template overrides, explicit inheritance of unmodified templates, documented IDs, StrictUndefined, partials, export/list/check and content fingerprinting.
+- [ ] Implement project/library/module/target directory and individual template overrides, explicit inheritance of unmodified templates, documented IDs, StrictUndefined, partials, export/list/check and content fingerprinting.
 - [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
 - [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments, including scoped/retained/one-shot callback parameters as specified in section 14.2. Enforce actual semantics where applicable, not comments alone.
 - [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes. Swift imported names remove generated affixes by default; implement complete @swift.name signatures and explicit argument labels/omission.
@@ -5166,11 +5353,11 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.6 Native ABI, ownership and runtime
 
 - [ ] Define and implement the versioned C ABI, fixed-width layout, typed function tables, opaque handles, logical IDs and contract fingerprints. Reject incompatible artifacts, with no compatibility translation.
-- [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
+- [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters, explicit static contract bindings and typed context/attachment lifecycle controls with reentrant drain protection. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
 - [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
-- [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
+- [ ] Implement bounded streams, default capacity, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, context-bound registries, Reject/Replace/ScopedOverride, unique tokens, missing-service errors, atomic removal/restoration, retained providers and explicit delegation. Replace clears the full stack; scoped removal restores only still-live registrations. No implicit alternate-provider retry.
 - [ ] Implement per-attachment registration ownership, generation-checked admission, partial detach and safe invalidation of fixed references to closing runtimes. Verify independent registries/engines, registration-owner versus actual provider attachment, atomic admission and dispatch gating, owner-specific active/hidden removal, in-flight execution, safe release outside locks and hot restart without stale tokens affecting newer registrations. Prove the deterministic lifecycle fixtures in section 18.8.
 - [ ] Support application-defined single-listener and multi-listener subscription patterns using existing typed callbacks/interfaces and streams. Verify scoped/retained/one-shot callback lifetimes, replace/clear, independent cancellation, no new admissions after removal, unclaimed subscription cleanup, reentrancy, bounded delivery and error propagation, async stream acquisition, explicit stream rebinding and owner-specific cleanup without a new global event bus.
