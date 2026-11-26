@@ -18,7 +18,7 @@ Applications often use more than one programming language. For example, a Flutte
 
 PolyGlue is a code generator designed to solve that problem. Describe the data and methods once. PolyGlue generates the connecting code for the languages you choose. You write the actual feature in one language and use it from another.
 
-The goal is to make native cross-language calls feel like ordinary method calls, without requiring a server or converting every call into JSON (a text-based data format).
+The goal is to make native cross-language calls feel like ordinary method calls within the same application, without requiring a server or converting every call into JSON (a text-based data format). On the web, the connection uses JavaScript and WebAssembly.
 
 > PolyGlue is in early development. The features, examples and targets below describe the planned design, not verified support.
 
@@ -99,9 +99,9 @@ Flutter and WebAssembly are integration targets. Flutter uses Dart, and WebAssem
 
 ## Workflow
 
-Define → Generate → Build → Test → Package → Deploy (optional).
+Define → Generate → Implement → Build → Package → Test the package → Deploy (optional).
 
-Start with an IDL contract and choose two languages. Generate the connecting code (bindings), implement a method, and call it from the other language. Build and test the result. When it is ready to share, package it as an SDK. Uploading the SDK to cloud storage is optional.
+Start with an IDL contract and choose two languages. Generate the connecting code (bindings), implement a method, and call it from the other language. Build and test the result. To share the library, package it as an SDK and test that exact package in a separate application. Uploading the validated SDK to cloud storage is optional.
 
 ## Documentation
 

@@ -255,8 +255,8 @@ One installed Python CLI is the entry point for generation and native build orch
 | polyglue doctor | Discover host, installed SDKs, compilers and tool versions. Show missing requirements for the selected target |
 | polyglue generate | Generate source files and configured integration metadata. No native SDK required |
 | polyglue build | Resolve the selected build plan, generate inputs if needed, configure and build the requested artifact |
-| polyglue test | Run actual target-specific tests and conformance cases, optionally with sanitizer configuration |
-| polyglue package | Build and assemble the requested final distributable, validate it and write an artifact manifest |
+| polyglue test | Run target-specific tests, conformance or installed-package tests against selected artifact bytes, optionally with sanitizer configuration |
+| polyglue package | Build and assemble the distributable, inspect its structure and write an artifact manifest |
 | polyglue deploy | Upload an explicitly selected, already packaged SDK to an S3-compatible bucket using its validated version and build number |
 | polyglue run | Run the selected example where the current host or device allows execution |
 | polyglue clean | Remove only PolyGlue-owned build outputs for the selected scope |
@@ -272,6 +272,7 @@ uv run --locked polyglue doctor --target kotlin --platform android
 uv run --locked polyglue generate --module repository --target kotlin
 uv run --locked polyglue build --product mobile --platform android --configuration release
 uv run --locked polyglue package --product mobile --format aar
+uv run --locked polyglue test --product mobile --format aar
 uv run --locked polyglue package --product apple --format xcframework
 uv run --locked polyglue package --product apple --format swiftpm
 uv run --locked polyglue package --product desktop --platform linux --format cmake
@@ -435,7 +436,7 @@ interface PagedUserRepository {
 }
 ```
 
-Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Separately generated modules must agree on specialization identity and ABI. Reject open generics at a concrete binary boundary.
+Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Specialization identity comes from the fully qualified generic definition and canonical type arguments, not from the importing module or rendered name. In the example, repository owns its concrete Page<User> artifacts if they are not already supplied by a dependency. If independently generated modules need the same specialization in one product, they must import it from one shared owning module. Use an explicit named concrete specialization in that shared module, with its declaration syntax finalized alongside the generic grammar in phase 1. Do not silently emit several public classes for the same specialization or change ownership depending on the selected target. A prebuilt dependency can only supply specializations recorded in its manifest. Never modify it to add a new one. Reject conflicting owners and open generics at a concrete binary boundary.
 
 ### 4.5 Constants, inheritance and factory flow
 
@@ -1374,7 +1375,7 @@ targets:
     output: ../../native/domain/wasm
 ```
 
-The model_source and implementation_source settings express intentional artifact ownership. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on which targets happen to be selected for a particular command. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
+The model_source and implementation_source settings express intentional artifact ownership. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on which targets happen to be selected for a particular command. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
 
 ### 7.4 Repository module configuration
 
@@ -1843,10 +1844,9 @@ targets:
       generated_warning: true
       include_generator_version: true
       include_source_path: true
-      include_timestamp: false
 ```
 
-Generate deterministic UTF-8 text, ordered and deduplicated imports, appropriate documentation comments and no timestamps by default. Default formatting must be readable without external tools and follow the owner conventions in AGENTS.md, including single-line calls, signatures and string literals. Optional formatters: clang-format, google-java-format, ktlint, swift-format, Ruff, dart format, dotnet format, Prettier. Only advertise options a backend actually honors. Test custom formatting, output byte reproducibility and unchanged-file preservation.
+Generate deterministic UTF-8 text, ordered and deduplicated imports and appropriate documentation comments. Do not include wall-clock generation timestamps or machine-specific absolute source paths. If source metadata is selected, use a normalized logical module-relative path. Build provenance may record execution times separately from generated source and its fingerprints. Default formatting must be readable without external tools and follow the owner conventions in AGENTS.md, including single-line calls, signatures and string literals. Optional formatters: clang-format, google-java-format, ktlint, swift-format, Ruff, dart format, dotnet format, Prettier. Only advertise options a backend actually honors. Test custom formatting, output byte reproducibility and unchanged-file preservation.
 
 ## 9. Annotations and platform attributes
 
@@ -1996,7 +1996,7 @@ Plan all generated symbols before rendering any file. The repository refers to t
 
 ### 10.2 Expected cross-module output
 
-For the repository contract in section 4, using the naming overrides in section 7.2 where relevant. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The shared JVM layout uses KotlinUserRepository as defined in section 7.3.
+For the repository contract in section 4, using the naming overrides in section 7.2 where relevant. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The shared JVM layout uses KotlinUserRepository as defined in section 7.4.
 
 **C**
 
@@ -2353,7 +2353,7 @@ targets:
       inherit_builtin: true
 ```
 
-Only matching template IDs are overridden. All other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID: explicit mapping in module target, module target directory, module-wide inherited mapping/directory, project target defaults, project-wide defaults, then built-in catalog. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured inherit_builtin: false disallows use of the built-in catalog for that target's effective set. Missing required templates fail before any outputs are written. A missing explicitly mapped file always fails. An existing selected template that fails to parse or render is an error. Never try another template after a failure. Validate unknown IDs and conflicting overrides.
+Only matching template IDs are overridden. All other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID from highest to lowest precedence: explicit module target, module target defaults, module-wide defaults, project target defaults, project-wide defaults, then built-in catalog. Each layer has its own explicitly mapped files and directory. Do not merge the directories into one path or skip module target defaults. Resolve the same layer order for an included partial, unless the selected template explicitly references a documented built-in namespace. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured inherit_builtin: false disallows use of the built-in catalog for that target's effective set. Missing required templates fail before any outputs are written. A missing explicitly mapped file always fails. An existing selected template that fails to parse or render is an error. Never try another template after a failure. Validate unknown IDs and conflicting overrides.
 
 #### 11.5.2 Custom template workflow
 
@@ -2447,6 +2447,25 @@ One runtime instance per explicitly shared context. Multiple libraries must link
 Do not hold internal locks during foreign calls, callbacks, scheduling or destruction. Pin runtime-owned reference state under the lock, then release the lock before calling foreign retain/release or executing the provider. Do not obtain safety by calling user code inside the registry mutex. Define shutdown ordering, pending-operation drain/cancellation, registration invalidation and thread-affine release. Test reentrancy, nested cross-language calls, duplicate runtime instances, stale handles, allocator mismatch, refcount overflow, weak references and shutdown races.
 
 ### 12.3 Call and return across the ABI
+
+#### Runtime initialization
+
+A consumer and provider must deliberately share a live runtime context before exchanging references. The application decides which component owns startup and shutdown.
+
+```mermaid
+flowchart TD
+    A["Application loads native library"] --> B["Create or explicitly receive runtime context"]
+    B --> C["Check ABI version and target contract"]
+    C --> D{"Compatible and initialized?"}
+    D -->|No| X["Report failure and release partial state"]
+    D -->|Yes| E["Attach selected language adapter and executor"]
+    E --> F["Create or register typed provider"]
+    F --> G["Pass or resolve consumer reference"]
+    G --> H["Invoke through shared context"]
+```
+
+Loading two independent runtime instances is not the same as sharing a context. Do not pass handles between them. Keep registration and lookup unavailable until initialization completes successfully. The final shutdown sequence is in section 15.5.
+
 
 #### A synchronous interface call
 
@@ -2709,6 +2728,27 @@ flowchart TD
 ```
 
 In the Downloader example, the progress callback may be implemented by Dart while the download runs in Kotlin. The typed completion lets the provider continue without blocking the Dart isolate.
+
+#### Explicit cancellation token
+
+A CancellationToken lets the application request that work stop. It is different from the operation's own terminal status. A token may be shared by several operations if the application chooses. Cancelling one operation does not automatically cancel every other operation using the same token.
+
+```mermaid
+flowchart TD
+    A["Caller owns a cancellation source and token"] --> B["Pass token to an async method"]
+    B --> C["Retain token and observe cancellation"]
+    C --> D{"Already cancelled?"}
+    D -->|Yes| E["Complete operation as cancelled without starting work"]
+    D -->|No| F["Provider starts work"]
+    A -->|Request stop| G["Signal token once"]
+    G --> H["Notify active observers on allowed context"]
+    H --> I["Request cancellation of observing operations"]
+    F --> J["Provider finishes or cooperates with cancellation"]
+    I --> J
+    J --> K["Remove observer and release token and execution owners"]
+```
+
+A cancellation source is a runtime helper, not an additional IDL type. Subscribe and check cancellation as one atomic operation so a request between registration and start is not lost. If work was accepted before cancellation, retain execution resources until work actually ends. Removing an observer must not race with destroying its context. Reuse the existing async cancellation machinery. Do not add a second cancellation scheduler.
 
 #### Cancellation and actual execution lifetime
 
@@ -3337,7 +3377,7 @@ interface HttpClient {
 }
 ```
 
-Send a real HTTPS request to https://httpbin.org/get or /post using a provider in a different runtime. Display status, headers and body. Headers are a list rather than a map so repeated fields such as Set-Cookie are not overwritten. HTTP header name matching is case-insensitive in the HTTP implementation, not a change to IDL string equality. Check repeated response headers with the existing local fixture. A non-success HTTP status is a response, not an ABI failure. Test error, timeout, cancellation and async completion. Deterministic CI uses a local HTTP fixture with the same contract. A separate live smoke checks the actual public service. Do not make deterministic tests rely on public network availability.
+Send a real HTTPS request to https://httpbin.org/get or /post using a provider in a different runtime. Display status, headers and body. Headers are a list rather than a map so repeated fields such as Set-Cookie are not overwritten. HTTP header name matching is case-insensitive in the HTTP implementation, not a change to IDL string equality. Check repeated response headers with the existing local fixture on providers whose HTTP API exposes them. Browser Fetch may hide or combine headers, and never exposes Set-Cookie to frontend code. The browser provider returns only the headers actually available from Fetch and must obey CORS and other browser restrictions. Do not invent hidden headers, split combined values heuristically, or require the browser to return headers forbidden by the platform. Test permitted response headers and the native repeated-header contract separately. Serve the routine browser fixture from the same origin or with deliberate CORS configuration. The direct HTTPBin browser smoke is conditional on that service permitting the requested browser call. See [Fetch forbidden response headers](https://developer.mozilla.org/en-US/docs/Web/API/Headers/getSetCookie). A non-success HTTP status is a response, not an ABI failure. A transport failure or unavailable browser response is an invocation error. Test error, timeout, cancellation and async completion. Deterministic CI uses a local HTTP fixture with the same contract. A separate live smoke checks the actual public service. Do not make deterministic tests rely on public network availability.
 
 ### 17.3 Camera and grayscale
 
@@ -3885,18 +3925,19 @@ flowchart TD
     native --> ecosystem["Build ecosystem packages where required"]
     ecosystem --> assemble["Assemble final package and debug symbols"]
     assemble --> inspect["Inspect ABI, metadata, architectures and hashes"]
-    inspect --> consumer["Install in independent consumer and test"]
+    inspect --> artifact["Package command: local artifact and manifest"]
+    artifact --> consumer["Test command: install exact package and execute checks"]
     consumer --> ready{"Required checks passed?"}
-    ready -->|No| failed["Report failure and block release"]
-    ready -->|Yes| artifact["Validated local artifact and evidence"]
-    artifact --> choice{"Explicit deploy requested?"}
+    ready -->|No| failed["Keep local artifact, block deployment and release"]
+    ready -->|Yes| evidence["Record test evidence for exact artifact hashes"]
+    evidence --> choice{"Explicit deploy requested?"}
     choice -->|No| done["Keep local SDK"]
-    choice -->|Yes| upload["Upload exact packaged bytes to S3-compatible storage"]
+    choice -->|Yes| upload["Deploy command: upload exact packaged bytes to S3-compatible storage"]
     upload --> verify["Verify remote hashes"]
     verify --> complete["Write deployment completion manifest"]
 ```
 
-Each stage must stop on failure. Packaging does not implicitly deploy. The deploy command consumes the existing validated package rather than recompiling or re-archiving it. A failed consumer or deployment check must never be reported as successful.
+Each command must stop on its own failure. Packaging writes a structurally valid artifact without implicitly running the separate test or deploy command. A failed test does not turn an existing artifact into an approved release. Packaging does not implicitly deploy. The deploy command consumes the existing validated package rather than recompiling or re-archiving it. A failed consumer or deployment check must never be reported as successful.
 
 The same CLI and code path is used locally, by Makefile and in GitHub Actions. The Makefile exposes thin aliases such as setup, lint, test, build, package, docs and clean. It must not duplicate build logic or assume all SDKs are available. No hidden IDE-only steps. If generating sources for an existing project, users can still build them using their own tools without the PolyGlue CLI.
 
@@ -4016,7 +4057,7 @@ Stage CMake install output: include/, lib/, bin/ where applicable, CMake package
 
 ### 20.7 Artifact provenance and release validation
 
-A successful package command emits an artifact manifest only after inspection. Define a non-recursive integrity layout: artifact-manifest.json lists final distributable payloads, their relative paths, byte sizes and SHA-256 hashes, but not itself or the checksum file. checksums.sha256 covers those payloads and the completed artifact-manifest.json, never itself. The deployment manifest separately records the verified hashes of the payloads, artifact manifest and checksum file. It does not hash itself. A checksum file must agree with the artifact manifest, not authorize additional payloads. Record product ID, SDK version, SDK build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. A package manifest must not claim that cloud deployment or external registry publication occurred. Deployment evidence is a separate manifest written only after verified upload. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
+A successful package command emits an artifact manifest only after structural inspection, including architecture, ABI, expected files and metadata. Structural validity is not test approval. The test command runs applicable installed-consumer checks against the exact artifact, recording the artifact manifest hash and the actual payload hashes in its separate test report. Do not mutate the artifact manifest after testing. A successful report for other bytes, even with the same SDK version and build number, cannot approve this artifact. A compile-only result must not be reported as a runtime test. Deploy checks applicable required product test evidence before uploading, without rerunning tests or rebuilding. Missing required evidence blocks deployment. This is the consumer product's declared verification scope, not the full release checklist for PolyGlue itself. Local packaging remains usable before tests are complete. Define a non-recursive integrity layout: artifact-manifest.json lists final distributable payloads, their relative paths, byte sizes and SHA-256 hashes, but not itself or the checksum file. checksums.sha256 covers those payloads and the completed artifact-manifest.json, never itself. The deployment manifest separately records the verified hashes of the payloads, artifact manifest and checksum file. It does not hash itself. A checksum file must agree with the artifact manifest, not authorize additional payloads. Record product ID, SDK version, SDK build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. Test reports identify the immutable package by manifest hash and payload hashes. The artifact manifest contains structural inspection results, not future test verdicts. A package manifest must not claim that cloud deployment or external registry publication occurred. Deployment evidence is a separate manifest written only after verified upload. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
 
 Record input identity and output checksums separately. A clean build may produce different bytes because of toolchain or signing nondeterminism. Never claim that equal inputs guarantee identical archive bytes. Deploy selects existing bytes rather than rebuilding them. Verify reproducibility where toolchains permit it. Deterministic generation is mandatory. Do not promise bit-for-bit equality of signed archives or compiler-specific outputs without evidence. Use checksums to identify final bytes and store release/debug variants separately. Never reuse stale binaries or overwrite an existing published release. Publishing to PyPI, Maven, SwiftPM release hosting, pub, NuGet or npm is explicitly separate from local packaging. S3-compatible SDK deployment is also an explicit separate command under section 20.10. Packaging never uploads.
 
@@ -4067,13 +4108,14 @@ deploy:
       addressing_style: path
 ```
 
-The names and account values are illustrative. Do not add actual bucket/account/credential values to the PolyGlue repository. An omitted endpoint uses the official AWS SDK endpoint resolution. Custom endpoints are explicit HTTPS S3 API endpoints, not public CDN URLs. Allow an explicit local HTTP endpoint only in an isolated test fixture without real credentials. Keep TLS certificate verification enabled. Validate bucket, prefix, region, endpoint and addressing style. Reject embedded endpoint credentials and ambiguous path segments. Credentials come from the standard AWS credential provider chain, such as environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, an explicitly selected local profile or temporary AWS role credentials. R2 uses its S3 API access key pair with scoped permissions. Do not store keys in YAML, manifests, command arguments, logs or generated SDKs. Do not discover or provision buckets, change IAM, public access, ACLs, lifecycle or CDN settings.
+The names and account values are illustrative. Do not add actual bucket/account/credential values to the PolyGlue repository. An omitted endpoint uses the official AWS SDK endpoint resolution. Custom endpoints are explicit HTTPS S3 API endpoints, not public CDN URLs. Allow an explicit local HTTP endpoint only in an isolated test fixture without real credentials. Keep TLS certificate verification enabled. Validate bucket, prefix, region, endpoint and addressing style. Reject embedded endpoint credentials and ambiguous path segments. Credentials come from the standard AWS credential provider chain, such as environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, an explicitly selected local profile or temporary AWS role credentials. R2 uses its S3 API access key pair with scoped permissions. A custom S3 endpoint must be explicitly trusted by the user and use credentials intended for that service. Do not silently use AWS role or instance credentials against a custom endpoint. For a custom endpoint, require an explicitly selected service profile or explicitly supplied environment credentials. Keep actual credentials out of the project configuration. Validate the effective endpoint, including SDK environment overrides, against the destination selected by the user before creating a client. Do not store keys in YAML, manifests, command arguments, logs or generated SDKs. Do not discover or provision buckets, change IAM, public access, ACLs, lifecycle or CDN settings.
 
 #### 20.10.2 CLI and versioned object keys
 
 ```bash
 uv sync --locked --extra deploy
-uv run --locked --extra deploy polyglue package --product apple --format xcframework
+uv run --locked polyglue package --product apple --format xcframework
+uv run --locked polyglue test --product apple --format xcframework
 uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2 --dry-run
 uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2
 ```
@@ -4105,12 +4147,13 @@ For remote SwiftPM, use an explicitly supplied download base URL and the exact i
 #### 20.10.3 Upload, integrity and interruption
 
 - Validate the manifest schema, selected identity, listed relative paths, byte lengths and SHA-256 values of all files before any network write. Reject symlink escapes and undeclared files. Use the immutable packaged bytes for upload. Prevent concurrent mutation of the selected local package during upload.
+- First conditionally create artifact-manifest.json at the destination, before uploading any payload. This existing manifest serves as the immutable identity of the intended artifact set, not a completion signal. When it already exists, compare its exact bytes or verified SHA-256 with the local manifest and reject a different artifact set before writing any other object. This prevents concurrent deployments of different builds at the same identity from mixing their payloads. The later deployment-manifest.json is still the only completion signal.
 - Upload only the manifest allowlist and accompanying checksum/manifest files. Record the SDK version, build number and checksum in object metadata where appropriate. Set content types correctly. Do not treat an S3 ETag as SHA-256 or as a universal MD5.
 - Use conditional creation with If-None-Match: * on PutObject or CompleteMultipartUpload. Check required operations against the current provider API. A preliminary HEAD followed by unconditional PUT is not an atomic overwrite guard. Do not remove the condition if a compatible provider rejects it. Report an unsupported deployment endpoint explicitly.
-- Use single PUT for appropriate file sizes and multipart for files that require it. Reuse the official SDK's protocol functionality. If its high-level transfer helper cannot pass the required condition, use the necessary low-level SDK operations rather than inventing a client. Stream bounded chunks and abort only multipart sessions created by this invocation on a known failure. Never delete committed objects automatically.
+- Use single PUT for appropriate file sizes and multipart for files that require it. Reuse the official SDK's protocol functionality. If its high-level transfer helper cannot pass the required condition, use the necessary low-level SDK operations rather than inventing a client. Stream bounded chunks and abort only multipart sessions created by this invocation on a known failure. Never delete committed objects automatically. A conditional-write conflict or an ambiguous completion response must be reconciled by reading the exact destination object and verifying its bytes. An existing identical object may be reused. A different object is an error. If no committed object exists and an S3 multipart completion cannot be retried with its original upload ID, fail cleanly and let an explicit rerun start a new multipart upload. Never retry as an unconditional write.
 - Verify remote bytes through a supported full-object SHA-256 checksum or a streaming read and hash. A checksum advertised only in user metadata is not proof of transferred bytes. Use the storage API, not a potentially stale CDN cache, for verification. Set bounded network timeouts and SDK transport retries for safe transient failures. Never retry by dropping a conditional write or changing the destination.
 - Publish deployment-manifest.json last using the same conditional write. It records the artifact manifest hash, SDK version/build, selected artifact identity and the verified object keys and hashes. Its presence marks the artifact set as complete. Do not claim a multi-object atomic transaction. A partial upload is not a successful deployment and consumers must use the completion manifest rather than directory listing. A pre-existing valid identical completion manifest plus verified matching bytes is an idempotent success.
-- If interrupted, leave committed immutable objects intact. An explicit re-run with the exact same artifact can verify and reuse already committed identical bytes, then upload missing objects and finish the deployment manifest. If an existing object or completion manifest differs, fail and require a new explicitly selected build number or destination. No silent overwrite or automatic rollback/deletion. Concurrent identical uploads converge to one complete artifact set. Concurrent differing bytes cannot replace a committed object or completion manifest.
+- If interrupted, leave committed immutable objects intact. An explicit re-run with the exact same artifact can verify and reuse already committed identical bytes, then upload missing objects and finish the deployment manifest. If an existing object or completion manifest differs, fail and require a new explicitly selected build number or destination. No silent overwrite or automatic rollback/deletion. Concurrent identical uploads converge to one complete artifact set. Concurrent differing bytes cannot replace a committed object or completion manifest. The artifact manifest is claimed first, so a conflicting deployment cannot add unrelated payloads to the same artifact set. This guarantee assumes other writers respect the immutable destination policy. PolyGlue does not control external writers, bucket lifecycle or deletion policies.
 - Report actual completed keys, errors and the final deployment manifest path. Return nonzero when upload or verification fails, even if some objects were committed. Do not mark unverified content complete.
 
 The initial protocol surface is deliberately small: object creation, read/head verification and multipart creation, part upload, conditional completion and abort when required. Document least-privilege permissions scoped to the chosen bucket/prefix, including read permission for verification and multipart cleanup permission when required. AWS and R2 both document conditional writes. Other S3-compatible implementations must prove the required behavior before being listed as verified.
@@ -4124,7 +4167,7 @@ Official implementation references:
 
 #### 20.10.4 Deployment tests and documentation
 
-Keep ordinary deployment tests network-free and cloud-credential-free. Ordinary CI may still fetch its declared toolchain and dependency downloads under the existing cache policy. Test version/build propagation through the existing build fixtures, deterministic key calculation, dry-run, manifest selection and file checksum verification, optional dependency handling, invalid configuration and secret redaction. Test actual SDK requests and response handling with the official SDK's supported test facilities. Cover conditional conflicts, identical re-run, partial failure, multipart abort, changed bytes, remote checksum mismatch and completion manifest ordering. Use one focused S3-compatible integration fixture if it exercises protocol behavior that the existing SDK tests do not prove. Do not start a cloud emulator in every language job. A mocked or local fixture does not prove actual AWS/R2 interoperability. Execute a separately authorized live smoke against each claimed service using isolated test prefixes and scoped credentials. If credentials or authorization are unavailable, report the live verification as blocked. No normal push, PR, scheduled CI or package command deploys to the cloud.
+Keep ordinary deployment tests network-free and cloud-credential-free. Ordinary CI may still fetch its declared toolchain and dependency downloads under the existing cache policy. Test version/build propagation through the existing build fixtures, deterministic key calculation, dry-run, manifest selection and file checksum verification, optional dependency handling, invalid configuration and secret redaction. Test actual SDK requests and response handling with the official SDK's supported test facilities. Cover conditional conflicts, two different artifact manifests targeting the same prefix, identical re-run, partial failure, multipart abort and ambiguous completion, changed bytes, remote checksum mismatch and completion manifest ordering. Use a single focused fixture for the manifest-first conflict. Reuse the existing SDK request tests. Verify a custom endpoint does not acquire unrelated AWS role credentials. Use one focused S3-compatible integration fixture if it exercises protocol behavior that the existing SDK tests do not prove. Do not start a cloud emulator in every language job. A mocked or local fixture does not prove actual AWS/R2 interoperability. Execute a separately authorized live smoke against each claimed service using isolated test prefixes and scoped credentials. If credentials or authorization are unavailable, report the live verification as blocked. No normal push, PR, scheduled CI or package command deploys to the cloud.
 
 Provide docs/deployment.md with AWS S3, R2 and generic S3-compatible configuration, optional extra installation, credential setup without exposing secrets, versioned bucket layout, dry-run, actual explicit command, partial-failure handling, integrity checks, remote SwiftPM URL/checksum integration and using the manifest in a consumer-owned custom deployment script. No new publishing framework for other services.
 
@@ -4140,7 +4183,9 @@ flowchart TD
     B --> C{"Dry run?"}
     C -->|Yes| D["Print exact destination and files"]
     C -->|No| E["Resolve scoped credentials and S3 endpoint"]
-    E --> F["Conditionally create objects"]
+    E --> Q["Conditionally claim exact artifact manifest"]
+    Q -->|Different manifest| X["Fail without overwriting"]
+    Q -->|Same or newly created| F["Conditionally create payload objects"]
     F --> G{"Remote bytes match?"}
     G -->|No| X["Fail without overwriting"]
     G -->|Yes| H["Write completion manifest last"]
@@ -4192,7 +4237,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 
 ### 22.3 Module system, configuration and output planning
 
-- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking, normalized naming shorthand and config-relative paths. Do not expose settings that disable safety or deterministic generation.
+- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking, normalized naming shorthand and config-relative paths. Do not expose settings that disable safety or deterministic generation. Reject wall-clock timestamps in generated source and preserve the complete template lookup precedence.
 - [ ] Support independent Domain, Repository and Network module configurations and IDL sources, with correct import resolution regardless of physical paths, prefixes and package names.
 - [ ] Implement source and prebuilt dependencies, transitive resolution, compatible canonical symbol metadata and artifact validation. Reject duplicate or incompatible artifacts without trying old formats.
 - [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings.
@@ -4225,7 +4270,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
-- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
+- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
 - [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, explicit replacement/scoped restoration, tokens and missing-service errors. No implicit alternate-provider retry.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
@@ -4265,7 +4310,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement one product SDK version/build number source, validate selected ecosystem ranges, pass both values to CMake and all ecosystem tools and inspect final native/package metadata. Keep tool, module, ABI and SDK identities independent.
 - [ ] Isolate build and dist paths by SDK version and build number as well as platform, architecture, format, configuration and sanitizer. Prove separate builds coexist and changed metadata invalidates the relevant build inputs.
 - [ ] Implement optional boto3-based deploy for S3/R2/compatible endpoints using exact packaged manifests, explicit destinations, version/build keys and dry-run without credentials or network. No extra provider framework or implicit uploads.
-- [ ] Implement conditional immutable uploads, bounded multipart handling, SHA-256 verification, completion manifest, identical re-run and conflict/partial-failure handling. Test through SDK fixtures and separately authorized AWS/R2 live smokes. Never mark an unverified provider as supported.
+- [ ] Implement conditional immutable uploads, manifest-first identity, bounded multipart handling, SHA-256 verification, completion manifest, identical re-run and conflict/partial-failure handling. Test through SDK fixtures and separately authorized AWS/R2 live smokes. Never mark an unverified provider as supported.
 
 ### 22.9 Real applications and conformance
 
@@ -4283,7 +4328,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Create real independent GitHub Actions checks for all required languages and platforms, generator, interop, packaging, docs and native sanitizers. Use latest stable verified actions and least privilege.
 - [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
-- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete planned/verified language and platform scope, honest status and real badges when available. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts. Keep the complete type and platform tables identical in PROJECT.md and AGENTS.md. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
+- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete planned/verified language and platform scope, honest status and real badges when available. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts, including explicit cancellation tokens and runtime initialization. Keep the complete type and platform tables identical in PROJECT.md and AGENTS.md. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
 - [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, SDK version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.
