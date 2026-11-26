@@ -160,6 +160,41 @@ Use a standalone installed CLI as the baseline. A bundled executable without a s
 
 Python 3.12+, uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
 
+### 3.4 Build, test and packaging commands
+
+One installed Python CLI is the entry point for generation and native build orchestration. A repository-local invocation uses the same code as the installed CLI; do not maintain a second independent task runner.
+
+| Command | Responsibility |
+| --- | --- |
+| polyglue doctor | Discover host, installed SDKs, compilers and tool versions; show missing requirements for the selected target |
+| polyglue generate | Generate source files and configured integration metadata; no native SDK required |
+| polyglue build | Resolve the selected build plan, generate inputs if needed, configure and build the requested artifact |
+| polyglue test | Run actual target-specific tests and conformance cases, optionally with sanitizer configuration |
+| polyglue package | Build and assemble the requested final distributable, validate it and write an artifact manifest |
+| polyglue run | Run the selected example where the current host or device allows execution |
+| polyglue clean | Remove only PolyGlue-owned build outputs for the selected scope |
+| polyglue config show | Inspect the effective configuration and its origin |
+| polyglue templates list | Show template IDs, target, source and render-model version |
+| polyglue templates export | Export selected built-in templates for local customization |
+| polyglue templates check | Validate a template override set against its declared target and context contract |
+
+Illustrative CLI (commands to implement and test, not available yet):
+
+```bash
+uv run polyglue doctor --target kotlin --platform android
+uv run polyglue generate --module repository --target kotlin
+uv run polyglue build --product mobile --platform android --configuration release
+uv run polyglue package --product mobile --format aar
+uv run polyglue package --product apple --format xcframework
+uv run polyglue package --product apple --format swiftpm
+uv run polyglue package --product desktop --format cmake
+uv run polyglue test --target cpp --sanitizer address
+uv run polyglue test --target cpp --sanitizer thread
+uv run polyglue run --target flutter --platform android
+```
+
+Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs; generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
+
 ## 4. IDL language
 
 ### 4.1 Domain and repository example
@@ -783,6 +818,99 @@ None of these choices is imposed on domain or repository.
 
 Define a machine-readable schema with examples and reject unknown options. Do not invent settings without implementing their semantics. Test inherited defaults, module-only generation, target-specific overrides and invalid combinations.
 
+### 7.7 Build and product configuration
+
+A module remains the unit of code generation. A product is an explicit aggregation of already-defined modules for linking, packaging and distribution. A product is not another IDL namespace and never overrides a module's public names or type identity. This is necessary when domain, repository and network belong to one AAR or XCFramework, or when a reusable module is shipped independently.
+
+Module-level build settings configure integration, not global compiler installation:
+
+```yaml
+targets:
+  cpp:
+    output: ../../native/repository/cpp
+    namespace: app::repository
+    include_prefix: app/repository
+    mode: package
+    build:
+      library_name: app_repository
+      linkage: static
+      public_headers: include
+      private_sources: src
+      implementation_sources:
+        - ../../native/implementations/repository.cpp
+      dependencies:
+        - app_domain
+  kotlin:
+    output: ../../android/generated/repository/kotlin
+    package: com.app.repository
+    model_source: java
+    build:
+      android_namespace: com.app.repository
+      consumer_rules: ../../android/consumer-rules.pro
+```
+
+Illustrative project-level products in polyglue.yaml (in addition to modules and defaults from section 7.2):
+
+```yaml
+build:
+  root: build/polyglue
+  artifacts: dist
+  configuration: release
+  dependency_provider: cmake
+
+products:
+  mobile:
+    modules: [domain, repository, network]
+    targets: [c, cpp, java, kotlin]
+    artifact:
+      format: aar
+      name: app_bridge
+      version: "1.0.0"
+    platforms:
+      android:
+        min_sdk: 26
+        abis: [arm64-v8a, armeabi-v7a, x86_64]
+
+  apple:
+    modules: [domain, repository, network]
+    targets: [c, cpp, objc, swift]
+    artifact:
+      format: xcframework
+      name: AppBridge
+      version: "1.0.0"
+    platforms:
+      ios:
+        minimum_version: "17.0"
+        device_architectures: [arm64]
+        simulator_architectures: [arm64, x86_64]
+      macos:
+        minimum_version: "14.0"
+        architectures: [arm64, x86_64]
+      visionos:
+        minimum_version: "1.0"
+        device_architectures: [arm64]
+        simulator_architectures: [arm64]
+
+  desktop:
+    modules: [domain, repository, network]
+    targets: [c, cpp]
+    artifact:
+      format: cmake
+      name: AppBridge
+      version: "1.0.0"
+    platforms:
+      linux:
+        architectures: [x86_64, arm64]
+      windows:
+        architectures: [x86_64, arm64]
+      macos:
+        architectures: [arm64, x86_64]
+```
+
+SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice; it must not silently remove an unavailable slice. Product manifests declare the exact module closure, native implementation sources, runtime linkage, requested output format and target/architecture matrix. Product packaging can select source or prebuilt modules, with strict compatibility validation. Separate product output roots prevent cross-product contamination. A source-only project never has to declare products.
+
+Dependency names in native build configuration refer to explicitly declared CMake targets, not arbitrary flags. IDL dependencies and native build dependencies are distinct. Module output paths, native implementation source paths, SDK settings, extra includes and link libraries are schema-validated. Accept additional CMake integration via an explicit, trusted consumer CMake target or source list; no arbitrary shell execution from IDL.
+
 ## 8. Naming and file formatting
 
 ### 8.1 Naming categories and defaults
@@ -1335,6 +1463,88 @@ Use StrictUndefined. All imports/types/names are resolved in Python before rende
 ### 11.4 Generation guarantees
 
 Validate the whole output plan before writing. Reject overlapping files, collisions on case-insensitive systems, invalid path components and symlink escapes. Write changed files atomically; if a multi-file write fails, report partial state and do not publish a success manifest. Do not rewrite identical files or delete user-authored files. Only remove obsolete manifest-owned generated files when explicitly requested. Test failure recovery, deterministic generation and standalone installation.
+
+### 11.5 Template override system (mandatory)
+
+Template override support is a first-class public feature, not a fork-only customization. All files generated from templates must have stable, documented template IDs: public models, enums, variants, interfaces, callbacks, proxies, provider adapters, ABI glue, marshallers, module exports, package metadata, CMake integration, Gradle files, SwiftPM files, Dart/Flutter integration, .NET project files and JS/TS exports. Runtime source files are separately versioned handwritten code, not implicitly replaced by a template.
+
+A default built-in template catalog is packaged with the Python wheel. Each entry declares target, ID, output kind, render-model schema version, required variables and related partials. IDs are independent of target filenames, module prefixes and physical output directories. Names below define a proposed initial catalog convention:
+
+```text
+templates/
+├── common/
+│   └── file_header.j2
+├── cpp/
+│   ├── record.hpp.j2
+│   ├── interface.hpp.j2
+│   ├── proxy.cpp.j2
+│   ├── provider.cpp.j2
+│   └── CMakeLists.txt.j2
+├── kotlin/
+│   ├── record.kt.j2
+│   ├── interface.kt.j2
+│   └── build.gradle.kts.j2
+├── objc/
+│   ├── record.h.j2
+│   └── module.modulemap.j2
+└── swift/
+    ├── interface.swift.j2
+    └── Package.swift.j2
+```
+
+Actual catalog covers all targets; do not create redundant placeholder templates. Reusable macros and partials are allowed when they simplify rendering.
+
+#### 11.5.1 Directory override and individual override
+
+```yaml
+defaults:
+  targets:
+    cpp:
+      templates:
+        directory: ./templates/cpp
+        fallback_to_builtin: true
+```
+
+```yaml
+# modules/repository/module.yaml
+targets:
+  cpp:
+    templates:
+      directory: ./templates/cpp
+      overrides:
+        interface.hpp.j2: ./templates/special/repository_interface.j2
+        CMakeLists.txt.j2: ./templates/special/repository_cmake.j2
+      fallback_to_builtin: true
+```
+
+Only matching template IDs are overridden; all other files use the next permitted layer. A module-specific directory need not duplicate the complete built-in tree. Resolve lookup per ID: explicit mapping in module target, module target directory, module-wide inherited mapping/directory, project target defaults, project-wide defaults, then built-in catalog. Explicit mapping takes precedence over directory lookup at the same layer. Preserve path origin at each layer rather than flattening inherited directories into one. A configured fallback_to_builtin: false disallows use of the built-in catalog for that target's effective set; missing required templates fail before any outputs are written. A missing explicitly mapped file always fails, even if fallback is enabled. Validate unknown IDs and conflicting overrides.
+
+#### 11.5.2 Custom template workflow
+
+```bash
+polyglue templates list --target cpp
+polyglue templates export --target cpp --output ./templates/cpp
+polyglue templates check --module repository --target cpp
+polyglue config show --module repository --target cpp
+polyglue generate --module repository --target cpp
+```
+
+Export does not overwrite existing custom files without explicit authorization. The check command renders against real validated IR fixtures or the selected project; show syntax errors, missing variables, incompatible schema versions, unknown IDs and the originating config/template path. Report effective template source and content hash in the generation manifest, including transitive include/import/extends dependencies. Changes invalidate incremental build and generation fingerprints.
+
+#### 11.5.3 Render context and safety
+
+Publish a versioned render-model contract with examples for every public template. Backend code supplies names, includes/imports, type declarations, annotations, ownership and ABI-specific render metadata; Jinja2 is presentation, not a second semantic compiler. StrictUndefined, deterministic rendering, documented filters/macros and no implicit environment or timestamp dependence. Use a restricted filesystem loader with explicit roots, normalized relative IDs and no traversal/symlink escape. Templates may reference catalog partials through a documented namespace or allowed relative ID; prevent accidental recursive inclusion and report its chain.
+
+Custom templates are trusted local developer input, not a security sandbox. A template cannot declare a new output path, change the validated file plan or bypass capability/ABI validation. Runtime source replacement requires an explicit separate runtime integration and compatibility checks. A custom template that changes ABI-visible code must be validated by downstream compilation and ABI checks; do not certify arbitrary overrides based on rendering alone.
+
+#### 11.5.4 Acceptance tests
+
+- Single-file override retains all other built-ins; partial override and multiple modules with different overrides.
+- Project/module precedence, correct relative paths, strict missing template behavior, duplicate/unknown ID and fallback disabled.
+- Override of nested partials and generated build files; stable manifest fingerprints and invalidation when content changes.
+- Syntax error, undefined variables, context schema mismatch, traversal, recursive inclusion and deterministic rerender.
+- Generated outputs compile and run in each target, including an actual package consumer using customized source/build templates.
+- Wheel installation includes the same template catalog, export/check commands and behavior as a source checkout.
 
 ## 12. Native runtime and ABI
 
