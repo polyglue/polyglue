@@ -1,5 +1,7 @@
 # PolyGlue — Project specification
 
+> **Current development version:** `0.0.1` (unreleased, local/CI testing only).
+>
 > **Status:** planned, not implemented. This document is the source of truth for implementation and review. Examples specify intended behavior; they are not evidence of an existing implementation.
 
 ## Contents
@@ -131,7 +133,7 @@ When a selected module depends on another module, resolve its source or prebuilt
 After release:
 
 ```bash
-uvx polyglue@1.0.0 generate
+uvx polyglue@<authorized-published-version> generate
 pip install polyglue
 polyglue generate
 ```
@@ -151,7 +153,7 @@ A consumer may pin an official version or run a modified local checkout without 
 Python API:
 
 ```python
-from polyglue import Compiler
+from polyglue.compiler import Compiler
 
 compiler = Compiler.from_file("polyglue.yaml")
 compiler.validate()
@@ -162,7 +164,7 @@ Use a standalone installed CLI as the baseline. A bundled executable without a s
 
 ### 3.3 Tooling
 
-Python 3.12+, uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
+Python 3.12+ (verify the chosen stable runtime and dependency compatibility before locking), uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
 
 ### 3.4 Build, test and packaging commands
 
@@ -198,6 +200,37 @@ uv run polyglue run --target flutter --platform android
 ```
 
 Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs; generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
+
+### 3.5 Development version and release authorization
+
+The current project version is **0.0.1**, an unreleased development version. Use a single canonical package version in pyproject.toml once the Python package is bootstrapped. Derive the CLI version, runtime distribution version, generated metadata and artifact manifests from the same source. Keep the ABI version and user module versions independent. A 1.0.0 value in an application-module example is illustrative, not the PolyGlue version. Do not claim 1.0.0 support.
+
+- Continue development and local/CI testing at 0.0.1 until the owner explicitly requests another version.
+- Advance to 0.0.2, 0.0.3 and subsequent versions only when explicitly authorized. Never increment the version automatically for commits, builds or successful CI.
+- An authorization to change the development version does not authorize a Git tag, GitHub Release, TestPyPI upload, PyPI upload or any other external publication.
+- Local builds and GitHub Actions test artifacts may use the current development version without creating a public release. Identify individual builds by commit SHA and artifact checksum.
+- Do not create tags, releases, registry uploads or publication automation capable of running automatically during normal development.
+- Production PyPI publication is prohibited until every mandatory acceptance gate passes on the exact candidate revision, the project is complete to the owner's satisfaction and the owner explicitly approves that specific version for PyPI. Never publish placeholder packages to reserve the name.
+
+### 3.6 PyPI Trusted Publishing (future, disabled)
+
+The intended pending publisher is:
+
+| Setting | Value |
+| --- | --- |
+| PyPI project name | polyglue |
+| GitHub owner | polyglue |
+| GitHub repository | polyglue |
+| Workflow filename | publish.yml |
+| GitHub environment | pypi |
+
+The owner may register this pending publisher at https://pypi.org/manage/account/publishing/. A pending publisher does not create a project or reserve the distribution name. Confirm the name remains available when the first authorized release is ready.
+
+Future workflow: .github/workflows/publish.yml. Do not install an upload-capable workflow until the owner explicitly authorizes production publishing. Until then, ordinary CI only builds, checks and stores test artifacts. No automatic publishing on push, merge, tag, release, schedule or pull request. No TestPyPI upload without separate permission.
+
+When enabled by a separate owner-approved task, use manual workflow_dispatch for a specific version and candidate revision, restrict it to an approved protected ref, and require the pypi environment and owner approval where GitHub settings support required reviewers. Keep an independent explicit owner authorization requirement even if an environment protection feature is unavailable. Validate the version and exact commit, required CI evidence and all artifact checks. Keep build/test jobs read-only, with checkout credentials disabled and no OIDC permission. Build wheel and sdist with uv, inspect package metadata and contents, run Twine check and install both in isolated consumer environments. Transfer the exact validated distributions within the workflow. The dedicated hosted Linux publish job alone receives id-token: write and uses the official PyPA publishing action pinned to a reviewed immutable SHA. Preserve default attestations, do not rebuild in the privileged job, and do not store PyPI API tokens or passwords. Never use skip-existing to conceal version conflicts. Check the resulting registry metadata and hashes after an authorized upload. Yanking, deletion and retry after a partial release require review and explicit authorization.
+
+Official guidance: https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/ and https://docs.pypi.org/trusted-publishers/using-a-publisher/.
 
 ## 4. IDL language
 
@@ -515,7 +548,7 @@ Use module logical identity independent of physical directory, output names and 
 ```json
 {
   "schema_version": 1,
-  "generator_version": "1.0.0",
+  "generator_version": "0.0.1",
   "runtime_abi_version": 1,
   "module": {
     "id": "domain",
@@ -1018,7 +1051,7 @@ targets:
     formatting:
       indent: 4
       indent_style: spaces
-      line_length: 100
+      line_length: 0
       brace_style: allman
       line_endings: lf
       final_newline: true
@@ -1031,7 +1064,7 @@ targets:
       include_timestamp: false
 ```
 
-Generate deterministic UTF-8 text, ordered and deduplicated imports, appropriate documentation comments and no timestamps by default. Default formatting must be readable without external tools. Optional formatters: clang-format, google-java-format, ktlint, swift-format, Ruff, dart format, dotnet format, Prettier. Only advertise options a backend actually honors. Test custom formatting, output byte reproducibility and unchanged-file preservation.
+Generate deterministic UTF-8 text, ordered and deduplicated imports, appropriate documentation comments and no timestamps by default. Default formatting must be readable without external tools and follow the owner conventions in AGENTS.md, including single-line calls, signatures and string literals. Optional formatters: clang-format, google-java-format, ktlint, swift-format, Ruff, dart format, dotnet format, Prettier. Only advertise options a backend actually honors. Test custom formatting, output byte reproducibility and unchanged-file preservation.
 
 ## 9. Annotations and platform attributes
 
@@ -1263,7 +1296,7 @@ abstract interface class UserRepository {
 
 ```python
 from abc import ABC, abstractmethod
-from app_domain import User
+from app_domain.user import User
 
 
 class UserRepository(ABC):
@@ -1352,7 +1385,7 @@ web/domain/
 └── src/user.js
 ```
 
-These trees illustrate public artifacts, not exhaustive bridge sources. The domain package must expose User through its public entry point. The repository package declares the dependency in its package/build manifest in package mode.
+These trees illustrate public artifacts, not exhaustive bridge sources. The domain package exposes User through its explicit public module (app_domain.user in Python); Python __init__.py files remain empty. The repository package declares the dependency in its package/build manifest in package mode.
 
 ### 10.4 Target artifact rules
 
@@ -1363,7 +1396,7 @@ These trees illustrate public artifacts, not exhaustive bridge sources. The doma
 | Java/Kotlin/JNI | Package directory tree, JVM type ownership, JNI names, Gradle |
 | Swift | Sources/<target>, module imports only between distinct modules, Package.swift |
 | Objective-C | Prefixed public headers, umbrella header/module.modulemap, .mm sources |
-| Python | Package tree, __init__.py, public exports, pyproject.toml |
+| Python | Package tree, empty __init__.py, explicit public modules, pyproject.toml |
 | Dart | lib/src, public library exports, pubspec.yaml |
 | Flutter | Plugin metadata, Dart package and platform adapters |
 | C# | Namespace, project/assembly references, .csproj |
@@ -2016,7 +2049,7 @@ let users = try await repo.findAll()
 
 ### 16.11 Python backend
 
-**Artifacts and configuration:** Python package with public exports, .py/.pyi as appropriate, generated proxy/provider wrapper and CPython bridge or stable supported adapter, optional pyproject.toml/build integration. Package name, output tree, source vs wheel package mode, snake_case, annotations and imports. Python generator dependencies are not automatically runtime dependencies of generated Python bindings.
+**Artifacts and configuration:** Python package with explicit public module imports, empty __init__.py files, .py/.pyi as appropriate, generated proxy/provider wrapper and CPython bridge or stable supported adapter, optional pyproject.toml/build integration. Package name, output tree, source vs wheel package mode, snake_case, annotations and imports. Python generator dependencies are not automatically runtime dependencies of generated Python bindings.
 
 **Types and memory:** frozen dataclasses by default, Enum/IntFlag, typed collections and Result/variant, strict numeric range checks, Unicode and bytes. Handle cycles and interpreter shutdown; own every new/borrowed PyObject reference correctly. For DataRef, keep Py_buffer/exporter alive until final release, release on correct interpreter/thread. A Python memoryview that escapes a borrowed scope cannot be treated as safely invalidated; use a checked scoped wrapper or explicit owned conversion.
 
@@ -2763,6 +2796,16 @@ Verify reproducibility where toolchains permit it. Deterministic generation is m
 
 Add docs/build.md, docs/dependencies.md, docs/packaging.md, docs/templates.md and per-format guides for CMake, Android AAR/JAR, Apple XCFramework/SwiftPM, Python wheels, Dart/Flutter, NuGet and npm/WASM. Explain prerequisites, CLI commands, configuration, output directory, standalone consumer integration, debugging, supported architectures and offline dependency setup. Include complete copyable examples and verify them in CI. AGENTS.md requires keeping the toolchain/build layout consistent, using the CLI for CI, testing artifacts independently and not introducing unnecessary dependencies or duplicate build systems.
 
+### 20.9 Owner engineering standards and AGENTS.md
+
+The owner requires the engineering practices from https://github.com/paulocoutinhox/skills. AGENTS.md is the repository-level operating contract and records the applied rules, current repository map and actual commands. PROJECT.md describes the planned product and acceptance gates. Keep those roles separate. Review the applicable skill entrypoints and language references before changing code; record the inspected revision when applying a significant policy change. The initial reviewed skills revision is fcca67d378ee025d646aa70c2b6f514c151fa5c4.
+
+Apply code-developer, code-review, git, editor-config, git-ignore, security-audit and pypi-library, with npm-library and platform testing profiles where applicable. For languages without a dedicated profile, establish a compatible language-specific convention using official toolchain documentation. Do not invent a rule or force invalid syntax. Owner-specific preferences are not universal language requirements.
+
+Mandatory conventions: English code, comments, docs and commit messages; meaningful names, clear intermediate values, blank lines between responsibilities, early returns, one class/enum/component per file where syntax allows, hyphenated filenames where legal, no speculative abstractions or legacy compatibility. Single-line function calls, signatures and string literals with structural block exceptions. Python src layout, uv, Ruff, completely empty __init__.py, explicit public module imports and no TYPE_CHECKING. Formatter settings: Ruff line-length 320 and skip-magic-trailing-comma true, clang-format ColumnLimit 0 and narrow formatter-off regions around lambdas, Swift formatter and SwiftLint width 320, Kotlin ktlint max_line_length 320, Prettier printWidth 320. Use appropriate settings for additional languages. Keep generated code readable by default and allow explicit consumer naming/format overrides without changing the repository's own style. Check formatter idempotence and previously wrapped calls.
+
+AGENTS.md must cover architecture, code ownership, repository organization, Git delivery, privacy, security, dependency policy, generated artifacts, version and publication authorization, actual test commands and CI evidence. No task diary or claims of implemented features that are still planned. No unconditional force push, history rewrite, deletion, tag or release without specific authorization. Follow the Git skill's task-aware naming and reviewed change procedure. The single-root snapshot policy expressly authorized for the skills repository does not automatically authorize rewriting PolyGlue history. Keep main as the current development branch for explicitly requested repository edits; do not create extra branches or pull requests without an actual need or instruction. Use real human author identity for local Git commits; connector-created commits may use the integration identity and must be reported accurately.
+
 ## 21. Implementation phases and reviews
 
 | Phase | Deliverables | Gate |
@@ -2797,6 +2840,6 @@ Explicit remaining design decisions to settle with proof-of-concept and tests: e
 - [ ] All required CI jobs pass on the exact release revision; no hidden mandatory skips.
 - [ ] Deep review completed for every language, platform, runtime, ABI and generated API.
 - [ ] Logo, README, AGENTS.md, documentation and capability matrix accurately match verified support.
-- [ ] Owner authorizes license and package publication.
+- [ ] Owner authorizes license and separately approves the exact development version, tag/release (if requested) and production package publication. Normal CI must never publish.
 
 Completion means reproducible evidence for every acceptance gate, not a claim of mathematically bug-free software.
