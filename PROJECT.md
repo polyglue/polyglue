@@ -37,6 +37,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Template override system](#115-template-override-system-mandatory)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
   - [Call and return across the ABI](#123-call-and-return-across-the-abi)
+  - [Contexts, attachments and admission](#124-contexts-attachments-and-admission)
 - [13. Memory and buffers](#13-memory-and-buffers)
   - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
@@ -49,9 +50,12 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Three-layer application example](#158-three-layer-application-example)
   - [Registration ownership, detach and shutdown](#159-registration-ownership-detach-and-shutdown)
 - [16. Language-specific integration](#16-language-specific-integration)
+  - [Host attachment and disposal integration](#1620-host-attachment-and-disposal-integration)
 - [17. Example applications](#17-example-applications)
 - [18. Test specification](#18-test-specification)
   - [Coverage and test design policy](#180-coverage-and-test-design-policy)
+  - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
+  - [Deterministic lifecycle race fixtures](#188-deterministic-lifecycle-race-fixtures)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -1873,7 +1877,7 @@ interface Camera {
 }
 ```
 
-Universal annotations carry defined semantic meaning. An executor/thread annotation must affect dispatch, not just comments. Readonly semantics must be enforced by generated APIs and runtime where required. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
+Universal annotations carry defined semantic meaning. For callback parameters, @ownership accepts the scoped, retained and one-shot lifetime values defined in section 14.2, including optional callback parameters. It is validated on the parameter and does not change the callback's synchronous/asynchronous signature. An executor/thread annotation must affect dispatch, not just comments. Readonly semantics must be enforced by generated APIs and runtime where required. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
 
 ### 9.2 Language-specific annotations
 
@@ -2471,7 +2475,7 @@ flowchart TD
     G --> H["Invoke through shared context"]
 ```
 
-Loading two independent runtime instances is not the same as sharing a context. Do not pass handles between them. Keep registration and lookup unavailable until initialization completes successfully. The final shutdown sequence is in section 15.5.
+Loading two independent runtime instances is not the same as sharing a context. Do not pass handles between them. Keep registration and lookup unavailable until initialization completes successfully. The context and attachment state machines are defined in section 12.4; full and partial shutdown sequences are in sections 15.5 and 15.9.
 
 
 #### A synchronous interface call
@@ -2527,6 +2531,42 @@ sequenceDiagram
 ```
 
 Both directions use the same declared types. A runtime error or cancellation completes through its own status instead of returning an absent User.
+
+### 12.4 Contexts, attachments and admission
+
+The C ABI must distinguish the lifetime of the native context, the lifetime of each host attachment and the lifetime of an individual handle. An attachment represents one independently closable execution domain and its scheduler, not a programming language. A JVM attachment may serve both Java and Kotlin; an Apple attachment may serve Swift and Objective-C; two Dart isolates require distinct attachment identities. An application-owned native attachment can outlive a Flutter engine. A browser context is tied to the intended WASM runtime instance and its host adapters.
+
+| Resource | Identity and owner | Closing rule |
+| --- | --- | --- |
+| Runtime context | Unique context identity; explicit application owner | Stops all new work and drains every attachment before releasing the core |
+| Attachment | Context plus unique attachment identity/generation; host owns the executor | Stops its own new work and releases its own host resources without closing unrelated attachments |
+| Registry | Context plus registry identity/generation | Removes its own registrations and rejects new lookups; does not invalidate independently retained fixed providers |
+| Interface/callback handle | Context, kind, slot/generation and validated contract; actual owning attachment | Ordinary release drops a reference; attachment closure prevents new calls |
+| Operation/delivery | Selected provider, caller, participating callback/stream attachments and unique completion state | Terminal result and actual execution lifetime are tracked separately |
+| Registration/subscription | Unique control identity; resource owner and relevant host attachment identities | Removal ends new discovery or delivery; already admitted execution retains its resources |
+
+The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
+
+Contexts and attachments have Opening, Open, Closing and Closed states. Opening admits no business work. Closing is irreversible for that generation: reject new work, allow idempotent cleanup, drain admitted execution and required releases; Closed retains only the validation/control metadata necessary for safe late release. A failed or timed-out drain remains Closing and can be inspected or resumed by the owner; it must not reopen or be reported as closed. A successful replacement/restart attaches a new generation. A host object wrapper may outlive its target attachment, but it cannot resurrect its adapter.
+
+Define invocation admission as the atomic validation and acquisition of the necessary runtime-owned execution references while the caller and target attachments are Open. A dynamic registry lookup and acquisition of the selected provider for a call are one admission transaction. After ordinary registration removal, an already admitted operation can complete. Closing a participating attachment additionally requests cancellation and prevents any not-yet-started host execution from entering a closing executor. Check the attachment generation and lifecycle again at the host dispatch gate, without resolving the registry again. If dispatch is denied after the operation was accepted, complete the still-live consumer with the appropriate cancellation or lifetime status and release the owning envelope exactly once. A close request racing with dispatch must either prevent entry or account for that execution in the drain. No check-then-call gap may permit untracked execution.
+
+Pin internal control blocks and reference state under the appropriate synchronization; foreign object roots must already be owned before publication. A release or conversion failure after dropping a lock must not leave a partially published registration. Establish and document lock ordering for context, registry, handle, subscription and operation bookkeeping; never execute foreign code, enqueue through a host scheduler or run a foreign destructor under those locks. Scheduler enqueue failure must return a typed failure and reclaim the envelope; it must not strand an accepted operation. Counters for active execution, pending dispatch and required thread-affine releases are distinct from reference counts.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Opening
+    Opening --> Open: Initialization succeeds
+    Opening --> Closed: Roll back initialization
+    Open --> Closing: Close admission
+    Closing --> Closing: Drain incomplete
+    Closing --> Closed: Execution and releases drained
+    Closed --> [*]
+```
+
+#### Cooperative shutdown and external host termination
+
+The embedding application must coordinate teardown before destroying an executor, interpreter, isolate or WASM instance. The runtime cannot promise to keep an externally destroyed host alive or execute its cleanup code after destruction. Cooperative close is the normal supported path. Where the platform can revoke a host unexpectedly, atomically revoke its admission, reject stale dispatch/completion envelopes without entering the host, release independently owned native resources when safe and report any cleanup that cannot be completed. Do not claim that an externally destroyed host drained successfully; document the actual platform lifecycle guarantee and test the supported path. A surviving native context must not unload code or free memory still accessible by an admitted native execution. No automatic retry, provider resurrection or fabricated successful cleanup.
 
 ## 13. Memory and buffers
 
@@ -2673,7 +2713,7 @@ interface Downloader {
 
 Callbacks are typed functions supplied by the application. They can be called from another language. A plain callback is synchronous, even when its return type is void. It completes before the invocation returns and may use borrowed parameters only during that call. An async callback uses an explicit async modifier, as in Progress above, and completes through the same typed completion and error contract as an async method. It may return void or an owning value. Do not turn a synchronous void callback into queued asynchronous work merely because it has no payload.
 
-Specify scoped, retained or one-shot lifetime and the allowed executor. A synchronous callback is allowed only when the target can execute it on the calling context without blocking an event loop or violating thread affinity. An async callback may dispatch to another executor, retaining all needed arguments and references until actual execution ends. Borrowed views cannot be queued. In the download example, the provider may await progress completion to preserve order and avoid unbounded queued notifications. A callback failure is a typed runtime failure and is not ignored. Dart NativeCallable.listener is an asynchronous notification with a void native return. Use it only to deliver an explicit async completion or owning dispatch envelope, not as a synchronous callback implementation. See [Dart NativeCallable.listener](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.listener.html).
+Specify scoped, retained or one-shot lifetime and the allowed executor. A scoped callback argument can be invoked only during its enclosing operation (including actual execution after caller cancellation); an explicitly retained callback can be stored by the provider until it releases its owned reference; a one-shot callback admits at most one invocation, including concurrent attempts. A one-shot callback that has been admitted cannot be retried after failure. A retained callback is not automatically a subscription or a service registration. Callback references carried in optionals use the same lifetime rules as the contained callback. Define and validate callback-parameter lifetime metadata through the universal ownership annotation contract in section 9.1; use @ownership("retained") for an escaping callback parameter, @ownership("scoped") for a bounded argument and @ownership("one-shot") for an invocation-limited argument. The default for direct callback parameters without a lifetime annotation is scoped. Reject incompatible annotations and escaping a scoped callback into a stored registration; returning or carrying an owning callback reference in a legal value position uses the explicitly documented owning reference semantics. A synchronous callback is allowed only when the target can execute it on the calling context without blocking an event loop or violating thread affinity. An async callback may dispatch to another executor, retaining all needed arguments and references until actual execution ends. Borrowed views cannot be queued. In the download example, the provider may await progress completion to preserve order and avoid unbounded queued notifications. A callback failure is a typed runtime failure and is not ignored. Dart NativeCallable.listener is an asynchronous notification with a void native return. Use it only to deliver an explicit async completion or owning dispatch envelope, not as a synchronous callback implementation. See [Dart NativeCallable.listener](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.listener.html).
 
 ### 14.3 Streams
 
@@ -2822,11 +2862,11 @@ async callback BatteryListener(level: int32): void;
 
 interface BatteryMonitor {
     async getLevel(): int32;
-    async setListener(listener: optional<BatteryListener>): void;
+    async setListener(@ownership("retained") listener: optional<BatteryListener>): void;
 }
 ```
 
-In this example the provider retains one callback reference; a non-null value replaces the current listener and null clears it. The optional callback is an optional owning callable handle, not an optional function pointer borrowed from the caller. A callback passed to a listener setter has a retained lifetime, as opposed to a scoped callback argument. The final grammar/metadata must express and validate these lifetime rules consistently with section 14.2. A setter is an operation on this particular object, not on every object implementing BatteryMonitor. Setting a listener does not register a service or change the active provider.
+In this example the provider retains one callback reference; a non-null value replaces the current listener and null clears it. The optional callback is an optional owning callable handle, not an optional function pointer borrowed from the caller. A callback passed to a listener setter has a retained lifetime, as opposed to a scoped callback argument. The retained parameter annotation specifies this lifetime explicitly under section 14.2. The provider must acquire its own callback reference before acknowledging the setter; if the operation fails before committing the slot change, the previous callback remains installed. A setter is an operation on this particular object, not on every object implementing BatteryMonitor. Setting a listener does not register a service or change the active provider.
 
 ```dart
 final monitor = registry.get(BatteryMonitorType);
@@ -2853,7 +2893,7 @@ interface BatterySubscription {
 }
 
 interface BatteryEvents {
-    async subscribe(listener: BatteryListener): BatterySubscription;
+    async subscribe(@ownership("retained") listener: BatteryListener): BatterySubscription;
 }
 ```
 
@@ -2888,13 +2928,14 @@ Subscription cancellation, owner teardown and callback release must preserve exa
 ```text
 interface BatterySource {
     async getLevel(): int32;
-    levelChanges(): Stream<int32>;
+    async levelChanges(): Stream<int32>;
 }
 ```
 
 ```dart
 final source = registry.get(BatterySourceType);
-final subscription = source.levelChanges().listen((level) {
+final changes = await source.levelChanges();
+final subscription = changes.listen((level) {
   print('Battery: $level');
 });
 
@@ -2904,7 +2945,25 @@ await subscription.cancel();
 
 For a portable multi-subscriber source, each call to levelChanges creates a logical stream that supports an independent subscription. A shared/hot source may fan out values to those subscriptions explicitly; a cold source may start independent production. Document whether the initial current value is emitted or only changes are delivered, whether any replay exists and what happens to upstream production after the last subscriber leaves. Do not infer broadcast behavior, replay or a shared subscription from the host Stream/Flow type. A source must select an explicit per-subscriber bounded queue and backpressure policy as defined in section 14.3. The example emits subsequent changes only, with no replay and one subscription per returned stream; cancellation affects that subscription, not other subscribers.
 
-A dynamic service proxy resolves the provider when a stream is obtained, not on each item or automatic resubscription. An existing stream or listener subscription stays attached to its original event source even if a new provider is registered. Rebind explicitly by canceling the old subscription, resolving the new provider and subscribing again. Do not silently migrate subscriptions or duplicate events when a service is replaced or restored.
+A dynamic service proxy resolves the provider when the stream-returning method is invoked, not on each item or automatic resubscription. The async acquisition in this example is intentional: obtaining a stream object can require executing a foreign provider on its own executor. An async method returning Stream<T> maps to the target's async result containing the stream (for example Future<Stream<T>> in Dart); the outer operation and inner subscription have separate lifetimes. A synchronous Stream<T> return remains legal only when acquisition can execute safely synchronously, and must not be silently queued to satisfy a synchronous signature. An existing stream or listener subscription stays attached to its original event source even if a new provider is registered. Rebind explicitly by canceling the old subscription, resolving the new provider and subscribing again. Do not silently migrate subscriptions or duplicate events when a service is replaced or restored.
+
+#### Admission, cancellation and asynchronous mutations
+
+Event selection, queued delivery and execution admission are separate states. Slot replacement or subscription cancellation invalidates the old delivery generation. The producer may retain a selected callback while preparing its owning payload, but admission must recheck that generation, the callback attachment and the source's lifecycle. If admission fails, release the payload and callback reference without invoking the listener. Once execution is admitted, the same callback remains selected; ordinary removal does not reroute it. If the attachment is closing, the additional host-dispatch gate from section 12.4 applies. Bound pending envelopes per source/subscription, including work posted to a host executor; a native queue alone is not sufficient if the host message queue is unbounded.
+
+| Operation | What successful completion acknowledges | What it does not promise |
+| --- | --- | --- |
+| setListener(callback or null) | Slot generation committed; no new admissions to the displaced slot | Previously admitted notifications finished |
+| subscribe(callback) | Independent subscription identity installed and returned | Replay or delivery of events selected before installation |
+| subscription.cancel() | That identity removed; no new delivery admissions | Running callback finished or other subscriptions removed |
+| Stream cancellation | Stop new item delivery, release queued items and begin/await target-required safe cleanup | Change of service provider or termination of unrelated subscribers |
+| Attachment close | All affected execution and mandatory releases drained, on successful close | Destruction of unrelated hosts |
+
+Async listener setters, subscription installation and cancellation are application operations with side effects. Cancellation of the caller's future does not roll back a mutation already committed. Define the commit point in the provider, check cancellation before commitment where possible, and avoid automatic retry. If a subscription is installed but its owning result cannot be delivered (including caller cancellation or result conversion failure), dispose that unclaimed subscription and release its callback unless ownership was explicitly transferred to another live owner. Implement this cleanup in the example/provider ownership path; do not infer arbitrary business rollback in the generator. A listener setter has no returned registration token; when its caller needs recoverable ownership after an uncertain result, prefer a token-based subscription.
+
+For owner teardown, distinguish the event source attachment, subscribing attachment and actual callback attachment. If the source closes, terminate its subscriptions and reject further event production. If a subscriber or callback owner closes, revoke only the affected delivery identities while leaving unrelated subscriptions and the live source intact. Application-maintained listener collections must explicitly cancel/clear their owner-bound entries through the provider's lifecycle integration; the generic runtime invalidates callback handles and blocks delivery but cannot introspect or mutate arbitrary application fields. The source must release dead callback roots and not repeatedly attempt delivery to them. If a callback is forwarded from a different host than the subscriber, both owner lifetimes must be respected. Explicit transfer to another application owner must be coordinated before detach, not inferred from a surviving reference.
+
+A service registration, a callback handle and a subscription token are independent resources. Unregistering a provider does not cancel subscriptions to that still-live provider. Disposing a subscription does not unregister the service. Destroying an actual host attachment revokes both categories where their lifetimes depend on it. No global event bus or automatic service-change notification is required.
 
 #### Service invocation versus listener delivery
 
@@ -3136,7 +3195,7 @@ Use three explicit policies, with idiomatic names per target. Reject is the defa
 
 Replace is intentionally destructive to the registry's entire stack for that key. It does not destroy objects still retained by fixed references or operations. ScopedOverride is the only policy that retains earlier registrations for restoration. All policies affect just the selected key in the selected registry. Other interfaces and registries are unaffected. The active provider is the top live registration; multiple independent registrations of even the same object are distinguished by tokens.
 
-Each registration has an opaque non-reused identity or generation, its registry and context identity, interface descriptor, owning provider-runtime attachment and retained adapter. A registration token authorizes removal of that registration only. An old token cannot pop the current stack by type or unregister an unrelated provider. Removing a hidden registration is permanent for that entry. Failed validation, duplicate rejection or allocation failure must leave the existing stack unchanged and release any temporary references.
+Each registration has an opaque non-reused identity or generation, its registry and context identity, interface descriptor, registration-owner attachment, actual provider attachment and retained adapter. The registering attachment owns the registration by default, even when it registers a fixed reference to an implementation hosted by another attachment. Registering a forwarded fixed provider reference validates both attachments and preserves the actual provider identity. Reject registration of a registry-resolving dynamic proxy as the provider itself because its target can be the same key or form a discovery cycle; an application can explicitly implement a delegating interface with fixed references as in section 15.8. A registration token authorizes removal of that registration only. An old token cannot pop the current stack by type or unregister an unrelated provider. Removing a hidden registration is permanent for that entry. Failed validation, duplicate rejection or allocation failure must leave the existing stack unchanged and release any temporary references.
 
 | Action (stack shown oldest to newest) | Stack | Provider for a new dynamic call |
 | --- | --- | --- |
@@ -3153,6 +3212,27 @@ Each registration has an opaque non-reused identity or generation, its registry 
 
 Registration, lookup, replacement, unregistration and admission of a selected provider must have well-defined atomic ordering under concurrency. If an invocation races with removal, it either acquires a valid provider before the removal and proceeds under that reference, or observes the resulting state. It never sees a freed or partially installed adapter. Do not hold registry locks while invoking foreign callbacks, retaining/releasing foreign objects, scheduling or destroying objects. Pin runtime-owned reference state as specified in section 12.2 and release displaced references outside locks on their owning executors. A provider error, exception, cancellation, timeout, unsupported method or conversion failure never triggers restoration or another provider attempt. Restoration is the explicit consequence of removing a scoped registration (including deliberate owner teardown), not an error-recovery strategy.
 
+#### Registry scope, token authority and failure semantics
+
+A registry belongs to its context; a scoped registry is an explicit independent registry, not a child with inherited lookup. Closing an explicitly owned registry atomically excludes it from new lookup/registration, invalidates all its registration tokens and removes its stacks without restoration. Dynamic proxies bound to that registry subsequently report a closed-registry lifetime failure. Existing fixed references and admitted operations retain their own provider references if their host attachments are still live. Closing a registry never closes the whole runtime. The context-owned default registry lives until context shutdown; an ordinary facade release does not close it.
+
+A registration with a forwarded provider has two distinct lifetimes: the owner of the registry entry and the host that can execute its provider. Removing an entry due to owner detach does not destroy a still-live provider hosted elsewhere. Conversely, detaching the actual provider must exclude every registration referring to it, even if another language registered it. A caller holding an ordinary fixed reference may continue using a live forwarded provider after the registration owner leaves, but not after the actual provider attachment closes. Registering a provider through a different owner is not a transfer of execution ownership. Never use a default or hidden provider from a closing attachment.
+
+| Condition | Required failure or result |
+| --- | --- |
+| Valid live key with no provider | Missing service |
+| Reject on occupied key | Duplicate registration |
+| Descriptor invalid or mismatched | Invalid descriptor or incompatible contract/ABI, not missing service |
+| Handle/token belongs to another context or registry | Invalid origin/argument |
+| Valid token already removed | Successful idempotent removal/no-op |
+| Registry, context or required attachment closing/closed | Lifetime failure |
+| Call cannot execute on required synchronous context | Unsupported synchronous invocation |
+| Selected provider fails or is canceled | Original invocation failure/cancellation, no alternate provider attempt |
+
+Use distinct semantic runtime statuses, mapped to each target's native error mechanism; numeric status codes are frozen with the ABI. The advisory contains result is false only for an absent valid key in a live registry, not for an invalid descriptor or closed runtime. Neither contains nor get followed by a register reserves the current stack. Validate descriptor, calling owner, actual provider and target registry before publication; concurrent close and register must linearize so a closing owner cannot leave a newly discoverable entry behind.
+
+The common core owns the registration stack and handles both native and managed registrations. Generated adapters call into this same core; they must not maintain a second independent stack in Kotlin, Swift, Dart or JavaScript. Use runtime-owned control records and unique tokens, not provider pointer equality or language priority. An implementation can use a simple per-registry map and per-key ordered entries with the minimum synchronization needed by the invariants. The internal data structure is not a public ABI.
+
 ### 15.8 Three-layer application example
 
 Consider one application with shared C++ business logic, an optional platform implementation and an optional Flutter/Dart implementation. Android uses C++ and Kotlin and Dart; iOS uses C++ and Swift and Dart; browser builds use C++ compiled into WASM and JavaScript/TypeScript and Dart Web. These are separate builds, not a single registry shared across devices or processes. The Web implementation uses one intentionally shared WASM runtime instance and JS interop, not dart:ffi or a separate browser-side service locator.
@@ -3166,7 +3246,7 @@ interface DeviceService {
 }
 ```
 
-The following host-language snippets illustrate the intended typed APIs, with handwritten concrete implementations omitted for brevity. Use the same generated descriptor and actual shared registry in each adapter. All methods are async so Dart implementations can safely be invoked from a native thread via the owning isolate.
+The following host-language snippets illustrate the intended typed APIs, with handwritten concrete implementations omitted for brevity. The standalone and decorating Flutter providers are alternative examples, not two required simultaneous registrations. Use the same generated descriptor and actual shared registry in each adapter. All methods are async so Dart implementations can safely be invoked from a native thread via the owning isolate.
 
 C++ installs the default implementation during application initialization. Retain the returned registration for the intended application lifetime:
 
@@ -3263,17 +3343,45 @@ final registration = registry.register(DeviceServiceType, FlutterDeviceService(p
 
 This example assumes serialized application startup for the capture and register steps. A separate get and register pair is not an atomic compare-and-swap; concurrent initialization must be coordinated by the application. Kotlin or Swift can use the same pattern with a fixed reference to C++. Do not resolve the same interface dynamically inside its active override when intending to invoke the previous provider; that can recurse into the override itself. Explicit delegation does not change the captured identity when the previous registration is removed. It also does not keep a foreign executor alive indefinitely: if the previous provider's runtime is detached, its old handle cannot be called and must report a lifetime error. No automatic selection of another provider for a failed delegated call. Release captured references when the decorating provider is disposed and avoid ownership cycles.
 
+#### Explicit removal and independent subscriptions
+
+The registration handle returned in each language is kept by the application component that installed it. These equivalent calls remove just that registration (host spellings are illustrative):
+
+```cpp
+baseRegistration.dispose();
+```
+
+```kotlin
+platformRegistration.close()
+```
+
+```swift
+platformRegistration.dispose()
+```
+
+```typescript
+platformRegistration.dispose();
+```
+
+```dart
+flutterRegistration.dispose();
+```
+
+Use the Flutter removal first to reveal the platform provider, then remove the platform registration to reveal the base, then dispose the base to empty the registry. The C++ RAII destructor also removes its own still-live registration; explicit disposal is idempotent. No business operation is needed to restore the previous provider. For the destructive alternative, use Replace in the registration call: disposing that new handle cannot recover the discarded registrations.
+
+A listener subscription must instead be canceled through its own subscription handle, or cleared on the fixed object that accepted it. Disposing flutterRegistration does not remove listeners from a surviving Flutter provider or move them to Kotlin/Swift/JS. If the Flutter attachment closes, its callback and provider lifetimes are revoked under sections 12.4 and 14.6. Use explicit rebind when the application wants notifications from the newly active provider.
+
 ### 15.9 Registration ownership, detach and shutdown
 
 A registration retains the provider adapter independently of host variables, and a retained hidden entry is a real owner. A fixed reference or in-flight operation is another independent owner. Registry removal ends discoverability; object destruction occurs only when the last legal owner releases it, or safe context invalidation requires terminating access. A stale fixed reference after detach cannot execute even if the managed wrapper still exists.
 
-A registration token is an owning registration control handle. Provide explicit idempotent unregister/dispose in every target, with move-only RAII for the C++ registration wrapper (moving transfers removal responsibility). Managed callers must retain their registration handles for the intended lifetime and dispose them explicitly; GC/ARC/FinalizationRegistry timing is not a portable registration lifecycle. Safe finalization may perform idempotent best-effort cleanup on a live context, but correctness and prompt restoration must not depend on it. Token release in the low-level ABI and explicit unregistration must have documented ownership semantics consistent with those wrappers. Dispose acknowledges atomic removal from discovery, not completion of operations already admitted. Do not block waiting for the current callback or provider invocation to finish from within its own reentrant disposal.
+A registration token is an owning registration control handle. At the low-level ABI, releasing the last owning registration-control reference performs the same idempotent removal as explicit unregistration, then releases control metadata. Explicit unregistration can occur earlier; later releases only retire the control reference. Ordinary interface handle release does not unregister any registration. Do not let the registry hold an owning registration-control reference to itself; the registry owns its entry and provider, not the caller's removal authority. Provide explicit idempotent unregister/dispose in every target, with move-only RAII for the C++ registration wrapper (moving transfers removal responsibility). Managed callers must retain their registration handles for the intended lifetime and dispose them explicitly; GC/ARC/FinalizationRegistry timing is not a portable registration lifecycle. Safe finalization may perform idempotent best-effort cleanup on a live context, but correctness and prompt restoration must not depend on it. Token release in the low-level ABI and explicit unregistration must have documented ownership semantics consistent with those wrappers. Dispose acknowledges atomic removal from discovery, not completion of operations already admitted. Do not block waiting for the current callback or provider invocation to finish from within its own reentrant disposal.
 
 Distinguish the lifetime of the whole runtime context from an attached provider runtime or application owner. An attached provider runtime can own registrations across multiple registries in one context; a plugin attachment or engine/isolate generation may own only its own entries and callback resources. Track ownership using validated attachment identities and generations, never language names, thread IDs, activity names or recycled object addresses. A Dart isolate restart creates a new attachment generation; old tokens and late completion messages cannot remove or target new registrations.
 
 For partial detach while the shared context continues running:
 
-1. Stop new calls, registrations and callback delivery admissions to the closing attachment. Make the owner-state change and exclusion from registry resolution atomic with respect to invocation admission. Remove its active and hidden entries from every affected registry; restore the nearest still-live registrations, never entries whose attachments are also closing. Do not close unaffected registries or reject calls to unrelated live providers.
+1. Stop new calls, registrations and callback delivery admissions to the closing attachment. Make the owner-state change and exclusion from registry resolution atomic with respect to invocation admission. Remove active and hidden entries from every affected registry if either their registration owner or actual provider belongs to the closing attachment; restore the nearest still-live registrations, never entries whose registration owner or provider attachment is closing. Do not close unaffected registries or reject calls to unrelated live providers.
 2. Request cancellation for operations tied to the closing attachment (as provider, consumer or callback owner) and stop new stream/listener delivery to it. Retain execution resources until actual work is safe. Unregistration alone does not cancel ordinary in-flight operations; this is a separate lifecycle action required for detach.
 3. Drain actual execution and invalidate the attachment's handles, subscriptions and callback admission state. Other fixed references to its providers must no longer be callable. Retain enough runtime-owned metadata to reject stale handles safely without dereferencing freed foreign objects.
 4. Release all affected adapters, callback roots and transferred payloads on their live owning executors and drain any releases scheduled by cleanup. Detach the attachment only after its resources are safe. If draining cannot finish, report the shutdown failure and keep required resources alive; never reinsert the closing providers or call a dead isolate.
@@ -3661,6 +3769,51 @@ flowchart TD
     G <-->|WASM ABI| H["C or C++ WASM implementation"]
 ```
 
+### 16.20 Host attachment and disposal integration
+
+The generated binding exposes the same semantic registry and subscription operations on every supported target, but the host supplies its real execution domain and lifecycle integration. Registering a provider never grants permission to invoke it on an arbitrary thread. A dynamic proxy may change target attachment from one invocation to the next, so validate the selected method's actual executor requirements on every invocation. In particular, a method declared synchronous remains synchronous; selecting a Dart or UI-bound provider does not permit blocking a native thread waiting for another event loop or silently converting a synchronous signature into an async one. Report the unsupported crossing. Prefer async contracts for services intended to be overridden across native, platform and Flutter layers.
+
+| Host | Attachment and reference rules | Required teardown behavior |
+| --- | --- | --- |
+| C / C++ | Explicit native context and attachment; generated vtable and opaque handles; RAII in C++ | Dispose registration handles; drain native calls before unloading library code |
+| Java / Kotlin | One intended JVM attachment with valid JNI thread access and rooted objects; Java and Kotlin may share it | Dispose owner entries and global references on a valid JVM thread; activity recreation alone does not close the VM |
+| Objective-C / Swift | Valid Apple adapter attachment, ARC roots and documented queues/actors | Drain closures, continuations and releases before detaching; do not block an actor required by cleanup |
+| Python | Interpreter-specific attachment and applicable thread state/event loop; no cross-interpreter object pointers | Stop admissions and release Python roots while interpreter/executor is available; interpreter shutdown is not ordinary service removal |
+| C# | Managed attachment, rooted delegates/GCHandles and SafeHandle-based owners | Dispose handles and drain callbacks before unloading managed code or native dependencies |
+| Dart native / Flutter | One attachment per isolate execution domain; plugin ownership distinct from the shared native core | Explicitly revoke old isolate generation and drain dispatch envelopes before closing native callback entry points |
+| JavaScript / TypeScript | Adapter bound to the intended WASM instance and host event loop/realm | Dispose registrations/callback roots and reject stale host dispatch before destroying the instance |
+| Dart / Flutter Web | JS interop on the same intended WASM registry, with a distinct Dart host attachment where independently closable | Dispose Dart-owned entries without discarding live JS/C++ entries; no assumption that page unload permits asynchronous cleanup |
+
+#### Flutter and native startup/teardown
+
+The platform plugin first acquires the application's shared native context or creates it when explicitly designated as owner. The C++ base installs its registration in that context's default or selected registry. The Android Kotlin or Apple Swift adapter attaches to the same context and installs its optional ScopedOverride. Each Dart isolate explicitly receives or resolves the intended native context and attaches a generation-bound dispatcher; it may then install another ScopedOverride. Expose attachment-bound registry facades to Dart and native hosts rather than requiring application code to transmit raw pointers through UI channels. Loading a plugin or receiving a platform lifecycle event is not an implicit registration.
+
+A controlled Flutter detach first stops new work for the affected attachment, revokes its active and hidden registrations and cancels its listener/stream subscriptions. Keep the host dispatcher and required NativeCallable resources valid until its admitted native work and release envelopes are accounted for. Closing the Dart entry point is a separate final step. Native and platform attachments continue serving new dynamic calls after restoration. When the application owns a full shutdown, perform that only after the required host-side cleanup can complete. Never wait synchronously on the Flutter UI isolate for work scheduled back to that same isolate.
+
+Hot restart and engine replacement must be tested on real Flutter integration paths. If a particular host lifecycle does not provide a cooperative pre-destruction drain, use the revocation and failure reporting rules in section 12.4; do not equate receipt of a later initialization event with proof that old callbacks were safely drained. A new isolate may not reuse an old dispatcher or registration generation. Multiple engines default to explicit isolated registry selection unless the application deliberately selects the same registry; do not change the application's selected scope during a restart. Activity recreation, view detach and foreground/background transitions retain registrations if their actual owners remain live.
+
+#### Browser startup/teardown
+
+The application loads one intended WASM core and obtains its runtime context through the generated loader. The JS/TS facade and Flutter Web adapter use that context, not independently instantiated WASM modules or duplicated JavaScript registry maps. Host callback identities and generation checks must survive WebAssembly memory growth without relying on cached memory views. The JS provider can override C++ and the Dart Web provider can override JS using the same policies. Explicit Dart application disposal can restore the JS provider while the WASM context survives. A full page reload creates a new application/runtime context; no automatic provider persistence across pages, workers or devices. Worker sharing and synchronous calls across event loops require separately proven capabilities. Do not assume asynchronous unload handlers can finish cleanup at page termination.
+
+```mermaid
+sequenceDiagram
+    participant N as Shared native or WASM core
+    participant P as Platform adapter
+    participant D as Dart attachment
+    N->>N: Initialize context and base registration
+    P->>N: Attach and register platform override
+    D->>N: Attach new generation and register override
+    N->>D: Admit async call with owning envelope
+    D-->>N: Typed completion
+    D->>N: Begin attachment close
+    N->>N: Exclude Dart entries and restore platform
+    N->>P: New invocation
+    P-->>N: Typed result
+    N-->>D: Drain affected execution and releases
+    D->>D: Close host dispatcher when safe
+```
+
 ## 17. Example applications
 
 ### 17.1 Shared modules
@@ -3923,6 +4076,33 @@ Reuse the same generated interface and callback fixtures from sections 14.6 and 
 | Runtime closure | No callback enters a detached isolate/host, queued payloads are released and active execution is drained; failed drain reports a blocker without unloading required resources |
 
 The three-layer sample is required for Android (C++/Kotlin/Dart), Apple (C++/Swift/Dart) and browser (C++ WASM/JS/Dart Web), with the same consumer-facing contract and independently validated results. Test two Flutter engine/attachment generations and distinct registries using actual supported hosts where their behavior differs. Record blocked platform or toolchain evidence separately. Reuse lower-level tests for identical runtime algorithms instead of duplicating every policy scenario on every platform; still exercise each distinct adapter, owner-detach and callback scheduling path. Test retained references, weak-reference or cycle cleanup where applicable, and release counters returning to expected baselines. Keep all acceptance checklist items unmarked until executable evidence exists.
+
+### 18.8 Deterministic lifecycle race fixtures
+
+Use a finite named inventory integrated with section 18.5, not a new test framework. Test semantic events at controlled admission, commit and dispatch barriers. Verify exact provider identities and typed errors as well as memory cleanup; elapsed time or a successful Future alone is not proof of correct lifecycle behavior.
+
+| Case ID | Controlled sequence | Required observation |
+| --- | --- | --- |
+| registry.replace-stack | Register A, push B and C, Replace with D, remove stale A/B/C tokens then D | Only D is discoverable until D removal; empty afterward; fixed A/B/C references remain callable if their hosts live |
+| registry.hidden-remove | Push A/B/C, remove B while C active, remove C | A restored; B never restored |
+| registry.forwarded-owner | Owner B registers fixed provider hosted in A, then close B; repeat with A closing first | B's entry removed in either case; fixed A remains callable only while A is live |
+| registry.close-scope | Two scoped registries share a live provider, close one | Its dynamic proxies fail closed, fixed references and the other registry remain usable |
+| registry.register-close-race | Hold registration before publication, close owner/provider, resume | No entry from closing attachment survives; failed registration releases temporary roots |
+| registry.resolve-remove-race | Pause before or after call admission; remove active provider | Before admission resolves resulting stack; after admission retains selected provider; no reroute |
+| runtime.dispatch-close-race | Admit async call, pause before host entry, close target | No new host entry; owning envelope released and live caller receives cancellation/lifetime failure |
+| runtime.drain-execution | Pause actual execution, cancel caller, start close, release execution barrier | No premature release; close completes only after actual execution and queued releases drain |
+| runtime.enqueue-failure | Fail host scheduler enqueue after async acceptance | Exactly one terminal error and balanced envelope references |
+| runtime.restart-generation | Close generation A, start B, deliver a valid late A envelope and stale A token | No dispatch to B, no removal of B registration, late payload safely released |
+| listener.slot-generation | Select callback A, replace with B before admission; separately replace during admitted A invocation | Queued A discarded; admitted A may complete; next event uses B; clear never restores A |
+| listener.subscribe-cancel-race | Snapshot subscribers, cancel one before admission, add another, resume | Canceled and newly added subscribers receive no selected event; unrelated eligible callbacks receive it once |
+| listener.unclaimed-subscription | Install subscription, cancel/fail delivery of its owning result | Unclaimed registration removed and callback root released |
+| listener.forwarded-owner | Subscriber B passes callback hosted in A; close each owner separately | Affected delivery revoked, unrelated listeners retained, no attempts into dead callback |
+| listener.reentrant | Callback cancels itself, subscribes another, then attempts nested awaited publish in serialized source | Cancel/subscribe complete without deadlock; nested awaited publish fails explicitly |
+| listener.callback-lifetime | Attempt scoped escape; store a retained callback; race two one-shot invocations | Scoped escape rejected, retained callback usable until release, only one one-shot admission |
+| stream.async-acquisition | Obtain stream through async foreign provider, then override registry before subscription/delivery | Outer acquisition and inner stream lifetimes separate; stream stays bound to original provider |
+| runtime.independent-engines | Share a registry across two real attachments; remove one hidden owner, close active owner; repeat with isolated registries | Restore only live remaining entries; isolated contexts/registries never leak visibility |
+
+For native core fixtures, expose minimal test-only barriers and counters without shipping public test hooks or fake timing modes. For managed host fixtures, verify real callbacks execute on their owning executor and that host roots, pending envelopes and thread-affine releases return to expected baselines. Test callback faults through the documented error channel and ensure failures do not cause alternate provider calls. For externally forced host termination, verify only platform-observable revocation and native safety guarantees; if the host cannot provide required cooperative cleanup, record the limitation as a blocker rather than claiming a successful drain. Map these case IDs to actual platform and artifact evidence with the existing capability matrix. Reuse identical core scenarios across target suites, but exercise every distinct scheduler/loader/attachment teardown path.
 
 ## 19. GitHub Actions
 
@@ -4614,7 +4794,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Package Jinja2 templates for every target, including models, interfaces, proxies, providers, marshalling and build/package metadata. Keep business rules and type/import resolution in Python, not templates.
 - [ ] Implement module/target directory and individual template overrides, explicit inheritance of unmodified templates, documented IDs, StrictUndefined, partials, export/list/check and content fingerprinting.
 - [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
-- [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments. Enforce actual semantics where applicable, not comments alone.
+- [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments, including scoped/retained/one-shot callback parameters as specified in section 14.2. Enforce actual semantics where applicable, not comments alone.
 - [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes.
 - [ ] Verify customized templates, imports, naming and generated build files compile in each applicable target. Test one representative real override path per distinct backend behavior.
 
@@ -4637,8 +4817,8 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
 - [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, context-bound registries, Reject/Replace/ScopedOverride, unique tokens, missing-service errors, atomic removal/restoration, retained providers and explicit delegation. Replace clears the full stack; scoped removal restores only still-live registrations. No implicit alternate-provider retry.
-- [ ] Implement per-attachment registration ownership, generation-checked admission, partial detach and safe invalidation of fixed references to closing runtimes. Verify independent registries/engines, owner-specific active/hidden removal, in-flight execution, safe release outside locks and hot restart without stale tokens affecting newer registrations.
-- [ ] Support application-defined single-listener and multi-listener subscription patterns using existing typed callbacks/interfaces and streams. Verify retained callback ownership, replace/clear, independent cancellation, no new admissions after removal, reentrancy, bounded delivery and error propagation, explicit stream rebinding and owner-specific cleanup without a new global event bus.
+- [ ] Implement per-attachment registration ownership, generation-checked admission, partial detach and safe invalidation of fixed references to closing runtimes. Verify independent registries/engines, registration-owner versus actual provider attachment, atomic admission and dispatch gating, owner-specific active/hidden removal, in-flight execution, safe release outside locks and hot restart without stale tokens affecting newer registrations. Prove the deterministic lifecycle fixtures in section 18.8.
+- [ ] Support application-defined single-listener and multi-listener subscription patterns using existing typed callbacks/interfaces and streams. Verify scoped/retained/one-shot callback lifetimes, replace/clear, independent cancellation, no new admissions after removal, unclaimed subscription cleanup, reentrancy, bounded delivery and error propagation, async stream acquisition, explicit stream rebinding and owner-specific cleanup without a new global event bus.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
 
 ### 22.7 Language-specific backends and platform support
