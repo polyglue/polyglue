@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">PolyGlue</title>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
-    <path stroke="#F59E0B" d="M19 55V40C19 28 29 18 41 18H75C87 18 97 28 97 40C97 48 87 52 75 52H61"/>
-    <path stroke="#EA580C" d="M109 73V88C109 100 99 110 87 110H53C41 110 31 100 31 88C31 80 41 76 53 76H67"/>
+  <title id="title">PolyGlue — Code Bridge</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#F59E55" stroke-width="12" d="M35 29 11 64 35 99"/>
+    <path stroke="#9B56D2" stroke-width="12" d="M93 29 117 64 93 99"/>
+    <g stroke="#E65375" stroke-width="8">
+      <path d="M43 51H83L71 39M83 51 71 63"/>
+      <path d="M85 77H45L57 65M45 77 57 89"/>
+    </g>
   </g>
 </svg>
