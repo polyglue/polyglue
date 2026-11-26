@@ -1,7 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 15 102 82" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
   <title id="title">PolyGlue symbol</title>
-  <g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="#5165F5" d="M45 25 15 55 45 85 69 61"/>
-    <path stroke="#10AE9F" d="M67 87 97 57 67 27 43 51"/>
+  <g stroke-linejoin="round" stroke-width="6">
+    <path fill="#F59E55" stroke="#F59E55" d="M64 10 110 36 87 49 64 36 41 49 18 36Z"/>
+    <path fill="#E65375" stroke="#E65375" d="M14 45 37 58 37 84 60 97 60 118 14 92Z"/>
+    <path fill="#9B56D2" stroke="#9B56D2" d="M114 45 114 92 68 118 68 97 91 84 91 58Z"/>
+    <path fill="#B748A9" stroke="#B748A9" d="M47 63 64 53 81 63 81 76 64 86 47 76Z"/>
   </g>
 </svg>
