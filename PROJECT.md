@@ -468,7 +468,8 @@ defaults:
     objc:
       arc: true
       nullability: true
-      swift_names: true
+      swift_names:
+        enabled: true
     swift:
       native_async: true
       strict_concurrency: true
@@ -606,9 +607,68 @@ targets:
     output: ../../native/repository/wasm
 ```
 
-The network module follows the same structure with its own NET prefix, app::network namespace, packages, paths and dependencies. None of these choices is imposed on domain or repository.
+### 7.5 Network module configuration
 
-### 7.5 Configuration schema coverage
+`modules/network/module.yaml`:
+
+```yaml
+module:
+  name: network
+  version: "1.0.0"
+
+sources:
+  - idl/**/*.idl
+
+targets:
+  c:
+    output: ../../native/network/c
+    prefix: app_net_
+  cpp:
+    output: ../../native/network/cpp
+    namespace: app::network
+    include_prefix: app/network
+  java:
+    output: ../../android/generated/network/java
+    package: com.app.network
+  kotlin:
+    output: ../../android/generated/network/kotlin
+    package: com.app.network
+    model_source: java
+  objc:
+    output: ../../apple/Network/ObjC
+    prefix: NET
+    module: AppNetworkObjC
+  swift:
+    output: ../../apple/Network/Swift
+    module: AppNetwork
+  dart:
+    output: ../../flutter/packages/network
+    package: app_network
+    mode: package
+  flutter:
+    output: ../../flutter/plugins/network
+    package: app_network_plugin
+  python:
+    output: ../../python/network
+    package: app_network
+  csharp:
+    output: ../../dotnet/Network
+    namespace: App.Network
+    assembly: App.Network
+  javascript:
+    output: ../../web/network
+    module: "@app/network"
+  typescript:
+    output: ../../web/network
+    module: "@app/network"
+    implementation_source: javascript
+  wasm:
+    output: ../../native/network/wasm
+```
+
+None of these choices is imposed on domain or repository.
+
+### 7.6 Configuration schema coverage
 
 | Category | Required options |
 | --- | --- |
@@ -676,11 +736,12 @@ targets:
       files:
         case: PascalCase
     swift_names:
+      enabled: true
       remove_prefix: true
       remove_suffix: true
 ```
 
-Repository can independently use REP and another interface suffix. With the illustrated convention:
+Repository can independently use REP and an interface suffix such as Protocol. With that optional override applied in repository as well:
 
 | IDL | Objective-C | Swift public name |
 | --- | --- | --- |
@@ -812,7 +873,7 @@ Annotations are allowed on modules, records, interfaces, enums, enum members, fi
 
 Automatically infer safe attributes from IDL when possible; annotations override naming or supported metadata, not safety rules.
 
-Illustrative Objective-C output:
+Illustrative Objective-C output for a reduced User record (id, name and optional email):
 
 ```objc
 #import <Foundation/Foundation.h>
@@ -881,11 +942,22 @@ Plan all generated symbols before rendering any file. The repository refers to t
 
 For the repository contract in section 4:
 
+**C**
+
+```c
+#include <app/domain/user.h>
+#include <polyglue/runtime.h>
+
+/* Illustrative names; final signatures follow the versioned C ABI. */
+typedef struct app_repo_user_repository app_repo_user_repository;
+```
+
 **C++**
 
 ```cpp
 #include <app/domain/user.hpp>
 #include <polyglue/future.hpp>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -1005,7 +1077,62 @@ export interface UserRepository {
 
 These excerpts show public contract shape; generated proxies, C ABI declarations, converters, initialization and all remaining methods are required separately.
 
-### 10.3 Target artifact rules
+### 10.3 Generated directory examples
+
+```text
+native/domain/cpp/
+├── include/app/domain/user.hpp
+└── src/user.cpp
+
+native/repository/cpp/
+├── include/app/repository/user_repository.hpp
+└── src/user_repository.cpp
+
+android/generated/domain/java/
+└── com/app/domain/User.java
+
+android/generated/repository/kotlin/
+└── com/app/repository/UserRepository.kt
+
+apple/Domain/
+├── ObjC/
+│   ├── include/DOMUser.h
+│   └── module.modulemap
+└── Swift/
+    └── Sources/AppDomain/
+
+apple/Repository/Swift/
+└── Sources/AppRepository/UserRepository.swift
+
+flutter/packages/domain/
+├── pubspec.yaml
+└── lib/
+    ├── app_domain.dart
+    └── src/user.dart
+
+flutter/packages/repository/
+├── pubspec.yaml
+└── lib/
+    ├── app_repository.dart
+    └── src/user_repository.dart
+
+python/domain/
+└── app_domain/
+    ├── __init__.py
+    └── user.py
+
+dotnet/Domain/
+├── App.Domain.csproj
+└── User.cs
+
+web/domain/
+├── package.json
+└── src/user.js
+```
+
+These trees illustrate public artifacts, not exhaustive bridge sources. The domain package must expose User through its public entry point. The repository package declares the dependency in its package/build manifest in package mode.
+
+### 10.4 Target artifact rules
 
 | Backend | Layout / imports / package files |
 | --- | --- |
@@ -1121,11 +1248,20 @@ Validate the whole output plan before writing. Reject overlapping files, collisi
 
 ## 12. Native runtime and ABI
 
-Document versioned C ABI before generating bridges. Fixed-width types, explicit alignment and layout, size/version headers for function tables, opaque handles with generation counters, stable deterministic type IDs distinct from ABI fingerprints. Verify ABI and target architecture before invocation; no C++ STL or managed pointers across C ABI. Allocator/deallocator pairing, explicit ownership on every argument and return, consistent calling conventions, visibility, error codes and diagnostics. Avoid raw pointer dereference from untrusted handles. Check overflow in lengths, offset arithmetic and allocations. No exception escapes ABI. One shared runtime per execution context; integration tests detect duplicate instances.
+The support runtime implements only shared interoperability mechanics, while generated adapters provide contract-specific behavior.
 
-Interfaces carry a typed function table, opaque context and lifetime operations. Provider adapters hold runtime-specific strong references (JNI global references, ARC, Python references, GC handles, Dart isolate-owned handles, JS roots). Proxies retain and release correctly; preserve identity where documented; explicit close/dispose plus safe finalizer fallback. No finalizer-only correctness. Handle stale/foreign handles, refcount overflow, reentrant destruction, cycles and weak references; never call foreign code or destroy foreign objects under registry locks. Runtime teardown must drain/cancel calls and release references before unloading or invalidate safely if runtime is already gone.
+Required ABI rules:
 
-bytes: independent copy. DataView: immutable borrowed memory restricted to synchronous scoped access; reject storing/returning/async capture when unsafe; managed APIs use scoped wrappers and checked validity rather than exposing escapable raw views by default. MutableDataView: exclusive scoped write, no concurrent readers/writers; enforce borrow rules or reject. DataRef: shared owned memory, slice with retained owner, release once on required executor, explicit read/write policy; immutable default. No implicit copy for zero-copy contracts: reject unsupported source memory or expose explicit copy conversion. WASM memory growth can invalidate views; pin/lease or reacquire checked views, never claim arbitrary JS heap zero-copy. Camera/GPU buffers need explicit mapping and platform adapters. Bounds, alignment, empty buffers, aliases, concurrent release and overflow tested. Instrument allocated/freed bytes, copies, live handles and operations; distinguish library instrumentation from runtime allocations.
+- Versioned C ABI with fixed-width primitives, explicit alignment, size/version headers and documented calling conventions.
+- Stable logical type IDs distinct from contract fingerprints and target-specific ABI fingerprints.
+- Validate architecture, ABI version, handle origin, kind and generation before invocation.
+- Explicit ownership for every argument and return, allocator/deallocator pairing and checked length/offset arithmetic.
+- No C++ STL layout, foreign object memory layout or exception crossing the ABI directly.
+- One compatible shared runtime per context; detect unintended duplicate instances.
+- Explicit close/dispose and safe finalizer fallback. Never rely on finalizers alone.
+- Define identity, strong and weak references, refcount overflow, cycles and thread-affine destruction.
+
+Buffer-specific rules are in section 13; asynchronous lifecycle rules are in section 14.
 
 ### 12.1 Typed function tables
 
@@ -1399,7 +1535,56 @@ final registration = ServiceRegistry.global.register(
 
 The implementation function above is illustrative; examples must supply a real implementation.
 
-### 16.2 Per-target integration review
+### 16.2 Concrete provider-to-consumer example
+
+A handwritten Kotlin repository implements the generated interface. It may use a database or the deterministic sample fixture:
+
+```kotlin
+class AndroidUserRepository(
+    private val database: UserDatabase
+) : UserRepository {
+    override suspend fun findById(id: Long): User? =
+        database.findById(id)
+
+    override suspend fun findAll(): List<User> =
+        database.findAll()
+
+    override suspend fun count(): Long =
+        database.count()
+
+    override suspend fun exists(id: Long): Boolean =
+        database.exists(id)
+
+    // Implement all remaining generated methods in the runnable sample.
+}
+```
+
+Register the implementation in the shared Android runtime during plugin initialization:
+
+```kotlin
+val registration = ServiceRegistry.global.register(
+    UserRepository.TYPE,
+    AndroidUserRepository(database)
+)
+```
+
+Dart consumes the same contract and the imported domain model:
+
+```dart
+final repository = ServiceRegistry.global.get(UserRepository.type);
+final users = await repository.findAll();
+final user = await repository.findById(10);
+final count = await repository.count();
+final exists = await repository.exists(10);
+
+for (final user in users) {
+  print(user.name);
+}
+```
+
+The same Dart code can consume a Swift provider on Apple platforms. Alternatively, inject the repository reference directly instead of registering it. In reverse, Kotlin or Swift may consume a Dart provider, using an asynchronous invocation when crossing isolate/thread boundaries. All examples must run with generated adapters; snippets alone do not satisfy acceptance.
+
+### 16.3 Per-target integration review
 
 | Target | Mandatory concerns |
 | --- | --- |
