@@ -23,6 +23,8 @@ Define your data models, interfaces, callbacks, and asynchronous operations once
 - Per-module and per-target configuration for naming conventions, prefixes, namespaces, packages, output paths, imports, annotations, and formatting.
 - Native support libraries maintained and tested in the same repository as the generator.
 - Deterministic code generation, CMake native builds and Python-orchestrated packaging for AAR, XCFramework and other target-native formats.
+- SDK version and build number propagated to native and ecosystem packages from one product configuration.
+- Optional explicit deployment of validated SDKs to AWS S3, Cloudflare R2 and compatible object storage.
 - Local installation using uv, with future PyPI distribution only after explicit approval.
 
 ## Example
@@ -92,6 +94,10 @@ The compiler and generator are build-time tools. Generated applications do not r
 PolyGlue plans independent CI checks for every target, real bidirectional conformance for supported types and feasible language pairs, installed-package tests, memory and concurrency regression tests and appropriate sanitizers. Shared fixtures, risk-based tests and safe build/dependency caching will keep CI efficient. Longer stress and fuzz tests will be used where they add evidence.
 
 Support will be declared only after corresponding implementation, tests and documentation are verified. See the detailed [implementation checklist](PROJECT.md#22-implementation-and-acceptance-checklist).
+
+## Planned SDK distribution
+
+The product configuration will define the SDK version and build number independently of the PolyGlue version. The planned package command will create versioned, validated native and ecosystem artifacts. An optional deploy command will upload the exact packaged artifacts to an explicitly selected S3-compatible bucket and prefix. Other deployment systems can consume the local artifact manifest. No automatic cloud upload or registry publication is planned.
 
 ## Installation
 

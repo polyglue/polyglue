@@ -17,6 +17,7 @@ The numbered chapters describe the technical contracts. Section 22 is the single
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
+  - [SDK version and build number](#78-sdk-version-and-build-number)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
@@ -33,6 +34,7 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
+  - [SDK deployment to S3-compatible object storage](#2010-sdk-deployment-to-s3-compatible-object-storage)
   - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
@@ -201,6 +203,7 @@ One installed Python CLI is the entry point for generation and native build orch
 | polyglue build | Resolve the selected build plan, generate inputs if needed, configure and build the requested artifact |
 | polyglue test | Run actual target-specific tests and conformance cases, optionally with sanitizer configuration |
 | polyglue package | Build and assemble the requested final distributable, validate it and write an artifact manifest |
+| polyglue deploy | Upload an explicitly selected, already packaged SDK to an S3-compatible bucket using its validated version and build number |
 | polyglue run | Run the selected example where the current host or device allows execution |
 | polyglue clean | Remove only PolyGlue-owned build outputs for the selected scope |
 | polyglue config show | Inspect the effective configuration and its origin |
@@ -223,17 +226,17 @@ uv run --locked polyglue test --target cpp --sanitizer thread
 uv run --locked polyglue run --target flutter --platform android
 ```
 
-Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
+Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
 
 ### 3.5 Development version and release authorization
 
-The current project version is **0.0.1**, an unreleased development version. Use a single canonical package version in pyproject.toml once the Python package is bootstrapped. Derive the CLI version, runtime distribution version, generated metadata and artifact manifests from the same source. Keep the ABI version and user module versions independent. A 1.0.0 value in an application-module example is illustrative, not the PolyGlue version. Do not claim 1.0.0 support.
+The current project version is **0.0.1**, an unreleased development version. Use a single canonical package version in pyproject.toml once the Python package is bootstrapped. Derive the CLI version, runtime distribution version, generated metadata and artifact manifests from the same source. Keep the ABI version and user module versions independent. A 1.0.0 value in an application-module or SDK product example is illustrative, not the PolyGlue version. Do not claim 1.0.0 support. Product SDK versions and build numbers are independently configured by their owners under section 7.8. They must not change the tool version or ABI identity.
 
 - Continue development and local/CI testing at 0.0.1 until the owner explicitly requests another version.
 - Advance to 0.0.2, 0.0.3 and subsequent versions only when explicitly authorized. Never increment the version automatically for commits, builds or successful CI.
 - An authorization to change the development version does not authorize a Git tag, GitHub Release, TestPyPI upload, PyPI upload or any other external publication.
 - Local builds and GitHub Actions test artifacts may use the current development version without creating a public release. Identify individual builds by commit SHA and artifact checksum.
-- Do not create tags, releases, registry uploads or publication automation capable of running automatically during normal development.
+- Do not create tags, releases, registry uploads, SDK cloud deployments or publication automation capable of running automatically during normal development. An explicit consumer invocation of deploy authorizes only that selected SDK artifact and destination. For this repository, actual external deployment requires the owner's explicit authorization. No cloud upload or credential setup is authorized by implementing or documenting the feature.
 - Production PyPI publication is prohibited until every mandatory acceptance gate passes on the exact candidate revision, the project is complete to the owner's satisfaction and the owner explicitly approves that specific version for PyPI. Never publish placeholder packages to reserve the name.
 
 ### 3.6 PyPI Trusted Publishing (future, disabled)
@@ -1190,6 +1193,7 @@ products:
       formats: [aar]
       name: app_bridge
       version: "1.0.0"
+      build_number: 1
     platforms:
       android:
         min_sdk: 26
@@ -1202,6 +1206,7 @@ products:
       formats: [xcframework, swiftpm]
       name: AppBridge
       version: "1.0.0"
+      build_number: 1
     platforms:
       ios:
         minimum_version: "17.0"
@@ -1222,6 +1227,7 @@ products:
       formats: [cmake]
       name: AppBridge
       version: "1.0.0"
+      build_number: 1
     platforms:
       linux:
         architectures: [x86_64, arm64]
@@ -1231,9 +1237,83 @@ products:
         architectures: [arm64, x86_64]
 ```
 
-SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Product manifests declare the exact module closure, native implementation sources, runtime linkage, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them and is required when several are configured. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop product spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Product packaging can select source or prebuilt modules, with strict compatibility validation. Separate product output roots prevent cross-product contamination. A source-only project never has to declare products.
+SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Product manifests declare the exact module closure, native implementation sources, runtime linkage, SDK version, build number, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them and is required when several are configured. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop product spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Product packaging can select source or prebuilt modules, with strict compatibility validation. A prebuilt module may carry its own module version but must not silently replace the product SDK version. Product metadata is generated at the packaging boundary. Separate product output roots prevent cross-product contamination. A source-only project never has to declare products.
 
 Dependency names in native build configuration refer to explicitly declared CMake targets, not arbitrary flags. IDL dependencies and native build dependencies are distinct. Module output paths, native implementation source paths, SDK settings, extra includes and link libraries are schema-validated. Accept additional CMake integration via an explicit, trusted consumer CMake target or source list. No arbitrary shell execution from IDL.
+
+### 7.8 SDK version and build number
+
+Keep the following identities independent. Never infer one from another.
+
+| Identity | Source | Purpose |
+| --- | --- | --- |
+| PolyGlue version | Tool pyproject.toml | Generator and support library release |
+| ABI version and contract fingerprints | Runtime and canonical IDL | Reject incompatible binary contracts |
+| Module version | module.yaml | Logical module dependency metadata |
+| SDK version | products.<id>.artifact.version | Distributed library release version |
+| SDK build number | products.<id>.artifact.build_number | Identifies a particular build of that SDK version |
+
+The SDK version and build number are required for a binary product. They are not required for source-only IDL generation. Use an explicit numeric MAJOR.MINOR.PATCH string without leading zeroes and a positive integer build_number. The version is not derived from the Git tag, module version, tool version, CI run number or current time. The build number is supplied by the product owner, not incremented automatically. Keep SDK build numbers monotonic within a version for operational clarity. The tool need not contact a remote service to allocate a number. The same build identity is used by every requested architecture and format of a product. If changed bytes must be distributed under the same SDK version, assign a new build number explicitly.
+
+Example:
+
+```yaml
+products:
+  apple:
+    modules: [domain, repository, network]
+    targets: [c, cpp, objc, swift]
+    artifact:
+      name: AppBridge
+      formats: [xcframework, swiftpm]
+      version: "1.2.3"
+      build_number: 42
+    platforms:
+      ios:
+        minimum_version: "17.0"
+        device_architectures: [arm64]
+        simulator_architectures: [arm64, x86_64]
+```
+
+Resolve these two values once in the Python build plan and pass the same immutable values to every downstream tool. Do not maintain duplicated editable versions in Gradle, CMake, Xcode, manifests or templates. Expose sdk_version and sdk_build_number in the existing versioned template context when generating for a product. A standalone module generation must not invent SDK metadata. Keep product-specific generated version files in the selected product staging directory so multiple products cannot overwrite shared module source. A module's logical ID and ABI fingerprint do not change merely because the product build number changed. The build and artifact fingerprints do change.
+
+Validate version constraints for the selected ecosystems before building. Do not truncate, clamp, round, append an invented suffix or silently substitute a different value to fit a platform field. The SDK version remains the ecosystem package version. Build number is separate build metadata, not a new Maven/PyPI/npm/NuGet package version. Two builds of one ecosystem version are not two independently publishable releases in an immutable registry. Local and bucket paths distinguish them. Use a new SDK version if a registry requires a unique release coordinate.
+
+#### 7.8.1 Propagation to toolchains
+
+| Target | SDK version | Build number |
+| --- | --- | --- |
+| C / C++ / CMake | Product project VERSION, generated product version header and package config version, target VERSION where applicable | Product version header and manifest |
+| Windows native | File/Product version resource where emitted, checked platform representation | Checked fourth file version component when representable |
+| Android AAR | Gradle project/publication version and local Maven coordinates | Packaged SDK metadata resource and native version metadata |
+| JVM JAR | Gradle/Maven version and JAR Implementation-Version | JAR metadata and native version metadata |
+| Apple framework | MARKETING_VERSION / CFBundleShortVersionString | CURRENT_PROJECT_VERSION / CFBundleVersion |
+| SwiftPM | Distribution package metadata, archive and URL path. SwiftPM dependency versions are selected by actual Git tags or package configuration | Packaged metadata and referenced artifact build path |
+| Python generated bindings | Wheel/sdist project version | Packaged metadata resource and native product version metadata |
+| Dart / Flutter | pubspec.yaml package version | Packaged metadata and native product version metadata |
+| C# | PackageVersion, Version and checked assembly/file version mapping | Informational metadata and checked file version where applicable |
+| JS / TS | package.json version | Packaged SDK metadata |
+| WASM | Product metadata emitted with the JS loader or packaged WASM assets | Same metadata and native product version where applicable |
+
+AAR libraries do not have an application versionCode requirement. Only an application artifact with a supported versionCode field may map the SDK build number to it. Do not pretend JARs, archives, static libraries or WASM modules have a standard OS-level build number field. Where native metadata has no matching field, include the canonical values in a small packaged metadata resource. Use the same artifact manifest as the packaging metadata source and only add a small version header/resource where a runtime or ecosystem needs it. Verify metadata in installed consumers. Do not add a new version service or ABI call solely for build numbers.
+
+For CMake, pass explicit cache inputs from Python:
+
+```bash
+cmake -S . -B build/example -DPOLYGLUE_SDK_VERSION=1.2.3 -DPOLYGLUE_SDK_BUILD_NUMBER=42
+```
+
+The product integration uses these values for its project VERSION, configure_file version metadata and native target version properties as appropriate. Do not overwrite the parent project's version or set unrelated global version properties when using add_subdirectory. Shared library SOVERSION follows the runtime's actual ABI major, not the SDK's build number. Do not apply versioned shared-library properties to static archives. Keep compiler, SDK deployment floor and library version separate.
+
+For Apple products, verify the framework Info.plist values after building each device/simulator slice and before assembling the XCFramework. Use the same product build identity across all constituent frameworks. For Windows/.NET numeric file version fields, check the range of each component before assigning it. For Android and JVM, verify the publication metadata and the packaged resource independently. For all formats, inspect final manifests and packaged version metadata and reject any mismatch with the resolved plan.
+
+#### 7.8.2 Acceptance
+
+- A single product configuration produces matching version and build metadata in the native outputs, ecosystem packages, archive metadata and artifact manifest.
+- Changing only the build number invalidates relevant generated metadata and builds without changing logical type IDs or ABI fingerprints.
+- Two builds with the same SDK version but different build numbers have separate output directories and can coexist.
+- Distinct product versions or concurrent product builds do not overwrite common module source files.
+- Invalid or unrepresentable version/build values fail before compilation. No silently modified version.
+- Build and deploy reject a manifest whose version, build number, files or selected product identity differ from the requested configuration.
 
 ## 8. Naming and file formatting
 
@@ -2949,6 +3029,7 @@ src/polyglue/
     ├── cmake.py
     ├── artifacts.py
     ├── verify.py
+    ├── deploy.py
     └── packagers/
         ├── android.py
         ├── apple.py
@@ -2993,20 +3074,16 @@ The same CLI and code path is used locally, by Makefile and in GitHub Actions. T
 
 ```text
 build/polyglue/
-└── <product>/
-    └── <platform>/
-        └── <sdk-variant>/
-            └── <architecture>/
-                └── <configuration>/
-                    └── <sanitizer>/
-                        ├── generated/
-                        ├── cmake/
-                        ├── stage/
-                        ├── logs/
-                        └── build-manifest.json
+└── <product>/<version>/build-<build-number>/
+    └── <platform>/<sdk-variant>/<architecture>/<configuration>/<sanitizer>/
+        ├── generated/
+        ├── cmake/
+        ├── stage/
+        ├── logs/
+        └── build-manifest.json
 dist/
 └── <product>/
-    └── <version>/
+    └── <version>/build-<build-number>/
         └── <format>/
             └── <platform-or-platform-set>/<architecture-or-slice-set>/<configuration>/<sanitizer>/
                 ├── <validated-artifact>
@@ -3014,7 +3091,7 @@ dist/
                 └── checksums.sha256
 ```
 
-Use stable names for actual platform and slice sets, not guessed SDK identifiers. Separate local artifact paths for different configurations, architectures and sanitizer modes, even when the product version is unchanged. Package archives and manifests must agree on that identity. Generated source outputs configured by the module may reside outside build/. The build plan references them or stages a snapshot without rewriting user files. Build cache keys include generator/runtime version, canonical IDL, effective config, all used templates, implementation source fingerprints, dependencies, compiler/SDK, architecture, flags and configuration. Do not reuse a previous artifact for a changed build plan. The tool must detect stale or missing outputs, unexpected files, architecture mismatches and interrupted builds. Clean only explicitly owned directories (never recursive deletion based on an unvalidated path). Temporary staging and atomic publication prevent partial packages appearing successful. Incremental output is equivalent to a clean build.
+Use stable names for actual platform and slice sets, not guessed SDK identifiers. Separate local artifact paths for different configurations, architectures and sanitizer modes, even when the product version is unchanged. Package archives and manifests must agree on that identity. Generated source outputs configured by the module may reside outside build/. The build plan references them or stages a snapshot without rewriting user files. Build cache keys include generator/runtime version, SDK version and build number, canonical IDL, effective config, all used templates, implementation source fingerprints, dependencies, compiler/SDK, architecture, flags and configuration. Compiler caches may reuse unchanged objects across build identities when their actual input hashes match. Do not reuse a previous artifact for a changed build plan. The tool must detect stale or missing outputs, unexpected files, architecture mismatches and interrupted builds. Clean only explicitly owned directories (never recursive deletion based on an unvalidated path). Temporary staging and atomic publication prevent partial packages appearing successful. Incremental output is equivalent to a clean build.
 
 ### 20.6 Binary and package outputs by target
 
@@ -3109,13 +3186,13 @@ Stage CMake install output: include/, lib/, bin/ where applicable, CMake package
 
 ### 20.7 Artifact provenance and release validation
 
-A successful package command emits an artifact manifest only after inspection. Record product/version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
+A successful package command emits an artifact manifest only after inspection. Record product ID, SDK version, SDK build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance. A package manifest must not claim that cloud deployment or external registry publication occurred. Deployment evidence is a separate manifest written only after verified upload. Artifact generation is allowed before full support is verified. Release approval requires independent package consumer tests and every required acceptance gate.
 
-Verify reproducibility where toolchains permit it. Deterministic generation is mandatory. Do not promise bit-for-bit equality of signed archives or compiler-specific outputs without evidence. Use checksums to identify final bytes and store release/debug variants separately. Never reuse stale binaries or overwrite an existing published release. Publishing to PyPI, Maven, SwiftPM release hosting, pub, NuGet or npm is explicitly separate from local packaging.
+Verify reproducibility where toolchains permit it. Deterministic generation is mandatory. Do not promise bit-for-bit equality of signed archives or compiler-specific outputs without evidence. Use checksums to identify final bytes and store release/debug variants separately. Never reuse stale binaries or overwrite an existing published release. Publishing to PyPI, Maven, SwiftPM release hosting, pub, NuGet or npm is explicitly separate from local packaging. S3-compatible SDK deployment is also an explicit separate command under section 20.10. Packaging never uploads.
 
 ### 20.8 Build and packaging documentation
 
-Add docs/build.md, docs/dependencies.md, docs/packaging.md, docs/templates.md and per-format guides for CMake, Android AAR/JAR, Apple XCFramework/SwiftPM, Python wheels, Dart/Flutter, NuGet and npm/WASM. Explain prerequisites, CLI commands, configuration, output directory, standalone consumer integration, debugging, supported architectures and offline dependency setup. Include complete copyable examples and verify them in CI. AGENTS.md requires keeping the toolchain/build layout consistent, using the CLI for CI, testing artifacts independently and not introducing unnecessary dependencies or duplicate build systems.
+Add docs/build.md, docs/dependencies.md, docs/packaging.md, docs/deployment.md, docs/templates.md and per-format guides for CMake, Android AAR/JAR, Apple XCFramework/SwiftPM, Python wheels, Dart/Flutter, NuGet and npm/WASM. Explain prerequisites, CLI commands, configuration, output directory, standalone consumer integration, debugging, supported architectures and offline dependency setup. Include complete copyable examples and verify them in CI. AGENTS.md requires keeping the toolchain/build layout consistent, using the CLI for CI, testing artifacts independently and not introducing unnecessary dependencies or duplicate build systems.
 
 ### 20.9 Owner engineering standards and AGENTS.md
 
@@ -3126,6 +3203,100 @@ Apply code-developer, code-review, git, editor-config, git-ignore, security-audi
 Mandatory conventions: English code, comments, docs and commit messages. Meaningful names, clear intermediate values, blank lines between responsibilities, early returns, one class/enum/component per file where syntax allows, mandatory dash-based multiword filenames and directories except documented language/tool requirements, no speculative abstractions or legacy compatibility. Single-line function calls, signatures and string literals with structural block exceptions. Python src layout, uv, Ruff, completely empty __init__.py, explicit public module imports and no TYPE_CHECKING. Formatter settings: Ruff line-length 320 and skip-magic-trailing-comma true, clang-format ColumnLimit 0 and narrow formatter-off regions around lambdas, Swift formatter and SwiftLint width 320, Kotlin ktlint max_line_length 320, Prettier printWidth 320. Use appropriate settings for additional languages. Keep generated code readable by default and allow explicit consumer naming/format overrides without changing the repository's own style. Check formatter idempotence and previously wrapped calls.
 
 AGENTS.md must cover architecture, code ownership, repository organization, Git delivery, privacy, security, dependency policy, generated artifacts, version and publication authorization, actual test commands and CI evidence. No task diary or claims of implemented features that are still planned. No unconditional force push, history rewrite, deletion, tag or release without specific authorization. Follow the Git skill's task-aware naming and reviewed change procedure. The single-root snapshot policy expressly authorized for the skills repository does not automatically authorize rewriting PolyGlue history. Keep main as the current development branch for explicitly requested repository edits. Do not create extra branches or pull requests without an actual need or instruction. Use real human author identity for local Git commits. Connector-created commits may use the integration identity and must be reported accurately.
+
+### 20.10 SDK deployment to S3-compatible object storage
+
+Support one S3-compatible deployment implementation for AWS S3, Cloudflare R2 and other services implementing the required S3 protocol operations. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes belong to the consumer's project. They can consume the local package and artifact manifest using their own script or CI without modifying PolyGlue.
+
+Use the latest stable verified boto3/botocore versions through a Python optional dependency extra named deploy. Keep the compiler, native runtime, generation and ordinary packaging independent of the deployment dependency. An installed tool without the extra produces a clear instruction to install it when deploy is explicitly requested. No AWS CLI or cloud credentials required for local generation/build/package.
+
+#### 20.10.1 Destination configuration
+
+Use named destinations at project level. Each destination has the same S3 protocol configuration. A product chooses the destination explicitly with the command, allowing the same validated local artifact to be deployed to another bucket without rebuilding.
+
+```yaml
+deploy:
+  destinations:
+    aws:
+      bucket: company-sdks
+      prefix: sdk
+      region: us-east-1
+
+    r2:
+      bucket: company-sdks
+      prefix: sdk
+      endpoint_url: https://ACCOUNT_ID.r2.cloudflarestorage.com
+      region: auto
+      addressing_style: path
+
+    compatible:
+      bucket: company-sdks
+      prefix: internal/sdk
+      endpoint_url: https://storage.example.com
+      region: us-east-1
+      addressing_style: path
+```
+
+The names and account values are illustrative. Do not add actual bucket/account/credential values to the PolyGlue repository. An omitted endpoint uses the official AWS SDK endpoint resolution. Custom endpoints are explicit HTTPS S3 API endpoints, not public CDN URLs. Allow an explicit local HTTP endpoint only in an isolated test fixture without real credentials. Keep TLS certificate verification enabled. Validate bucket, prefix, region, endpoint and addressing style. Reject embedded endpoint credentials and ambiguous path segments. Credentials come from the standard AWS credential provider chain, such as environment variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, an explicitly selected local profile or temporary AWS role credentials. R2 uses its S3 API access key pair with scoped permissions. Do not store keys in YAML, manifests, command arguments, logs or generated SDKs. Do not discover or provision buckets, change IAM, public access, ACLs, lifecycle or CDN settings.
+
+#### 20.10.2 CLI and versioned object keys
+
+```bash
+uv sync --locked --extra deploy
+uv run --locked --extra deploy polyglue package --product apple --format xcframework
+uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2 --dry-run
+uv run --locked --extra deploy polyglue deploy --product apple --format xcframework --destination r2
+```
+
+These are planned commands, not working commands yet. The deploy command uses exactly one selected artifact manifest. Product, format, platform or slice set, architecture or slice set, configuration and sanitizer must resolve unambiguously. Accept the exact manifest path as an explicit selection alternative for an already built artifact, with identity and checksum validation against the selected project. Missing or ambiguous packages are errors, not a reason to rebuild or select the newest directory. Dry-run prints destination and the exact object keys, sizes, version/build and checksums without opening a cloud connection or requiring credentials.
+
+Use the local distribution-relative path as the remote key beneath the configured prefix. Use forward slashes, not host filesystem separators. Example for an Apple product with SDK version 1.2.3 and build number 42:
+
+```text
+s3://company-sdks/sdk/
+└── apple/
+    └── 1.2.3/
+        └── build-42/
+            └── xcframework/
+                └── ios/
+                    └── <actual-slice-set>/
+                        └── release/
+                            └── none/
+                                ├── AppBridge.xcframework.zip
+                                ├── artifact-manifest.json
+                                ├── checksums.sha256
+                                └── deployment-manifest.json
+```
+
+A product with multiple frameworks may emit multiple archives within the same selected artifact set. Use actual validated platform and slice identity, not the placeholder above. Preserve archive filenames required by package ecosystems. Archive directory-based distributions during package, not deploy. Include those exact downloadable archives in the artifact manifest and checksums. Never archive a directory again at deploy time because the bytes and SwiftPM checksum could change. Debug-symbol archives may be included only if explicitly listed for distribution. Do not upload source trees, .env, unlisted build logs, caches, credentials or arbitrary files under dist. No mutable latest key, automatic promotion, public ACL, object deletion, bucket sync or overwrite command.
+
+For remote SwiftPM, use an explicitly supplied download base URL and the exact immutable object key of the XCFramework ZIP when generating the remote Package.swift. The S3 API endpoint is not automatically a public download origin. A private bucket does not become public merely because deployment succeeds. Consumers provide their own authorized delivery mechanism. Do not invent URLs, set public ACLs or generate expiring links for permanent SwiftPM manifests. Local SwiftPM packages remain usable without a cloud destination. Test that the remote checksum refers to the exact deployed ZIP bytes.
+
+#### 20.10.3 Upload, integrity and interruption
+
+- Validate the manifest schema, selected identity, listed relative paths, byte lengths and SHA-256 values of all files before any network write. Reject symlink escapes and undeclared files. Use the immutable packaged bytes for upload. Prevent concurrent mutation of the selected local package during upload.
+- Upload only the manifest allowlist and accompanying checksum/manifest files. Record the SDK version, build number and checksum in object metadata where appropriate. Set content types correctly. Do not treat an S3 ETag as SHA-256 or as a universal MD5.
+- Use conditional creation with If-None-Match: * on PutObject or CompleteMultipartUpload. Check required operations against the current provider API. A preliminary HEAD followed by unconditional PUT is not an atomic overwrite guard. Do not remove the condition if a compatible provider rejects it. Report an unsupported deployment endpoint explicitly.
+- Use single PUT for appropriate file sizes and multipart for files that require it. Reuse the official SDK's protocol functionality. If its high-level transfer helper cannot pass the required condition, use the necessary low-level SDK operations rather than inventing a client. Stream bounded chunks and abort only multipart sessions created by this invocation on a known failure. Never delete committed objects automatically.
+- Verify remote bytes through a supported full-object SHA-256 checksum or a streaming read and hash. A checksum advertised only in user metadata is not proof of transferred bytes. Use the storage API, not a potentially stale CDN cache, for verification. Set bounded network timeouts and SDK transport retries for safe transient failures. Never retry by dropping a conditional write or changing the destination.
+- Publish deployment-manifest.json last using the same conditional write. It records the artifact manifest hash, SDK version/build, selected artifact identity and the verified object keys and hashes. Its presence marks the artifact set as complete. Do not claim a multi-object atomic transaction. A partial upload is not a successful deployment and consumers must use the completion manifest rather than directory listing. A pre-existing valid identical completion manifest plus verified matching bytes is an idempotent success.
+- If interrupted, leave committed immutable objects intact. An explicit re-run with the exact same artifact can verify and reuse already committed identical bytes, then upload missing objects and finish the deployment manifest. If an existing object or completion manifest differs, fail and require a new explicitly selected build number or destination. No silent overwrite or automatic rollback/deletion. Concurrent identical uploads converge to one complete artifact set. Concurrent differing bytes cannot replace a committed object or completion manifest.
+- Report actual completed keys, errors and the final deployment manifest path. Return nonzero when upload or verification fails, even if some objects were committed. Do not mark unverified content complete.
+
+The initial protocol surface is deliberately small: object creation, read/head verification and multipart creation, part upload, conditional completion and abort when required. Document least-privilege permissions scoped to the chosen bucket/prefix, including read permission for verification and multipart cleanup permission when required. AWS and R2 both document conditional writes. Other S3-compatible implementations must prove the required behavior before being listed as verified.
+
+Official implementation references:
+
+- https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html
+- https://developers.cloudflare.com/r2/api/s3/conditional-operations/
+- https://developers.cloudflare.com/r2/api/s3/api/
+- https://docs.aws.amazon.com/boto3/latest/reference/services/s3.html
+
+#### 20.10.4 Deployment tests and documentation
+
+Keep ordinary CI offline and credential-free. Test version/build propagation through the existing build fixtures, deterministic key calculation, dry-run, manifest selection and file checksum verification, optional dependency handling, invalid configuration and secret redaction. Test actual SDK requests and response handling with the official SDK's supported test facilities. Cover conditional conflicts, identical re-run, partial failure, multipart abort, changed bytes, remote checksum mismatch and completion manifest ordering. Use one focused S3-compatible integration fixture if it exercises protocol behavior that the existing SDK tests do not prove. Do not start a cloud emulator in every language job. A mocked or local fixture does not prove actual AWS/R2 interoperability. Execute a separately authorized live smoke against each claimed service using isolated test prefixes and scoped credentials. If credentials or authorization are unavailable, report the live verification as blocked. No normal push, PR, scheduled CI or package command deploys to the cloud.
+
+Provide docs/deployment.md with AWS S3, R2 and generic S3-compatible configuration, optional extra installation, credential setup without exposing secrets, versioned bucket layout, dry-run, actual explicit command, partial-failure handling, integrity checks, remote SwiftPM URL/checksum integration and using the manifest in a consumer-owned custom deployment script. No new publishing framework for other services.
 
 ## 21. Implementation phases and reviews
 
@@ -3139,6 +3310,7 @@ Use the detailed checklist in section 22 as the implementation backlog. Check an
 | 3 — JVM and Apple | Java/Kotlin/JNI, Obj-C/Swift, cross-runtime adapters, AAR/JAR and XCFramework/SwiftPM packagers | JVM/Android and Apple conformance plus actual packaged consumer tests |
 | 4 — additional targets | Python, C#, Dart/Flutter, WASM/JS/TS and their packagers | All target-specific integration and installed artifact tests |
 | 5 — full conformance | Finish remaining advanced type, stream, registry and package integration cases across implemented backends | All applicable type/pair combinations pass |
+| 5a — SDK distribution | Implement and verify product version/build propagation and optional S3-compatible deployment against packaged artifacts | Version metadata, offline deployment tests and separately authorized service verification |
 | 6 — applications and docs | HTTP, camera, login per target, SVG, README, AGENTS.md, complete docs | Executable examples and accurate documentation |
 | 7 — stabilization | Full CI, sanitizer, fuzz, stress, performance and deep reviews | All release acceptance gates green on candidate SHA |
 
@@ -3240,6 +3412,10 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Build the pure Python generator wheel/sdist and target-specific native bindings wheels. Inspect archive metadata/resources and install outside the source tree.
 - [ ] Build and validate Dart/Flutter packages and plugins, .NET NuGet packages, JS/TS npm packages and WASM binaries/loader assets. Run real installed consumers.
 - [ ] Record package manifests, hashes, exact toolchains, dependencies and evidence. No stale artifacts or cross-architecture/sanitizer contamination.
+- [ ] Implement one product SDK version/build number source, validate selected ecosystem ranges, pass both values to CMake and all ecosystem tools and inspect final native/package metadata. Keep tool, module, ABI and SDK identities independent.
+- [ ] Isolate build and dist paths by SDK version and build number as well as platform, architecture, format, configuration and sanitizer. Prove separate builds coexist and changed metadata invalidates the relevant build inputs.
+- [ ] Implement optional boto3-based deploy for S3/R2/compatible endpoints using exact packaged manifests, explicit destinations, version/build keys and dry-run without credentials or network. No extra provider framework or implicit uploads.
+- [ ] Implement conditional immutable uploads, bounded multipart handling, SHA-256 verification, completion manifest, identical re-run and conflict/partial-failure handling. Test through SDK fixtures and separately authorized AWS/R2 live smokes. Never mark an unverified provider as supported.
 
 ### 22.9 Real applications and conformance
 
@@ -3258,11 +3434,11 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
 - [ ] Provide the clean original SVG logo, concise owner-style README with honest status and real badges, AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
-- [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, all language guides and example execution.
+- [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, SDK version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.
 - [ ] Clean temporary files, stale build outputs, abandoned scripts, obsolete generated files, unused dependencies and unrelated scaffolding within the authorized scope. Preserve user-owned files, source assets and required evidence. Review final diff and repository tree.
 - [ ] Verify every applicable checklist item has real test/documentation evidence and every required CI check passes on the candidate SHA. Report any blocker honestly instead of marking complete.
-- [ ] Keep development version 0.0.1 until the owner authorizes a change. Obtain owner approval for the license and separate approval for any tag, release or registry upload. Never publish automatically.
+- [ ] Keep development version 0.0.1 until the owner authorizes a change. Obtain owner approval for the license and separate approval for any tag, release, registry upload or actual cloud deployment from this repository. Never publish automatically.
 
 Completion means 100% of the defined, feasible acceptance cases are implemented, tested and documented. It does not mean an infinite input space has been exhaustively tested.
