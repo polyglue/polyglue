@@ -6,6 +6,8 @@ PolyGlue is a cross-platform interface compiler and code generator designed for 
 
 Define your data models, interfaces, callbacks, and asynchronous operations once, then generate idiomatic native bindings for multiple languages. Implementations can live in any compatible target runtime, rather than being restricted to C++.
 
+> **Development version:** 0.0.1 (unreleased).
+>
 > **Project status:** Early design and development. The features, targets, and APIs described below are planned, not yet implemented or released.
 
 ## Goals
@@ -91,7 +93,12 @@ Support will be declared only after the corresponding implementation and tests a
 
 ## Installation
 
-PolyGlue is not yet published. PyPI packages and local development instructions will be provided once the generator is ready.
+PolyGlue is not yet published. Development builds are for local and CI testing only. PyPI publication requires completed acceptance checks and explicit owner approval.
+
+## Documentation
+
+- [Project specification](PROJECT.md)
+- [Engineering and contribution rules](AGENTS.md)
 
 ## Design
 
