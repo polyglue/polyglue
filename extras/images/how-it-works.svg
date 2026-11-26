@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="238" viewBox="0 0 740 238" role="img" aria-labelledby="title description">
+    <title id="title">How PolyGlue connects two languages</title>
+    <desc id="description">One shared definition generates the bindings that let a Flutter app call a Kotlin implementation and receive typed results. Either language can call the other.</desc>
+    <g font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif">
+        <rect x="241" y="5" width="258" height="66" rx="13" fill="#F5F6FE" stroke="#C9D0FC"/>
+        <g fill="#3547C5">
+            <path d="M260 24h16l7 7v22h-23z" fill="none" stroke="#5165F5" stroke-width="1.7" stroke-linejoin="round"/>
+            <path d="M276 24v8h7M265 39h13M265 45h10" fill="none" stroke="#5165F5" stroke-width="1.7" stroke-linecap="round"/>
+            <text x="296" y="32" font-size="17" font-weight="700">One shared definition</text>
+            <text x="296" y="51" font-size="12" fill="#485477">Data types and methods</text>
+        </g>
+        <path d="M370 71v24" fill="none" stroke="#5165F5" stroke-width="2.5"/>
+        <path d="M364 89l6 7 6-7" fill="none" stroke="#5165F5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="10" y="106" width="197" height="98" rx="13" fill="#F2F6FF" stroke="#AAB9F8"/>
+        <g transform="translate(29 126)">
+            <path d="M0 5l19 0 8 8-13 13-14-14z" fill="#5165F5"/>
+            <path d="M0 5l14 14 13-6-8-8z" fill="#7C90FF"/>
+        </g>
+        <text x="67" y="139" font-size="18" font-weight="700" fill="#26336A">Flutter app</text>
+        <text x="67" y="158" font-size="13" fill="#485477">Dart</text>
+        <text x="29" y="185" font-size="13" fill="#3547C5" font-weight="600">Calls findById(10)</text>
+        <rect x="276" y="101" width="188" height="108" rx="13" fill="#F4F7FD" stroke="#C0CAE8"/>
+        <g transform="translate(347 111) scale(.41)" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+            <path stroke="#5165F5" d="M45 25 15 55 45 85 69 61"/>
+            <path stroke="#10AE9F" d="M67 87 97 57 67 27 43 51"/>
+        </g>
+        <text x="370" y="165" font-size="17" font-weight="700" fill="#26336A" text-anchor="middle">Generated bindings</text>
+        <text x="370" y="185" font-size="12" fill="#485477" text-anchor="middle">Connect both languages</text>
+        <rect x="533" y="106" width="197" height="98" rx="13" fill="#ECFAF7" stroke="#9BDCD2"/>
+        <g transform="translate(552 127)">
+            <path d="M0 0h25L12.5 12.5 25 25H0z" fill="#10AE9F"/>
+            <path d="M0 0h25L0 25z" fill="#0B8C81"/>
+        </g>
+        <text x="589" y="139" font-size="18" font-weight="700" fill="#175A55">Kotlin code</text>
+        <text x="589" y="158" font-size="13" fill="#386D68">Android</text>
+        <text x="552" y="185" font-size="13" font-weight="600" fill="#087E73">Returns a User</text>
+        <g fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M214 143h54m-6-5 6 5-6 5M472 143h53m-6-5 6 5-6 5" stroke="#5165F5"/>
+            <path d="M268 169h-54m6-5-6 5 6 5M525 169h-53m6-5-6 5 6 5" stroke="#10AE9F"/>
+        </g>
+        <rect x="199" y="217" width="342" height="19" rx="9.5" fill="#E7EDF9"/>
+        <text x="370" y="230" font-size="12" font-weight="600" fill="#37486E" text-anchor="middle">Calls and typed results travel in both directions.</text>
+    </g>
+</svg>
