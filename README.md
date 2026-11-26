@@ -24,9 +24,9 @@ The goal is to make native cross-language calls feel like ordinary method calls,
 
 ## How it works
 
-An IDL (Interface Definition Language) is a simple way to describe data and methods without choosing a programming language. A record describes data, an enum describes named values, and an interface describes the methods an implementation provides.
+An IDL (Interface Definition Language) describes data and methods without choosing a programming language. A record groups related values, an enum names the possible choices, and an interface describes the methods an object must provide. The generator turns this definition into code for each selected language.
 
-For example, a repository may find a user by ID and return no user if that ID does not exist:
+For example, suppose an app needs to find a user by ID. This is the proposed IDL for a small lookup API:
 
 ```text
 module domain;
@@ -43,7 +43,7 @@ interface UserLookup {
 }
 ```
 
-The generator creates the equivalent types and connecting code for the chosen languages. Your application provides the actual lookup implementation. The optional result means the call can succeed even when no user is found.
+Here, User describes the data, optional means a value may be absent, and async means the operation may finish later. The generator creates the equivalent types and connecting code for the chosen languages. Your application provides the actual lookup implementation.
 
 ```mermaid
 flowchart LR
@@ -54,16 +54,16 @@ flowchart LR
     R <-->|Typed calls and results| B
 ```
 
-For example, a Dart app calls `findById`, a Kotlin implementation looks up the ID, and the generated bridge returns a `User` to Dart. If there is no matching user, it returns an absent value. That is a successful lookup, not a failed call. The same idea works in reverse when the selected runtimes support that direction. PolyGlue generates the connection, not your application's business logic.
+In this example, a Dart app calls `findById`, a Kotlin implementation looks up the ID, and the generated bridge returns a `User` to Dart. If there is no matching user, it returns an absent value. That is a successful lookup, not a failed call. The roles can also be reversed: a Kotlin app can call an implementation written in Dart when the runtimes support that direction. PolyGlue generates the connection, not the application's business logic.
 
 ## Features
 
 - 🔗 **Native interoperability:** call and implement interfaces across languages.
 - 🧩 **Modular IDL:** share data models and contracts between independent modules.
-- 📚 **Rich types:** records, enums, collections, optional values, UTC timestamps and custom types.
+- 📚 **Rich types:** records, enums, collections, nullable values, timestamps in UTC and custom types.
 - ⚡ **Asynchronous operations:** use native async APIs, callbacks, streams and cancellation.
 - 💾 **Shared memory:** pass borrowed or owned buffers with clear lifetime rules.
-- 🔄 **Service registry:** register, find and replace implementations when needed.
+- 🔄 **Service registry:** optionally register, find and replace implementations instead of passing them directly.
 - 🎨 **Customization:** control naming, prefixes, annotations and templates per module.
 - 🛠️ **Build tools:** generate, compile, test and package with one Python command-line tool.
 - 📦 **SDK distribution:** produce versioned software development kits (SDKs), including Android AARs, Apple XCFrameworks and other language packages.
@@ -94,7 +94,8 @@ Flutter and WebAssembly are integration targets. Flutter uses Dart, and WebAssem
 | ⌚ watchOS | C, C++, Objective-C, Swift |
 | 🥽 visionOS | C, C++, Objective-C, Swift |
 | 💻 Mac Catalyst | C, C++, Objective-C, Swift |
-| 🌐 Web and Node.js | C/C++ through WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
+| 🌐 Web (browser) | C/C++ through WebAssembly, JavaScript, TypeScript, Dart, Flutter Web |
+| Node.js | C/C++ through WebAssembly, JavaScript, TypeScript |
 
 ## Workflow
 

@@ -6,7 +6,7 @@
 
 ## Contents
 
-The numbered chapters describe the technical contracts. Section 22 is the single detailed implementation checklist. AGENTS.md holds the permanent engineering rules.
+Start with chapters 1 through 5 if this is your first time using a cross-language generator. Chapters 6 through 11 explain generation and customization. Chapters 12 through 16 explain what happens at runtime. Chapters 17 through 22 explain the examples, tests and distribution. Section 22 is the single detailed implementation checklist. AGENTS.md holds the permanent engineering rules and matching reference tables without diagrams.
 
 - [1. Product and scope](#1-product-and-scope)
 - [2. Supported languages and platforms](#2-supported-languages-and-platforms)
@@ -14,10 +14,10 @@ The numbered chapters describe the technical contracts. Section 22 is the single
 - [4. IDL language](#4-idl-language)
 - [5. Type system](#5-type-system)
   - [Complete type mapping contract](#54-complete-type-mapping-contract)
-  - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
-  - [How each value crosses languages](#59-how-each-value-crosses-languages)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
+  - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
+  - [How each value crosses languages](#59-how-each-value-crosses-languages)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
 - [7. Module-first configuration](#7-module-first-configuration)
   - [SDK version and build number](#78-sdk-version-and-build-number)
@@ -28,6 +28,7 @@ The numbered chapters describe the technical contracts. Section 22 is the single
   - [Compiler pipeline](#111-pipeline)
   - [Template override system](#115-template-override-system-mandatory)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
+  - [Call and return across the ABI](#123-call-and-return-across-the-abi)
 - [13. Memory and buffers](#13-memory-and-buffers)
   - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
@@ -173,7 +174,8 @@ Flutter is an integration target, not a separate language. JavaScript and TypeSc
 | watchOS | C, C++, Objective-C, Swift | SDK build and simulator |
 | visionOS | C, C++, Objective-C, Swift | SDK build and visionOS simulator/device |
 | Mac Catalyst | C, C++, Objective-C, Swift | SDK build and execution |
-| Web (browser) and Node.js | C/C++ via WASM, JS, TS, Dart/Flutter Web where supported | Node and browser execution as applicable |
+| Web (browser) | C/C++ via WASM, JS, TS, Dart/Flutter Web | Browser execution |
+| Node.js | C/C++ via WASM, JS, TS | Node execution |
 
 The table is a required coverage plan, not verified support. SDK floors in examples are illustrative until the current toolchain matrix is validated. Each combination requires a capability entry and actual evidence. Native visionOS support is independent of Flutter. Native Flutter visionOS is conditional on upstream SDK/engine support. Flutter Web uses JS/WASM adapters rather than dart:ffi. Additional runtime combinations require explicit tests.
 
@@ -376,8 +378,8 @@ This is a core acceptance fixture. Each target must implement and consume these 
 | enum / flags | Stable integer representation, named values and bit masks |
 | variant | Tagged union with explicit alternatives |
 | interface | Object identity, methods and cross-language references |
-| callback | Typed callable with a defined invocation and lifetime policy |
-| async | Asynchronous operation independent of return type |
+| callback | Typed callable with a synchronous or asynchronous completion contract and explicit lifetime |
+| async | Asynchronous method or callback, independent of return type |
 | const | Typed constant |
 | static / factory | Explicitly bound factory or static method, not implicit global lookup |
 | public / private | Export visibility |
@@ -457,11 +459,11 @@ flowchart TD
 | Special memory | DataView, MutableDataView, DataRef |
 | Errors | `Result<T,E>` |
 | Time and identity | date, timestamp, duration, uuid |
-| Behavior | callback, async method, `Stream<T>` |
+| Behavior | callback, async method or callback, `Stream<T>` |
 | Lifetime / control | `WeakRef<T>`, CancellationToken |
 | External | Explicitly declared type with per-target adapter |
 
-`void` is a return-only type, including Result success with no payload. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
+`void` is a return-only type, including Result success with no payload. Reject optional<void>, list<void> and other value positions containing void, except Result<void,E> as a legal success case. Null is a literal, not an independent transport type. Service discovery, constants, factories, inheritance and generic declarations are language features rather than extra wire types. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
 
 ### 5.2 Return mapping examples
 
@@ -506,7 +508,7 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model only when explicitly configured. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
-All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async method` is a declaration modifier rather than a value type. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
+All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
 #### Type meaning and native boundary
 
@@ -538,7 +540,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `Result<T,E>` | Business success or business error | Tagged result + destroy | Tag + active payload |
 | `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
 | `callback` | Callable passed to another implementation | Function table + context | Typed callback handle |
-| `async method` | Operation that completes later | Completion + operation handle | Operation handle + completion |
+| `async method / callback` | Operation with asynchronous completion | Completion + operation handle | Operation handle + completion |
 | `Stream<T>` | Sequence of asynchronous events | Subscription handle | Subscription handle |
 | `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
 | `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
@@ -581,7 +583,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
-| `async method` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
+| `async method / callback` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
 | `Stream<T>` | Async stream | Publisher adapter | Flow | Subscription + block | AsyncSequence |
 | `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
@@ -624,7 +626,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
 | `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
-| `async method` | Awaitable / async def | Future | Future | Task | Promise | Promise |
+| `async method / callback` | Awaitable / async def | Future | Future | Task | Promise | Promise |
 | `Stream<T>` | AsyncIterator | Stream | Stream | `IAsyncEnumerable<T>` | AsyncIterable | `AsyncIterable<T>` |
 | `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
@@ -637,9 +639,9 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Linear-memory owner | Linear-memory owner |
 | `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
 
-Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through Number. Numeric arrays use exact contiguous representations only where available. Float32 rounding occurs at the boundary. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
+Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through JavaScript Number. Use BigInt or an exact checked bit representation at the adapter boundary. A JS or WASM signed bit pattern is not the mathematical unsigned value until it has been decoded. Numeric arrays use exact contiguous representations only where available. Float32 rounding occurs at the boundary. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
 
-Collection key types are limited to bool, integer, string, enum and UUID, plus external types proven to preserve one of those key representations. Reject duplicate canonical keys. There is no portable set/map iteration order. Key wrappers are needed when host equality differs from canonical equality, such as Swift canonical-equivalent Unicode strings. JS UUID keys use canonical strings. Preserve float signed zero, infinity and NaN classification without promising NaN payload bits. UUID bytes use network order. No borrowed memory may escape a direct synchronous parameter. DataRef is read-only by default and retains its true owner. See sections 5.6, 5.8, 13 and 14 of PROJECT.md for detailed rules.
+Collection key types are limited to bool, integer, string, enum and UUID, plus external types proven to preserve one of those key representations. Reject duplicate canonical keys. There is no portable set/map iteration order. Key wrappers are needed when host equality differs from canonical equality, such as Swift canonical-equivalent Unicode strings. Objective-C dictionary keys must also support NSCopying. Generated key wrappers must be immutable, implement canonical equality and hashing, and copy without changing their value. Java/Kotlin and Objective-C shared models must preserve the same rules. JS UUID keys use canonical strings. Preserve float signed zero, infinity and NaN classification without promising NaN payload bits. UUID bytes use network order. No borrowed memory may escape a direct synchronous parameter. DataRef is read-only by default and retains its true owner. See sections 5.6, 5.8, 13 and 14 of PROJECT.md for detailed rules.
 
 ### 5.5 Per-type acceptance
 
@@ -656,7 +658,7 @@ Date and time interoperability is a built-in feature, not a user-required extens
 | duration | int64 nanoseconds | Signed elapsed time |
 | uuid | 16 bytes in canonical network order | UUID value |
 
-The portable date range is years 0001 through 9999 inclusive, enforced at conversion. Timestamp and duration support the full canonical integer range via exact value wrappers where a host's native type cannot represent it. Native conversions must reject overflow or precision loss by default, not silently truncate, normalize or change timezones. Explicit rounding or truncation is a separate documented application choice. Do not use floating-point seconds as the canonical ABI representation.
+The portable date range is years 0001 through 9999 inclusive, enforced at conversion. Timestamp and duration support the full canonical integer range via exact value wrappers where a host's native type cannot represent it. Native conversions must reject overflow or precision loss by default. UTC normalization preserves the same instant and is required. Never silently truncate or reinterpret local wall-clock time. Explicit rounding or truncation is a separate documented application choice. Do not use floating-point seconds as the canonical ABI representation.
 
 Example IDL:
 
@@ -678,11 +680,11 @@ record User {
 | Target | Calendar date | UTC instant | Duration |
 | --- | --- | --- | --- |
 | C | Checked epoch-day value | int64 microseconds | int64 nanoseconds |
-| C++ | std::chrono::year_month_day | `sys_time<microseconds>` or exact wrapper | chrono::nanoseconds |
+| C++ | std::chrono::year_month_day | `sys_time<microseconds>` | std::chrono::nanoseconds |
 | Java | java.time.LocalDate | java.time.Instant | java.time.Duration |
-| Kotlin/JVM | java.time.LocalDate | java.time.Instant | java.time.Duration or explicit Kotlin Duration adapter |
+| Kotlin/JVM | java.time.LocalDate | java.time.Instant | java.time.Duration |
 | Objective-C | Generated calendar-date value | Exact value plus NSDate conversion | Exact nanosecond value |
-| Swift | Generated calendar-date value or validated DateComponents conversion | Exact value plus Foundation.Date conversion | Swift.Duration conversion |
+| Swift | Generated calendar-date value with checked DateComponents conversion | Exact value plus Foundation.Date conversion | Swift.Duration or exact value wrapper |
 | Python | datetime.date | Exact value plus timezone-aware datetime conversion | Exact value plus timedelta conversion |
 | Dart / Flutter | Generated calendar-date value | Exact value plus UTC DateTime conversion | Exact value plus Duration conversion |
 | C# | DateOnly | Exact value plus DateTimeOffset conversion | Exact value plus TimeSpan conversion |
@@ -690,6 +692,8 @@ record User {
 | WASM | Canonical integer representation | Canonical i64 | Canonical i64 |
 
 The table specifies required supported public conversions. Use idiomatic host-native objects directly when the conversion preserves the entire advertised contract. Otherwise expose a generated exact value wrapper with convenient native conversion methods. Host values outside the canonical range or with finer precision than the IDL type must fail checked conversion. Do not restrict a built-in's canonical range per target to make a native mapping appear complete. Do not silently reduce timestamps to milliseconds for JS Date or round nanoseconds to microseconds/ticks for Python, Dart or .NET. Every date-time instant crosses the bridge as UTC, encoded as signed epoch microseconds. A timezone-aware input is normalized to the same UTC instant before conversion. All native date-time values produced by the bridge use UTC when they carry a timezone or offset. Reject naive or ambiguous local date-times unless the application explicitly resolves them to an instant before crossing. Do not read the host's default timezone during conversion. A calendar date is transmitted as epoch days without time or timezone, so a birthday never moves to another day. Durations have no timezone. These rules apply to every nested record, optional, collection, callback, stream, async result and external adapter using timestamp. Timezone identifiers and local/zoned date-times with DST ambiguity are not synonyms for timestamp. If needed, model them explicitly as records or external types. No extra timezone library in core.
+
+Use checked integer arithmetic for epoch conversion, including negative instants. For hosts exposing whole seconds and nonnegative fractional nanoseconds, split a negative timestamp with floor division and a nonnegative remainder. Do not divide through floating-point seconds. For example, -1 microsecond represents 1969-12-31T23:59:59.999999Z, not a positive fractional time at epoch zero. Java and Kotlin use java.time on Android only where the configured SDK floor supports the required APIs, or with explicitly declared and tested core library desugaring. An unsupported floor must fail validation rather than silently change the temporal contract. See [Android Java API desugaring](https://developer.android.com/studio/write/java8-support) and the [Instant API](https://docs.oracle.com/en/java/javase/24/docs/api/java.base/java/time/Instant.html).
 
 Provide checked native conversion methods in the built-in implementation. Do not create a separate profile system for standard dates. If a project wants a narrower domain-specific host type as its public API, use the existing external type mechanism with explicit checked conversion. Keep the built-in representation exact.
 
@@ -885,9 +889,9 @@ Publish the descriptor schema with the generator package, document exact adapter
 
 ### 5.8 Optional values, nulls and defaults
 
-All values are required and non-null unless declared as `optional<T>`. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
+All values are required and non-null unless declared as `optional<T>`. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. An optional parameter accepts an explicitly absent value, not an omitted argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
 
-At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of `optional<optional<T>>` are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. Omission is a construction-time rule, not an extra wire state.
+At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of `optional<optional<T>>` are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. A constructor may use a language-specific omission sentinel, but the sentinel is never a transported value. The decoder receives fully constructed fields and never reapplies defaults to explicit absence. Omission is a construction-time rule, not an extra wire state.
 
 | Input or state | Meaning |
 | --- | --- |
@@ -960,37 +964,92 @@ flowchart TD
     F -->|Invalid field| H
 ```
 
-#### Enums, flags and variants
+#### Enums
 
-An enum carries a declared number, flags carry a mask, and a variant carries a tag plus only its active value.
-
-```mermaid
-flowchart TD
-    A["Native enum, flags or variant"] --> B["Read numeric value, mask or active tag"]
-    B --> C{"Declared value or valid bits and tag?"}
-    C -->|No| E["Conversion error"]
-    C -->|Yes| D["Canonical number or tag and payload"]
-    D --> F["Construct target value"]
-    F --> G["Provider returns a declared alternative"]
-    G --> H["Validate and convert back to caller"]
-    G -->|Invalid| E
-```
-
-#### Collections
-
-Collections use the same conversion for their elements. Arrays do not automatically mean shared memory.
+An enum represents exactly one declared value. For example, UserStatus.Active has the declared integer 1. Never transfer the ordinal position or a display name.
 
 ```mermaid
 flowchart TD
-    A["List, set, map or array"] --> B["Validate length and legal key types"]
-    B --> C["Convert elements or key/value pairs"]
-    C --> D{"All values valid and keys unique?"}
-    D -->|No| E["Release partial values and fail"]
-    D -->|Yes| F["Construct target collection"]
-    F --> G["Provider returns collection"]
-    G --> H["Validate and convert in reverse"]
-    H --> I["Caller receives collection"]
+    A["Consumer sends UserStatus.Active"] --> B["Encode declared signed integer 1"]
+    B --> C{"Declared value?"}
+    C -->|No| X["Conversion error"]
+    C -->|Yes| D["Provider receives Active"]
+    D --> E["Provider returns Blocked"]
+    E --> F["Encode declared integer 3"]
+    F --> G{"Declared return value?"}
+    G -->|No| X
+    G -->|Yes| H["Consumer receives Blocked"]
 ```
+
+#### Flags
+
+Flags describe independent bits that may be combined. For example, Read is 1, Write is 2, and Read plus Write is 3. Zero means no flags.
+
+```mermaid
+flowchart TD
+    A["Consumer combines Read and Write"] --> B["Encode unsigned mask 3"]
+    B --> C{"Only declared bits?"}
+    C -->|No| X["Conversion error"]
+    C -->|Yes| D["Provider receives both flags"]
+    D --> E["Provider returns Read only"]
+    E --> F["Encode and validate mask 1"]
+    F --> G["Consumer receives Read"]
+    F -->|Unknown bit| X
+```
+
+#### Variants
+
+A variant holds one of several alternatives, not all their values at once. For example, a response could contain either a text message or an integer code.
+
+```mermaid
+flowchart TD
+    A["Consumer creates text alternative"] --> B["Encode tag and active string"]
+    B --> C{"Known tag and valid payload?"}
+    C -->|No| X["Conversion error and cleanup"]
+    C -->|Yes| D["Provider receives text alternative"]
+    D --> E["Provider returns integer alternative"]
+    E --> F["Encode integer tag and value"]
+    F --> G{"Valid return tag and payload?"}
+    G -->|No| X
+    G -->|Yes| H["Consumer receives integer alternative"]
+```
+
+Only the active payload is read, retained or released. Never inspect inactive storage.
+
+#### Lists and arrays
+
+A list preserves element order. An array may use a compact contiguous representation for fixed-width primitive values. Both represent independent values unless a separate shared-memory type is used.
+
+```mermaid
+flowchart TD
+    A["Consumer supplies ordered sequence"] --> B["Validate length and element type"]
+    B --> C["Encode elements or exact typed array"]
+    C --> D["Provider receives native sequence"]
+    D --> E["Provider creates return sequence"]
+    E --> F["Validate and encode elements in order"]
+    F --> G["Consumer receives return sequence"]
+    C -->|Invalid| X["Release partial values and fail"]
+    F -->|Invalid| X
+```
+
+#### Sets and maps
+
+A set holds unique values. A map holds a value for each unique key. Both use the canonical equality rules, even when the host's default equality differs.
+
+```mermaid
+flowchart TD
+    A["Consumer supplies set or map"] --> B["Validate length and canonical key type"]
+    B --> C["Convert keys and values where applicable"]
+    C --> D{"Canonical keys or elements unique?"}
+    D -->|No| X["Reject duplicates and release partial values"]
+    D -->|Yes| E["Provider receives native collection"]
+    E --> F["Provider returns set or map"]
+    F --> G["Validate keys and values in reverse"]
+    G --> H["Consumer receives return collection"]
+    G -->|Invalid| X
+```
+
+A missing key and a key with an optional absent value are different. A map or set has no portable iteration-order guarantee.
 
 #### Optional values and defaults
 
@@ -2405,6 +2464,38 @@ flowchart TD
 
 The return path must release temporary values on both success and failure. A foreign method or deleter is never invoked under the runtime lock.
 
+#### The same interface in both directions
+
+For an async UserLookup contract, the Kotlin implementation can answer a Dart call. A separate Dart implementation can answer a Kotlin call. The return is not the reverse invocation. Each role can initiate a new request independently.
+
+```mermaid
+sequenceDiagram
+    participant D as Dart consumer or provider
+    participant F as Dart adapter
+    participant R as Shared C ABI
+    participant J as JNI adapter
+    participant K as Kotlin consumer or provider
+    D->>F: findById(10)
+    F->>R: Start typed async call
+    R->>J: Invoke Kotlin provider
+    J->>K: Execute lookup
+    K-->>J: User or absence
+    J-->>R: Complete with owning result
+    R-->>F: Deliver completion
+    F-->>D: Resolve Future
+    Note over D,K: Independent call in the opposite direction
+    K->>J: findById(20)
+    J->>R: Start typed async call
+    R->>F: Dispatch to Dart provider
+    F->>D: Execute on owning isolate
+    D-->>F: User or absence
+    F-->>R: Complete with owning result
+    R-->>J: Deliver completion
+    J-->>K: Resume suspend call
+```
+
+Both directions use the same declared types. A runtime error or cancellation completes through its own status instead of returning an absent User.
+
 ## 13. Memory and buffers
 
 ### 13.1 Contracts
@@ -2534,7 +2625,7 @@ response = await client.request(request)
 ### 14.2 Callback contract
 
 ```text
-callback Progress(received: int64, total: int64): void;
+async callback Progress(received: int64, total: int64): void;
 
 interface Downloader {
     async download(
@@ -2545,7 +2636,9 @@ interface Downloader {
 }
 ```
 
-Callbacks are typed, can cross languages, and have documented scoped/retained/one-shot lifetimes. Specify executor, ordering, error handling and whether completion is synchronous or asynchronous. Synchronous callbacks returning values cannot be promised from arbitrary foreign threads into Dart isolates or other event-loop-bound runtimes.
+Callbacks are typed functions supplied by the application. They can be called from another language. A plain callback is synchronous, even when its return type is void. It completes before the invocation returns and may use borrowed parameters only during that call. An async callback uses an explicit async modifier, as in Progress above, and completes through the same typed completion and error contract as an async method. It may return void or an owning value. Do not turn a synchronous void callback into queued asynchronous work merely because it has no payload.
+
+Specify scoped, retained or one-shot lifetime and the allowed executor. A synchronous callback is allowed only when the target can execute it on the calling context without blocking an event loop or violating thread affinity. An async callback may dispatch to another executor, retaining all needed arguments and references until actual execution ends. Borrowed views cannot be queued. In the download example, the provider may await progress completion to preserve order and avoid unbounded queued notifications. A callback failure is a typed runtime failure and is not ignored. Dart NativeCallable.listener is an asynchronous notification with a void native return. Use it only to deliver an explicit async completion or owning dispatch envelope, not as a synchronous callback implementation. See [Dart NativeCallable.listener](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.listener.html).
 
 ### 14.3 Streams
 
@@ -2557,11 +2650,11 @@ interface Camera {
 }
 ```
 
-Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. Use one bounded subscription contract, not a new streaming framework. Default to demand/backpressure for lossless streams. Camera previews may explicitly select latest-frame behavior with a bounded queue and immediate release of dropped frames. No unbounded camera frame queue.
+Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. Use one bounded subscription contract, not a new streaming framework. Default to demand/backpressure for lossless streams. Camera previews may explicitly select latest-frame behavior with a bounded queue and immediate release of dropped frames. No unbounded camera frame queue. A stream may terminate before producing any value. Lossless demand controls production and delivery, including when the queue is empty. Normal end-of-stream drains accepted values in order before the terminal notification. Error or cancellation stops delivery of pending values and releases them under the documented terminal policy. A consumer cancellation releases the subscription only after the actual producer and any in-flight delivery are safe to detach. A queue-full condition must pause a cooperative lossless producer or fail an invalid producer, not silently discard events. An explicit latest-frame preview policy may replace a queued frame and release the displaced owner.
 
 ### 14.4 Operation state and threading
 
-Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
+Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Once the provider accepts the operation, its terminal outcome is delivered through the completion contract even if it happens inline before the start function returns. Initialize caller completion state and retain the start-call resources before invoking the provider. A completion that runs inline must not free state still needed by the start call. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
 Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation, drains actual execution and queued releases, then invalidates handles and detaches the runtime. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
 
@@ -2588,19 +2681,25 @@ flowchart TD
 
 #### Callbacks in the opposite direction
 
-The provider may call a callback supplied by the original consumer, using the allowed scheduler.
+A synchronous callback returns before the provider continues. An async callback completes later and follows the same rules as an async method.
 
 ```mermaid
 flowchart TD
-    A["Consumer passes callback reference"] --> B["Provider retains typed callback"]
-    B --> C["Provider invokes progress callback"]
-    C --> D["Route to callback owner runtime"]
-    D --> E["Original consumer callback runs"]
-    E --> F["Return value or completion when supported"]
-    F --> G["Provider continues work"]
-    G --> H["Release callback when no longer needed"]
-    D -->|Unsafe synchronous call| X["Reject crossing"]
+    A["Consumer passes typed callback"] --> B["Provider retains callback as declared"]
+    B --> C["Provider invokes callback"]
+    C --> D{"Synchronous or async contract?"}
+    D -->|Synchronous| E{"Calling context safe?"}
+    E -->|No| X["Report unsupported crossing"]
+    E -->|Yes| F["Run callback in current allowed context"]
+    D -->|Async| G["Retain arguments and dispatch to owner"]
+    G --> H["Callback owner runs and completes"]
+    F --> I["Return value or status"]
+    H --> I
+    I --> J["Provider receives completion or error"]
+    J --> K["Release callback when no longer needed"]
 ```
+
+In the Downloader example, the progress callback may be implemented by Dart while the download runs in Kotlin. The typed completion lets the provider continue without blocking the Dart isolate.
 
 #### Cancellation and actual execution lifetime
 
@@ -2618,21 +2717,31 @@ flowchart TD
 
 #### Streams and backpressure
 
-A subscription can carry many values, unlike a one-shot async result.
+A stream carries zero or more values followed by at most one terminal outcome. Demand is the consumer's request for more items.
 
 ```mermaid
 flowchart TD
-    A["Consumer subscribes"] --> B["Retain provider and subscription"]
-    B --> C["Consumer requests demand or selected preview policy"]
-    C --> D["Provider produces event"]
-    D --> E{"Queue has capacity?"}
-    E -->|Yes| F["Convert and deliver in order"]
-    E -->|No| G["Wait for demand or explicit latest-frame policy"]
-    G --> C
-    F --> C
-    F -->|End, error or cancel| H["Stop delivery, release queued values"]
-    H --> I["Drain and release subscription"]
+    A["Consumer subscribes"] --> B["Retain subscription and provider"]
+    B --> C{"Active subscription?"}
+    C -->|No| Z["Drain producer and release subscription"]
+    C -->|Yes| D{"Demand or preview policy allows work?"}
+    D -->|No| E["Wait for demand or terminal event"]
+    D -->|Yes| F["Provider produces next event"]
+    E -->|New demand| C
+    E -->|Terminal| T["End, failure or cancellation"]
+    F --> G{"Event kind"}
+    G -->|Value| H{"Bounded capacity available?"}
+    H -->|Yes| I["Deliver or queue in order"]
+    H -->|No| J["Pause lossless producer or replace preview frame explicitly"]
+    I --> C
+    J --> C
+    G -->|Terminal| T
+    T --> K["Drain accepted values on normal end, otherwise release pending values"]
+    K --> L["Notify once if consumer still subscribed"]
+    L --> Z
 ```
+
+A normal empty stream can end while waiting for demand. Cancellation is also valid before the first item. Release each queued DataRef when it is delivered, explicitly dropped or abandoned. The producer cannot continue using a freed subscription.
 
 ## 15. Interfaces and service discovery
 
@@ -3010,7 +3119,7 @@ users = await repo.find_all()
 
 **Types and memory:** native int for signed 64-bit, BigInt for uint64 and exact Web 64-bit. Typed data arrays when exact. Immutable models, sealed variants and Result. Native memory uses checked handles and explicit dispose plus NativeFinalizer where safe. Never keep raw borrowed TypedData views beyond synchronous lifetime. DataRef retains native storage through async. NativeFinalizer cannot serve as the only deterministic lifecycle mechanism.
 
-**Provider and consumer:** Future/Completer, typed functions, Stream and cancellation. NativeCallable.listener or supported message dispatch handles callbacks from arbitrary threads asynchronously. Isolate-local calls require the correct thread/isolate. No synchronous foreign-thread Dart return. Root registered providers in their owning isolate. On detach/hot restart invalidate registrations, drain/cancel operations and ensure no callback into a closed NativeCallable. Completion arguments remain valid until isolate consumes them.
+**Provider and consumer:** Future/Completer, typed functions, Stream and cancellation. NativeCallable.listener or supported message dispatch delivers async operation and async callback envelopes from arbitrary threads. A synchronous callback, including void, needs a supported same-context invocation. A queued listener cannot satisfy that contract. Isolate-local calls require the correct thread/isolate. No synchronous foreign-thread Dart return. Root registered providers in their owning isolate. On detach/hot restart invalidate registrations, drain/cancel operations and ensure no callback into a closed NativeCallable. Completion arguments remain valid until isolate consumes them.
 
 ```dart
 final repo = registry.get(UserRepositoryType);
@@ -3553,7 +3662,7 @@ List every intended language and platform accurately, distinguish languages from
 
 The original SVG logo lives at extras/images/logo.svg. Use it directly in the README and keep it as a small, self-contained vector asset with a viewBox and accessible label. It should remain recognizable at small sizes on light and dark backgrounds. No external images, fonts, scripts or unnecessary variants. The mark combines two code brackets with a connecting element to represent native language interoperability.
 
-Use GitHub-renderable Mermaid flowcharts throughout PROJECT.md for every major feature, including both directions of calls and values, errors, cancellation, ownership and service discovery. Group related features rather than drawing redundant diagrams for each scalar. Place diagrams next to the contract they explain. Include compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
+Use GitHub-renderable Mermaid diagrams throughout PROJECT.md for every major feature, including both directions of calls and values, errors, cancellation, ownership and service discovery. Use flowcharts for control and value flow and sequence diagrams when they make the call and return order clearer. Keep AGENTS.md diagram-free. Its purpose is engineering rules and the complete synchronized type and platform reference. Group related features rather than drawing redundant diagrams for each scalar. Place diagrams next to the contract they explain. Include compiler and SDK build/distribution pipelines. Keep diagrams readable, consistent with the actual contracts and adjacent explanations, and update them when the architecture changes. Do not add an image-generation or diagram-build dependency merely to display them. Validate the actual Markdown renderer where available and use plain prose for the key information so the document remains understandable without diagram rendering.
 
 ### 20.3 AGENTS.md and documentation
 
@@ -4088,8 +4197,8 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
-- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases before runtime detach.
-- [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Never block event loops or dispatch unsafe synchronous cross-thread calls.
+- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases before runtime detach.
+- [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, explicit replacement/scoped restoration, tokens and missing-service errors. No implicit alternate-provider retry.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
 
