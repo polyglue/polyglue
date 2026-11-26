@@ -327,6 +327,96 @@ interface Auth {
 
 C++ can use a project Result implementation compatible with C++20 (std::expected only when available); Swift uses Result when the error meets Swift requirements, other targets use a native or generated tagged result. Business errors do not become unexpected exceptions.
 
+### 5.4 Complete type mapping contract
+
+The tables below define the intended public surface, not binary layout. Generated helper types are acceptable where the host language cannot represent the contract exactly. A representation is not supported until conversion, round-trip, ownership and negative tests pass in both directions. For an unsupported representation or combination, issue a diagnostic before writing files.
+
+#### Numeric and text types
+
+| IDL | C | C++ | Java | Kotlin | Objective-C | Swift |
+| --- | --- | --- | --- | --- | --- | --- |
+| bool | uint8_t (0/1) | bool | boolean | Boolean | BOOL | Bool |
+| int8 | int8_t | int8_t | byte | Byte | int8_t | Int8 |
+| int16 | int16_t | int16_t | short | Short | int16_t | Int16 |
+| int32 | int32_t | int32_t | int | Int | int32_t | Int32 |
+| int64 | int64_t | int64_t | long | Long | int64_t | Int64 |
+| uint8 | uint8_t | uint8_t | short, checked | UByte | uint8_t | UInt8 |
+| uint16 | uint16_t | uint16_t | int, checked | UShort | uint16_t | UInt16 |
+| uint32 | uint32_t | uint32_t | long, checked | UInt | uint32_t | UInt32 |
+| uint64 | uint64_t | uint64_t | BigInteger, checked | ULong | uint64_t | UInt64 |
+| float32 | float | float | float | Float | float | Float |
+| float64 | double | double | double | Double | double | Double |
+| string | owned/scoped UTF-8 descriptor | std::string | String | String | NSString | String |
+| bytes | owned byte descriptor | vector<uint8_t> | byte[] | ByteArray | NSData (copy) | Data (copy) |
+| void | void/status | void | void / Void | Unit | void | Void |
+
+| IDL | Python | Dart native | Dart Web | C# | JavaScript | TypeScript |
+| --- | --- | --- | --- | --- | --- | --- |
+| bool | bool | bool | bool | bool | boolean | boolean |
+| int8/16/32 | int, checked | int, checked | int, checked | sbyte/short/int | number, checked | number |
+| int64 | int, checked | int | BigInt | long | bigint | bigint |
+| uint8/16/32 | int, checked | int, checked | int, checked | byte/ushort/uint | number, checked | number |
+| uint64 | int, checked | BigInt | BigInt | ulong | bigint | bigint |
+| float32 | float, f32 conversion | double, f32 conversion | double, f32 conversion | float | number, f32 conversion | number |
+| float64 | float | double | double | double | number | number |
+| string | str | String | String | string | string | string |
+| bytes | bytes | Uint8List (copy) | Uint8List (copy) | byte[] | Uint8Array (copy) | Uint8Array |
+| void | None | void | void | void | undefined | void |
+
+Rules: all integral conversions validate range and type (Python bool is not accepted as an integer by accident); JS number inputs must be finite integers for integer types. Java unsigned widening preserves mathematical values, while Kotlin/JNI unsigned inline representations use deliberate bit conversions. Shared Java/Kotlin models require a checked conversion layer when their public unsigned representations differ. Dart native int64 and uint64 are not interchangeable: uint64 uses BigInt. Float32 rounding occurs at the boundary, and tests define NaN, infinity and negative zero behavior. Preserve embedded NUL with explicit lengths; reject invalid UTF-8 and unpaired surrogates rather than silently replacing them. C ABI bool is a fixed-width byte, not a compiler-dependent C++ bool layout.
+
+#### Composite, temporal and special types
+
+| IDL | C | C++ | Java / Kotlin | Objective-C / Swift |
+| --- | --- | --- | --- | --- |
+| record | Generated owned value/handle | struct | Generated immutable model | NSObject model / struct or imported model |
+| enum / flags | Fixed-width value + constants | enum class / flags helper | Generated enum / flags wrapper preserving numeric contract | NS_ENUM / NS_OPTIONS; Swift enum / OptionSet |
+| variant | Tagged union + destroy | std::variant | Generated sealed/tagged type | Tagged object / enum with associated values |
+| list<T> | Typed descriptor or handle | vector<T> | List<T> | NSArray / [T] |
+| set<T> | Typed descriptor or handle | set/hash set according to equality policy | Set<T> | NSSet / Set<T> |
+| map<K,V> | Typed descriptor or handle | map/hash map | Map<K,V> | NSDictionary / Dictionary<K,V> |
+| array<T> | Typed contiguous descriptor for primitives | vector<T> or dedicated array wrapper | Primitive array where exact | Typed contiguous buffer or generated array wrapper |
+| optional<T> | Explicit presence tag + payload | optional<T> | Boxed nullable reference or explicit Optional wrapper | Nullable boxed value or explicit optional / Optional<T> |
+| Result<T,E> | Tagged result + cleanup | PolyGlue Result | Generated Result class/sealed type | Tagged object / Swift Result or generated enum |
+| interface | Typed opaque reference | shared owning interface reference | Interface and proxy | Protocol and proxy |
+| callback | Function table + context | Callable wrapper | Functional interface / lambda | Block / closure |
+| Stream<T> | Subscription handle | Async stream | Flow-compatible publisher / Kotlin Flow | Subscription block / AsyncSequence |
+| WeakRef<T> | Weak handle | Weak interface reference | Generated weak handle | Generated weak handle |
+| CancellationToken | Shared token handle | Token wrapper | Token wrapper | Token wrapper |
+| timestamp | int64_t UTC microseconds | chrono-based checked wrapper | Instant or exact wrapper | Exact wrapper / Date conversion |
+| duration | int64_t nanoseconds | chrono duration | Duration or exact wrapper | Exact wrapper / Duration conversion |
+| uuid | 16-byte value | UUID value wrapper | UUID | NSUUID / UUID |
+| external | Declared ABI + adapter | Declared type | Declared type | Declared type |
+| DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
+
+| IDL | Python | Dart / Flutter | C# | JavaScript / TypeScript |
+| --- | --- | --- | --- | --- |
+| record | frozen dataclass | immutable class | record or generated immutable class | immutable model / readonly interface plus runtime implementation |
+| enum / flags | Enum / IntFlag or checked wrapper | enum / flags wrapper | enum / flags wrapper | frozen constants + checked numeric type |
+| variant | Tagged dataclass union | sealed class | discriminated record hierarchy | Tagged object / discriminated union |
+| list<T> | list[T] | List<T> | IReadOnlyList<T> | Array / ReadonlyArray<T> |
+| set<T> | set[T] | Set<T> | IReadOnlySet<T> | Set<T> |
+| map<K,V> | dict[K,V] | Map<K,V> | IReadOnlyDictionary<K,V> | Map<K,V> |
+| array<T> | typed buffer for primitives | typed_data where exact | T[] / Memory<T> | TypedArray where exact |
+| optional<T> | T or None | T? | Nullable<T> or nullable reference | T or null |
+| Result<T,E> | Tagged result | sealed Result | Generated Result | Tagged object / discriminated union |
+| interface | ABC / protocol + proxy | abstract interface class + proxy | interface + proxy | runtime object / interface + proxy |
+| callback | Callable | typedef / function | delegate | Function / typed function |
+| Stream<T> | AsyncIterator | Stream | IAsyncEnumerable<T> | AsyncIterable<T> |
+| WeakRef<T> | generated weak handle | generated weak handle | generated weak handle | generated weak handle |
+| CancellationToken | token wrapper | token wrapper | CancellationToken adapter | AbortSignal adapter |
+| timestamp | exact wrapper / datetime conversion | exact microseconds / DateTime conversion | exact wrapper / DateTimeOffset conversion | bigint microseconds / Date conversion |
+| duration | exact wrapper / timedelta conversion | exact nanoseconds / Duration conversion | exact wrapper / TimeSpan conversion | bigint nanoseconds |
+| uuid | uuid.UUID | checked UUID value | Guid with canonical byte ordering | checked UUID value |
+| external | Declared adapter | Declared adapter | Declared adapter | Declared adapter |
+| DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
+
+Nested optional values cannot collapse distinct absence states; either use a tagged wrapper or reject the unsupported nesting explicitly. Set/map keys must have portable equality and hashing. For 1.0 restrict keys to bool, integer, string, enum and UUID unless a portable equality policy has been proven. Do not use object identity for value keys. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit; the exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
+
+### 5.5 Per-type acceptance
+
+Generate shared fixtures with a stable case identifier for each scalar, composite and advanced type, and legal nested combinations. Run each valid fixture as argument, return value, record field, collection element and async result where its lifetime allows it. Test both native-to-managed and managed-to-native implementations; then the supported non-C++ pairs. Reject forbidden borrowed-view escapes, invalid ranges, unknown tags and unsupported external mappings. No backend may mark a type supported just because it can generate a declaration.
+
 ## 6. Modules and dependencies
 
 ### 6.1 Example application layout
@@ -1600,6 +1690,245 @@ The same Dart code can consume a Swift provider on Apple platforms. Alternativel
 
 Compile and execute actual generated APIs in each claimed target. Platform-dependent limitations must be documented and enforced by the generator.
 
+### 16.4 Common backend acceptance contract
+
+Every backend below must deliver the following together, not as disconnected generators:
+
+- Public idiomatic model, enum, flags, variant, interface, callback, result and async APIs; generated consumer proxy and provider adapter; exact type mappings from sections 5 and 13.
+- Module-specific output configuration, public import path, package/module/namespace, filenames, prefixes, naming categories, annotations, sources mode and package mode. Resolve dependency artifacts from the defining module.
+- Versioned ABI integration, initialization and shutdown, strong/weak handles, explicit cleanup, error translation, async completion, cancellation, callbacks, streams and optional service registry. No generated API may bypass its documented ownership/thread contract.
+- Golden source tests, native compiler/type-checker tests, real provider and consumer execution, separate module/prebuilt dependency tests, both-direction type conformance, lifetime/copy tests and actual sample application tests.
+- The corresponding CI job and language guide must show commands that work from a clean checkout. The toolchain invocations below are implementation requirements, not commands already available in the repository.
+
+For each target, generate a capability manifest listing types, sync/async directions, platform, runtime, scheduler restrictions, zero-copy eligibility, build mode and verified test IDs. Reject unsupported combinations rather than silently emitting broken code.
+
+### 16.5 C backend
+
+**Artifacts and configuration:** public .h files, generated C or C-compatible bridge source, separate private headers, typed handles and vtables, include guards, export/calling convention macros, optional CMake target. Module-specific prefix (app_domain_, app_repo_, etc.), include prefix, header/source paths, extensions and snake_case naming. Public headers compile as C11 and when included from C++; no C++ types leak through.
+
+**Types and memory:** fixed-width integers and explicit UTF-8 pointer/length descriptors. Generated tagged optionals, results and variants; typed collection descriptors; opaque interface/weak/operation/subscription handles. Explicit init/destroy for owning values and recursive cleanup on partial conversion failure. Borrowed buffers are scoped; DataRef is retained/released through the ABI. Caller never frees memory allocated by another allocator.
+
+**Provider and consumer:** generated typed function table and context, functions to create/retain/release interface handles, invoke methods and register/resolve services. Async methods return a status/operation handle and accept typed completion callbacks with user context. Define callback argument ownership and completion exactly once; expose cancellation and subscription disposal. No exceptions cross C entry points.
+
+```c
+/* Illustrative generated API shape. */
+pg_status app_repo_user_repository_count_async(
+    app_repo_user_repository *repository,
+    pg_int64_completion completion,
+    void *context,
+    pg_operation **operation);
+```
+
+**CI:** c.yml runs C11 compilation with GCC/Clang and supported MSVC C mode on Linux/Windows/macOS. Build C and C++ header consumers; run C-to-C++ and reverse, C provider called by managed targets, all type fixtures, allocator-failure injection, invalid handles, ABI layout tests, ASan/UBSan/LSan where available, separate TSan stress. Test Windows DLL export/import and calling conventions. Example CLI executes HTTP through a foreign provider, grayscale fixture and fake login.
+
+### 16.6 C++ backend
+
+**Artifacts and configuration:** .hpp/.cpp files, namespace, header/include prefix, public/private layout, configurable case and suffixes, forward declarations, CMake targets and optional installed package config. Use C++20 baseline; do not require std::expected or C++23 for public headers. Support nodiscard/deprecated and safe noexcept annotations.
+
+**Types and memory:** records with value semantics, enums/flags, optional, variant, vector/collections, generated Result, typed references and RAII wrappers. Move ownership when contract permits; reference counting must not copy buffers. DataView span-like scoped access; MutableDataView exclusive borrow; DataRef retainable owner. Weak references must not resurrect disposed objects.
+
+**Provider and consumer:** generated abstract interface, proxy and native provider adapter; C++ implementations use ordinary virtual methods and can be passed directly without registry. Async return uses a PolyGlue awaitable/future with co_await, callback completion and cancellation, without imposing a thread per call. Document executor behavior and destructor safety. Registry get<T> snapshots a provider; dynamic proxy resolves on invocation.
+
+```cpp
+auto repo = registry.get<UserRepository>();
+auto users = co_await repo->findAll();
+```
+
+**CI:** cpp.yml builds CMake/CTest on GCC, Clang and MSVC; shared/static consumer builds, installed headers, multiple translation units, visibility and ABI checks, debug/release, RAII, exception translation, coroutine completion/cancel races, weak reference and destruction tests. Run native sanitizers independently and verify reentrant calls. Example CLI with actual foreign provider and native image processor.
+
+### 16.7 Java backend
+
+**Artifacts and configuration:** public classes/interfaces, proxy and provider adapter classes, JNI bridge source/header, package and Java file naming, optional Gradle Java library. Every public top-level class uses its required filename. Support nullability/deprecation attributes with explicit dependency policy; never add an annotation library implicitly. Share JVM models with Kotlin only through an explicit artifact-ownership strategy.
+
+**Types and memory:** primitive and boxed representations follow section 5; unsigned values widen or use checked BigInteger. JNI strings convert UTF-16 to canonical UTF-8 and back, not modified UTF-8 shortcuts that lose NUL/supplementary characters. JNI global references retain providers, local frames bound references, weak globals only for explicit weak semantics. Use direct buffers only when valid native memory and owner lifetime are established; do not expose an unrestricted direct ByteBuffer as a safe borrowed view.
+
+**Provider and consumer:** generated Java interface uses CompletableFuture for async, functional interfaces for callbacks, typed stream subscription and a publisher adapter where useful. JNI retains callbacks/provider objects, attaches foreign threads, checks and clears/translates Java exceptions, and releases references on a valid JVM thread. Never cache JNIEnv across threads. No JVM initialization or destruction while active adapters remain. Cancellation of CompletableFuture must propagate to the native operation when configured; provider completion still controls resource lifetime.
+
+```java
+UserRepository repo = registry.get(UserRepository.TYPE);
+CompletableFuture<List<User>> users = repo.findAll();
+```
+
+**CI:** java.yml builds Java/JNI on Linux, macOS and Windows with pinned JDK/Gradle, runs -Xcheck:jni, Java↔C++, Java↔Kotlin shared artifact cases, forced GC, exception conversion, global/local reference balance, direct buffer lifetime, callback from native thread, duplicate completion, JVM teardown and exact unsigned/Unicode round trips. Sample desktop CLI or simple UI.
+
+### 16.8 Kotlin backend
+
+**Artifacts and configuration:** Kotlin classes/interfaces and adapters, .kt files, package, JVM module and optional Gradle/Kotlin library. For Android emit appropriate Android library/JNI packaging integration, not a mandatory application rewrite. When Java is also selected, either generate one shared model set with distinct API wrapper names or use separate packages; validate JNI signatures after Kotlin name mangling. Support JvmName/JvmStatic/JvmOverloads only where legal and needed.
+
+**Types and memory:** Kotlin signed and unsigned types, nullable types and explicit tagged nesting, immutable data models, Kotlin collections, sealed Result/variant. Primitive arrays with exact conversion. Shared Java models may require safe value conversions; do not duplicate class identities. Use JNI lifetime rules from Java; DataRef keeps the owner and any direct memory valid across suspension.
+
+**Provider and consumer:** suspend methods, cancellation-aware continuations and Flow for streams. Bridge Java CompletableFuture when sharing API artifacts; cancellation and exceptions map to native terminal states without resuming a continuation twice. Use structured concurrency or supplied CoroutineScope/dispatcher; no GlobalScope or blocking event loops. Android UI/system APIs dispatch to the main looper only when required. Kotlin providers can be registered or injected and invoked by Dart or C++.
+
+```kotlin
+val registration = registry.register(UserRepository.TYPE, repositoryImpl)
+val users = registry.get(UserRepository.TYPE).findAll()
+```
+
+**CI:** kotlin-desktop.yml exercises JVM on desktop and Kotlin↔Java/C++; kotlin-android.yml builds Android Gradle project, packages ABI-specific .so, runs instrumented tests/emulator and Flutter↔Kotlin integration in both directions. Test coroutine cancellation, thread dispatch, activity recreation, provider detach, JNI references, camera buffer release and exact unsigned mapping. Test Android XR separately when device/emulator is available.
+
+### 16.9 Objective-C backend
+
+**Artifacts and configuration:** prefixed public headers, Objective-C++ .mm implementation, umbrella header/module.modulemap and optional framework/SwiftPM-compatible Clang target. Use module-specific DOM/REP prefixes, selectors, naming and NS_SWIFT_NAME metadata; resolve dependency module imports or header imports. No duplicate type names when Swift wrappers coexist.
+
+**Types and memory:** NSObject model objects, protocols for interfaces, NS_ENUM/NS_OPTIONS, Foundation collections/strings and explicit boxing for scalar optional/nested variants. Nullability distinguishes absent value from runtime error. ARC retains object providers and blocks; use explicit bridge ownership operations for opaque contexts, avoid retain cycles and balance autorelease pools on foreign threads. DataRef is a retained owner wrapper; NSData use alone does not prove zero-copy. Borrowed view wrappers must enforce scope.
+
+**Provider and consumer:** typed generated protocols and proxy classes, copied completion blocks, typed callbacks and subscription cancellation. Use NSError or explicit status for runtime failures, Result for business failures; no NSException crosses the ABI. Annotate importable completion APIs for Swift where valid; generate explicit Swift wrappers for ambiguous optional/error cases. Test callback block lifetime, reentrancy and dispatch queues.
+
+```objc
+@import AppDomainObjC;
+
+id<REPUserRepository> repo = [registry userRepository];
+[repo findAllWithCompletion:^(NSArray<DOMUser *> *users, NSError *error) {
+    /* Handle completion. */
+}];
+```
+
+**CI:** objc.yml compiles Objective-C and Objective-C++ on macOS with ARC, tests Obj-C↔C++, Obj-C↔Swift, import macros, nullability, enum/flags, selector conflicts, autorelease/weak lifetime, callback block disposal, actual Swift compiler import. Platform SDK builds and execution covered by apple-platforms.yml. Sample native app or CLI; verify foreign HTTP, login and media processor.
+
+### 16.10 Swift backend
+
+**Artifacts and configuration:** .swift contracts, models or re-exports, proxies and adapters, Package.swift or source integration, module/target, visibility, prefix/case, imports and availability. Swift module names are not directory names. When using imported Objective-C models, provide one canonical model type; when generating native Swift models, use explicit conversion or separate modules and avoid ambiguous unqualified imports.
+
+**Types and memory:** Swift value types where appropriate, protocols and generated proxies, optional, enum/OptionSet, tagged variants and Result when Error constraints are satisfied. Exact numeric/time mappings; controlled UnsafeRawBufferPointer access for DataView, owned DataRef reference and explicit Data copying. ARC and Unmanaged bridge ownership must be balanced. Never label arbitrary object types Sendable or use unchecked Sendable without a documented proof and tests.
+
+**Provider and consumer:** async throws, checked continuation adapter with exactly-once resume and cancellation propagation, typed closures, AsyncSequence stream, explicit executor/actor policy. MainActor is enforced for UI APIs. Swift implementations register or pass protocol references and may be called from Kotlin/C++/Dart where valid. Do not block an actor waiting for a callback scheduled on that actor.
+
+```swift
+let repo = try registry.get(UserRepository.self)
+let users = try await repo.findAll()
+```
+
+**CI:** swift.yml runs SwiftPM or Xcode tests on macOS with strict concurrency diagnostics, Swift↔C++, Swift↔Objective-C and Swift↔Dart integration on applicable platforms. Test ARC/weak refs, continuations, cancellation/actor dispatch, selector/import name consistency, module dependencies and availability annotations. apple-platforms.yml builds each Apple SDK and runs platform-appropriate tests; record visionOS/tvOS/watchOS/Catalyst evidence individually. Sample native UI where applicable.
+
+### 16.11 Python backend
+
+**Artifacts and configuration:** Python package with public exports, .py/.pyi as appropriate, generated proxy/provider wrapper and CPython bridge or stable supported adapter, optional pyproject.toml/build integration. Package name, output tree, source vs wheel package mode, snake_case, annotations and imports. Python generator dependencies are not automatically runtime dependencies of generated Python bindings.
+
+**Types and memory:** frozen dataclasses by default, Enum/IntFlag, typed collections and Result/variant, strict numeric range checks, Unicode and bytes. Handle cycles and interpreter shutdown; own every new/borrowed PyObject reference correctly. For DataRef, keep Py_buffer/exporter alive until final release, release on correct interpreter/thread. A Python memoryview that escapes a borrowed scope cannot be treated as safely invalidated; use a checked scoped wrapper or explicit owned conversion.
+
+**Provider and consumer:** async def/awaitable, asyncio event loop capture, thread-safe scheduling from native threads, callback roots, async iterator and cancellation. Acquire correct interpreter thread state before invoking Python; respect GIL or supported free-threaded build policy. Never call Python after finalization. Record supported CPython versions and whether subinterpreters/free-threaded builds are supported; reject unsupported modes.
+
+```python
+repo = registry.get(UserRepository)
+users = await repo.find_all()
+```
+
+**CI:** python.yml tests installed generated bindings on Linux/macOS/Windows, native↔Python and Python↔other coexisting runtimes, CPython debug/refcount checks, forced GC, buffer export lifetime, async cancellation, native worker callback scheduling and interpreter shutdown in subprocesses. Wheel/sdist package tests verify import from outside source tree. Example CLI or simple app with real cross-language HTTP/login/grayscale.
+
+### 16.12 Dart backend
+
+**Artifacts and configuration:** Dart package, public barrel export, lib/src models/interfaces/proxies, FFI binding declarations and native assets loading configuration; separate web implementation and conditional imports. Package/output, naming, annotations and optional pubspec. A pure Dart target must not require Flutter SDK. No dart:ffi imports in web build.
+
+**Types and memory:** native int for signed 64-bit, BigInt for uint64 and exact Web 64-bit; typed data arrays when exact; immutable models, sealed variants and Result. Native memory uses checked handles and explicit dispose plus NativeFinalizer where safe. Never keep raw borrowed TypedData views beyond synchronous lifetime; DataRef retains native storage through async. NativeFinalizer cannot serve as the only deterministic lifecycle mechanism.
+
+**Provider and consumer:** Future/Completer, typed functions, Stream and cancellation. NativeCallable.listener or supported message dispatch handles callbacks from arbitrary threads asynchronously; isolate-local calls require the correct thread/isolate. No synchronous foreign-thread Dart return. Root registered providers in their owning isolate; on detach/hot restart invalidate registrations, drain/cancel operations and ensure no callback into a closed NativeCallable. Completion arguments remain valid until isolate consumes them.
+
+```dart
+final repo = registry.get(UserRepository.type);
+final users = await repo.findAll();
+```
+
+**CI:** dart.yml runs dart analyze, format checks where configured, dart test on Linux/macOS/Windows, native library load/architecture tests, Dart↔C++, callback from worker thread, multiple isolates, isolate shutdown and forced restart, DataRef finalizer/explicit disposal and copy tracking. Dart Web runs actual JS/WASM integration in browser. Sample CLI, not a Flutter-only demo.
+
+### 16.13 Flutter integration target
+
+**Artifacts and configuration:** reuse generated Dart contracts, emit plugin with pubspec, lib, Android Gradle/JNI, iOS/macOS Apple integration, Windows/Linux CMake and web adapter as appropriate. Support existing native projects in sources mode and buildable plugin in package mode. Plugin owns runtime initialization/attachment tokens, not all application service instances. Expose a single public Dart API with target-appropriate adapters.
+
+```text
+app_repository_plugin/
+├── pubspec.yaml
+├── lib/
+│   └── app_repository_plugin.dart
+├── android/
+├── ios/
+├── macos/
+├── windows/
+├── linux/
+├── web/
+├── test/
+└── integration_test/
+```
+
+**Providers and lifecycle:** Kotlin/Java and Swift/Obj-C implementations are real providers, not MethodChannel stubs. Calls go through generated FFI/native adapters and shared service context. Native implementations can call Dart providers asynchronously. Handle plugin detach, multiple Flutter engines, isolates, activity recreation, background/foreground, hot restart and disposal independently. Web uses the JS/WASM implementation. Reuse DataRef for camera frames, with explicit mapping/copy for non-shareable memory.
+
+**CI:** flutter.yml has distinct jobs for Android emulator, iOS simulator, macOS, Windows, Linux and Web. Run flutter analyze/test plus integration_test and actual native plugin build/run. Verify Android Kotlin provider and Apple Swift provider using the same Dart consumer, reverse native→Dart callback/provider, module import/layout, lifecycle and restart. Desktop runners test C++ provider; web tests JS/WASM provider. Required UI contains HTTPBin, login form and camera/grayscale preview. Deterministic fixtures do not replace actual device camera validation. Native visionOS Flutter is not claimed without upstream support and evidence.
+
+### 16.14 C# backend
+
+**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods, I interface prefix and Async suffix configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform; validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
+
+**Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable; retain delegates/GCHandle for provider callbacks and release only after native operations drain. Span/ReadOnlySpan scoped borrowed access; DataRef owner enables async use. GC pinning or copies are explicit; no pointer to movable managed memory after pin scope.
+
+**Provider and consumer:** Task<T>/Task for async, typed delegates, IAsyncEnumerable and CancellationToken adapter. Use completion sources with asynchronous continuation scheduling where needed; exactly-once completion; map cancellation without prematurely releasing active native resources. Use stable unmanaged entrypoints or rooted delegates; exceptions never cross native ABI. Managed provider registration works from C++/Dart where the .NET host is available; do not assume arbitrary embedding. Specify supported .NET hosting and NativeAOT modes separately.
+
+```csharp
+using var registration = registry.Register<IUserRepository>(implementation);
+var repo = registry.Get<IUserRepository>();
+var users = await repo.FindAllAsync();
+```
+
+**CI:** csharp.yml runs dotnet build/test on Windows/Linux/macOS with pinned SDK, C#↔C/C++, GC stress and forced collection, delegate lifetime, SafeHandle explicit/finalizer cleanup, struct size/offset assertions, cancellation and native thread callbacks. Test package/project reference and platform native-library resolution. Sample console or simple UI with all three scenarios.
+
+### 16.15 JavaScript backend
+
+**Artifacts and configuration:** ESM runtime .js modules, loader, package.json exports, public entry point and generated proxies/providers; configurable module/package, relative/public import policy, names, layout and file extension. Browser and Node runtime integration are separate capabilities. No reliance on TypeScript compiler at application runtime when JS is selected.
+
+**Types and memory:** checked Number for small integers, BigInt for exact 64-bit, string UTF-16 validation, Uint8Array for copied bytes, Map/Set, tagged result and variants, runtime value validation because JS is dynamic. WeakRef/FinalizationRegistry cannot guarantee timely cleanup; use explicit dispose. DataRef and views refer to compatible native/WASM memory only; arbitrary JS heap cannot be assumed shareable.
+
+**Provider and consumer:** Promise, typed callable shape at runtime, AsyncIterable, AbortSignal adapter and generated provider registration. Maintain rooted JS references while native handles are alive; prevent calls after module teardown. Handle synchronous reentrancy and asynchronous microtask completion. Use worker/message dispatch only with explicit transfer/sharing contract; no cross-worker raw pointers.
+
+```javascript
+const repo = registry.get(UserRepository.type);
+const users = await repo.findAll();
+```
+
+**CI:** javascript.yml runs Node tests and browser integration, generated ESM import/exports, JS↔WASM and reverse provider, Promise resolution/rejection, BigInt boundary, Unicode, callback roots, GC/explicit disposal, memory growth, worker constraints and package installation. Browser example includes HTTP, login form and camera via getUserMedia where permission exists; Node CLI uses deterministic image fixture.
+
+### 16.16 TypeScript backend
+
+**Artifacts and configuration:** generated .ts or .d.ts declarations plus matching JS runtime, package.json exports/types, tsconfig, per-module public type imports and type-only imports. When sharing JavaScript output, generate declaration artifacts once and verify no duplicate runtime classes or export collisions. Strict mode, no implicit any in public contracts, target/module resolution explicit.
+
+**Types and memory:** exact mappings match JavaScript runtime; interfaces/read-only models, tagged unions, bigint, typed arrays and explicit nullable/optional states. TypeScript declarations do not substitute runtime validation. Model the owner/borrow API without claiming the TS type checker can enforce lifetime of escaped views.
+
+**Provider and consumer:** strongly typed interfaces, Promise<T>, AsyncIterable<T>, callback signatures, AbortSignal and typed registry descriptors. Generated declarations match actual runtime exports and implementation signatures; verify both valid and invalid type-check fixtures.
+
+```typescript
+const repo: UserRepository = registry.get(UserRepository.type);
+const users: User[] = await repo.findAll();
+```
+
+**CI:** typescript.yml runs strict tsc type-check, negative compile fixtures, package consumer tests and actual emitted/runtime JS tests in Node/browser. Run all common types and provider directions, not just compilation. Verify JS and TS shared artifact mode, separate module import resolution, bigint and Result/variant discriminants. Provide typed browser sample and Node harness.
+
+### 16.17 WebAssembly backend
+
+WebAssembly is a transport/execution target, not another IDL language.
+
+**Artifacts and configuration:** generated C/C++ WASM adapter, exported functions, Emscripten build integration, JS module loader and TypeScript declarations. Configure output, include prefix, module/package name, environment (browser/Node), memory growth/thread mode and public exports. Avoid unnecessary Embind or other dependencies when typed C ABI plus generated JS suffices.
+
+**Types and memory:** fixed WASM ABI, validate pointer/length and linear memory bounds. Use exact i64/BigInt conversion. Views of WebAssembly.Memory may become detached/stale after growth; pin or prohibit growth while a borrow is active, or reacquire using checked owner/offset. Never expose stale cached views as valid. Shared DataRef may keep a linear-memory allocation alive; it cannot prevent arbitrary JS buffer detach unless policy enforces it. Separate shared memory/threads support and cross-origin isolation requirements from baseline single-thread mode.
+
+**Provider and consumer:** JS/TS can implement interfaces consumed from WASM and vice versa, with Promise-based async bridge and rooted JS callbacks. No blocking browser main thread to emulate synchronous async completion. Threaded mode only when browser/runtime configuration allows it; cancellation and teardown release both native and JS references.
+
+**CI:** wasm.yml builds with pinned Emscripten, runs Node and headless browser tests, memory growth, out-of-bounds checks, JS/WASM bidirectional types, BigInt, DataView/DataRef/copy counts, Promise completion/cancel, module destruction/reinitialization, workers when supported. Verify no native ABI pointer is reused as a cross-instance handle. Flutter Web tests run against actual WASM/JS adapter.
+
+### 16.18 Platform integration specifics
+
+| Platform | Build / execution requirement | Lifecycle and sample-specific requirement |
+| --- | --- | --- |
+| Linux | GCC/Clang, shared libraries, native runtimes | Loader path, headless fixture, optional camera device |
+| Windows | MSVC and supported Clang, DLL imports/exports | CRT allocator pairing, architecture, native library discovery |
+| macOS | Clang, Xcode, SwiftPM, supported desktop runtimes | ARC, signing where required, camera permission, native UI |
+| Android | NDK/Gradle, ARM64 and emulator ABI, instrumented test | JNI, app lifecycle, permissions, CameraX or compatible capture |
+| Android XR | Android XR SDK-compatible build and emulator/device | XR lifecycle, available sensors/camera permission; no false hardware claim |
+| iOS/iPadOS | Xcode simulator/device target, framework or library integration | ARC, main actor, app lifecycle, permission and actual camera on device |
+| tvOS | SDK build and simulator execution | Remote/input and available media/camera capability; use image fixture when no camera |
+| watchOS | SDK build and simulator execution | Watch app lifecycle, constrained resources, no unsupported camera claim |
+| visionOS | visionOS SDK build and simulator execution; device where hardware required | Native Swift/Obj-C/C++ bridge, actor/lifecycle, camera entitlement/access constraints; use fixtures where access unavailable |
+| Mac Catalyst | Catalyst SDK build and native execution | Distinguish from macOS target; availability and lifecycle |
+| Web | Browser and Node where supported | Browser permissions, CORS, event loop, WASM memory constraints; Node fixture |
+
+Physical device tests are not replaceable by a simulator for device-only features. Record hardware access as blocked when unavailable. Do not require a physical camera for platforms without appropriate APIs; the grayscale computation and buffer transfer remain mandatory with fixtures. All supported platform targets must build and execute at least their applicable conformance cases.
+
 ## 17. Example applications
 
 ### 17.1 Shared modules
@@ -1785,6 +2114,40 @@ Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only a
 PR and main runs execute mandatory checks. Expensive fuzzing and extended platform coverage also run nightly and before release; release gates require all mandatory evidence on the exact candidate SHA. Pin reviewed toolchains and action revisions, use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
 
 Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/test matrix, build logs and benchmark data as artifacts. Confirm jobs actually ran, inspect failures, fix root causes, rerun and record the SHA. Platform/runner unavailability remains an explicit blocker. Do not claim a passing run from a queued workflow or successful compilation alone.
+
+### 19.3 Target coverage and evidence gates
+
+Each target-specific workflow owns its toolchain setup, generation command, build, actual test execution, and artifact publication. Shared reusable workflows may reduce duplication but must preserve distinct named checks for each language. A test report lists expected case IDs and observed results; fail when an expected case was not executed. A missing SDK, simulator or runtime is blocked, not silently skipped.
+
+| Target | Primary test tools | Required output |
+| --- | --- | --- |
+| C | CMake/CTest, C11 compiler | C provider/consumer executable and C ABI checks |
+| C++ | CMake/CTest, compiler matrix | Native executable, RAII and coroutine results |
+| Java | Gradle/JUnit, JNI checker | JVM provider/consumer and reference checks |
+| Kotlin desktop | Gradle/JUnit, coroutine tests | JVM bridge and cancellation results |
+| Kotlin Android | Gradle connected/instrumented tests | Emulator APK execution and JNI results |
+| Objective-C | Xcode/CTest/XCTest as appropriate | ARC/block and Swift import tests |
+| Swift | SwiftPM/XCTest | Swift provider/consumer and concurrency results |
+| Python | pytest, debug interpreter where available | Native bridge, GC/refcount and event loop results |
+| Dart | dart analyze/test | FFI/isolate and buffer lifecycle tests |
+| Flutter | flutter analyze/test/integration_test | Separate Android/iOS/desktop/web execution reports |
+| C# | dotnet build/test | Managed/native interop and GC/delegate tests |
+| JavaScript | Node test runner and browser harness | JS and WASM provider execution |
+| TypeScript | tsc and runtime test runner | Type fixtures plus actual runtime tests |
+| WASM | Emscripten, Node and browser harness | WASM module execution and memory tests |
+
+Document exact commands and pinned toolchains once implemented; do not claim that illustrative commands already work. CI release evidence must include compiler/SDK versions, target architecture, runner OS, git SHA, generated module manifest fingerprints, case IDs, sanitizer status, sample execution and known unsupported capabilities. Track first-class platform checks independently for visionOS, tvOS, watchOS, Catalyst, Android XR and others. For camera use hardware evidence separately from deterministic fixture tests.
+
+### 19.4 Review checklist per backend
+
+- [ ] Every mapped primitive, composite and special type generates valid idiomatic code and round-trips.
+- [ ] Public interface, provider, proxy, factory, callback, async, stream and registry APIs work in both directions.
+- [ ] Module dependencies, independent output paths, prefixes, cases, imports and annotations compile.
+- [ ] Source and package modes, installed package imports and native loading are proven.
+- [ ] Native/managed lifetimes, shutdown, error translation, cancellation and thread affinity are proven.
+- [ ] DataView and MutableDataView scope rules, DataRef ownership, zero-copy conditions and explicit copies are proven.
+- [ ] Shared conformance, target-specific regressions, sample apps and platform-specific execution are green.
+- [ ] Capability matrix and documentation match executed cases; no unsupported feature is advertised.
 
 ## 20. Repository documentation and branding
 
