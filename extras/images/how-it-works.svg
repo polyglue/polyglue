@@ -2,62 +2,63 @@
     <title id="title">Share code between iOS and Android with PolyGlue</title>
     <desc id="description">PolyGlue generates native Swift and Kotlin bindings from one shared definition. An iOS app and an Android app each compile the same C++ source code into their own application. Calls and results travel between languages inside each app, without a server.</desc>
     <g font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif">
-        <rect x="222" y="5" width="296" height="55" rx="12" fill="#F5F6FE" stroke="#C9D0FC"/>
-        <g fill="none" stroke="#5165F5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="222" y="5" width="296" height="55" rx="12" fill="#F7F0FF" stroke="#D8B4FE"/>
+        <g fill="none" stroke="#9333EA" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
             <path d="M242 18h15l7 7v22h-22z"/>
             <path d="M257 18v8h7M247 33h12M247 39h9"/>
         </g>
-        <text x="279" y="28" font-size="17" font-weight="700" fill="#3547C5">One shared definition</text>
-        <text x="279" y="45" font-size="12" fill="#485477">Data types and methods</text>
-        <path d="M370 60v12" stroke="#5165F5" stroke-width="2" fill="none"/>
-        <rect x="249" y="72" width="242" height="44" rx="10" fill="#F4F7FD" stroke="#C0CAE8"/>
+        <text x="279" y="28" font-size="17" font-weight="700" fill="#6B21A8">One shared definition</text>
+        <text x="279" y="45" font-size="12" fill="#70548A">Data types and methods</text>
+        <path d="M370 60v12" stroke="#9333EA" stroke-width="2" fill="none"/>
+        <rect x="249" y="72" width="242" height="44" rx="10" fill="#EEF2FF" stroke="#A5B4FC"/>
         <g transform="translate(262 75) scale(.34)" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
             <path stroke="#5165F5" d="M45 25 15 55 45 85 69 61"/>
             <path stroke="#10AE9F" d="M67 87 97 57 67 27 43 51"/>
         </g>
-        <text x="310" y="90" font-size="15" font-weight="700" fill="#26336A">PolyGlue</text>
-        <text x="310" y="105" font-size="12" fill="#485477">Generates native bindings</text>
+        <text x="310" y="90" font-size="15" font-weight="700" fill="#3730A3">PolyGlue</text>
+        <text x="310" y="105" font-size="12" fill="#525B83">Generates native bindings</text>
         <g fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M370 116v12H180v12m-5-5 5 5 5-5" stroke="#5165F5"/>
-            <path d="M370 128h190v12m-5-5 5 5 5-5" stroke="#10AE9F"/>
+            <path d="M370 116v12H180v12m-5-5 5 5 5-5" stroke="#F05138"/>
+            <path d="M370 128h190v12m-5-5 5 5 5-5" stroke="#16A34A"/>
         </g>
-        <rect x="10" y="143" width="340" height="98" rx="13" fill="#F2F6FF" stroke="#AAB9F8"/>
-        <g fill="none" stroke="#5165F5" stroke-width="1.8" stroke-linecap="round">
+        <rect x="10" y="143" width="340" height="98" rx="13" fill="#FFF0E6" stroke="#F6B59A"/>
+        <g fill="none" stroke="#F05138" stroke-width="1.8" stroke-linecap="round">
             <rect x="24" y="154" width="12" height="19" rx="3"/>
             <path d="M28 157h4M28 170h4"/>
         </g>
-        <text x="45" y="169" font-size="17" font-weight="700" fill="#26336A">iOS app</text>
-        <text x="333" y="168" text-anchor="end" font-size="11" fill="#485477">Native bindings</text>
-        <rect x="24" y="181" width="102" height="46" rx="7" fill="#FFFFFF" stroke="#D5DEFC"/>
-        <text x="75" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#3547C5">Swift</text>
-        <text x="75" y="216" text-anchor="middle" font-size="11" fill="#485477">App code</text>
-        <rect x="220" y="181" width="116" height="46" rx="7" fill="#FFFFFF" stroke="#D5DEFC"/>
-        <text x="278" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#26336A">C++</text>
-        <text x="278" y="216" text-anchor="middle" font-size="11" fill="#485477">Shared logic</text>
-        <rect x="390" y="143" width="340" height="98" rx="13" fill="#ECFAF7" stroke="#9BDCD2"/>
-        <g fill="none" stroke="#10AE9F" stroke-width="1.8" stroke-linecap="round">
+        <text x="45" y="169" font-size="17" font-weight="700" fill="#9A3412">iOS app</text>
+        <text x="333" y="168" text-anchor="end" font-size="11" fill="#925039">Native bindings</text>
+        <rect x="24" y="181" width="102" height="46" rx="7" fill="#FFFAF6" stroke="#F7C6B0"/>
+        <text x="75" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#B93820">Swift</text>
+        <text x="75" y="216" text-anchor="middle" font-size="11" fill="#925039">App code</text>
+        <rect x="220" y="181" width="116" height="46" rx="7" fill="#EFF6FF" stroke="#93C5FD"/>
+        <text x="278" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#00599C">C++</text>
+        <text x="278" y="216" text-anchor="middle" font-size="11" fill="#345B80">Shared logic</text>
+        <rect x="390" y="143" width="340" height="98" rx="13" fill="#ECFDF3" stroke="#86D9A5"/>
+        <g fill="none" stroke="#16A34A" stroke-width="1.8" stroke-linecap="round">
             <rect x="404" y="154" width="12" height="19" rx="3"/>
             <path d="M408 157h4M408 170h4"/>
         </g>
         <text x="425" y="169" font-size="17" font-weight="700" fill="#175A55">Android app</text>
         <text x="713" y="168" text-anchor="end" font-size="11" fill="#386D68">Native bindings</text>
-        <rect x="404" y="181" width="102" height="46" rx="7" fill="#FFFFFF" stroke="#B9E7DF"/>
-        <text x="455" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#087E73">Kotlin</text>
-        <text x="455" y="216" text-anchor="middle" font-size="11" fill="#386D68">App code</text>
-        <rect x="600" y="181" width="116" height="46" rx="7" fill="#FFFFFF" stroke="#B9E7DF"/>
-        <text x="658" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#175A55">C++</text>
-        <text x="658" y="216" text-anchor="middle" font-size="11" fill="#386D68">Shared logic</text>
+        <rect x="404" y="181" width="102" height="46" rx="7" fill="#F5EEFF" stroke="#D8B4FE"/>
+        <text x="455" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#7E22CE">Kotlin</text>
+        <text x="455" y="216" text-anchor="middle" font-size="11" fill="#70548A">App code</text>
+        <rect x="600" y="181" width="116" height="46" rx="7" fill="#EFF6FF" stroke="#93C5FD"/>
+        <text x="658" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#00599C">C++</text>
+        <text x="658" y="216" text-anchor="middle" font-size="11" fill="#345B80">Shared logic</text>
         <g fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M135 196h76m-5-4 5 4-5 4M515 196h76m-5-4 5 4-5 4" stroke="#5165F5"/>
-            <path d="M211 213h-76m5-4-5 4 5 4M591 213h-76m5-4-5 4 5 4" stroke="#10AE9F"/>
+            <path d="M135 196h76m-5-4 5 4-5 4" stroke="#F05138"/>
+            <path d="M515 196h76m-5-4 5 4-5 4" stroke="#9333EA"/>
+            <path d="M211 213h-76m5-4-5 4 5 4M591 213h-76m5-4-5 4 5 4" stroke="#00599C"/>
         </g>
         <g font-size="10" text-anchor="middle" font-weight="600">
-            <text x="173" y="192" fill="#3547C5">Call</text>
-            <text x="173" y="225" fill="#087E73">Result</text>
-            <text x="553" y="192" fill="#3547C5">Call</text>
-            <text x="553" y="225" fill="#087E73">Result</text>
+            <text x="173" y="192" fill="#B93820">Call</text>
+            <text x="173" y="225" fill="#00599C">Result</text>
+            <text x="553" y="192" fill="#7E22CE">Call</text>
+            <text x="553" y="225" fill="#00599C">Result</text>
         </g>
-        <rect x="125" y="249" width="490" height="19" rx="9.5" fill="#E7EDF9"/>
-        <text x="370" y="262" font-size="12" font-weight="600" fill="#37486E" text-anchor="middle">Write the C++ logic once. Compile it into each app. No server needed.</text>
+        <rect x="125" y="249" width="490" height="19" rx="9.5" fill="#E2E8F0"/>
+        <text x="370" y="262" font-size="12" font-weight="600" fill="#334155" text-anchor="middle">Write the C++ logic once. Compile it into each app. No server needed.</text>
     </g>
 </svg>
