@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="badge-title">
+    <title id="badge-title">Web</title>
+    <svg x="106" y="28" width="300" height="300" viewBox="0 0 128 128" fill="#64748B"><g fill="none" stroke="#0284C7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><circle cx="64" cy="64" r="53"/><ellipse cx="64" cy="64" rx="25" ry="53"/><path d="M11 64h106M22 36h84M22 92h84M64 11v106"/></g></svg>
+    <text x="256" y="423" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="64" fill="#64748B">Web</text>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="badge-title">
+    <title id="badge-title">Mac Catalyst</title>
+    <svg x="106" y="28" width="300" height="300" viewBox="0 0 128 128" fill="#64748B"><rect x="5" y="16" width="118" height="83" rx="9" fill="#64748B"/><rect x="11" y="22" width="106" height="71" rx="5" fill="#DBEAFE"/><rect x="19" y="31" width="90" height="53" rx="5" fill="#FFFFFF"/><path d="M19 43h90" stroke="#94A3B8" stroke-width="2"/><circle cx="26" cy="37" r="2" fill="#F87171"/><circle cx="33" cy="37" r="2" fill="#FBBF24"/><circle cx="40" cy="37" r="2" fill="#22C55E"/><rect x="52" y="48" width="24" height="30" rx="5" fill="#2563EB"/><path d="M64 99v13M44 114h40" stroke="#64748B" stroke-width="6" stroke-linecap="round"/></svg>
+    <text x="256" y="423" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="52" fill="#64748B">Mac Catalyst</text>
+</svg>

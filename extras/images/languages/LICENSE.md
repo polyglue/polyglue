@@ -1,6 +1,6 @@
 # Language and integration icons
 
-Source: [Devicon](https://github.com/devicons/devicon/tree/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6) (revision `32fe1d3b3f36ad11f90ab94f7db59738139c2bf6`). The SVG artwork is unchanged apart from explicit 512 × 512 dimensions. The Objective-C icon uses the plain variant. All trademarks remain the property of their respective owners. The license below applies to these imported assets only, not PolyGlue itself.
+Source: [Devicon](https://github.com/devicons/devicon/tree/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6) (revision `32fe1d3b3f36ad11f90ab94f7db59738139c2bf6`). The original SVG artwork is preserved within a 512 × 512 labeled transparent asset, with its symbol scaled to 300 × 300 and the name added below. The Objective-C icon uses the plain variant. All trademarks remain the property of their respective owners. The license below applies to these imported assets only, not PolyGlue itself.
 
 The MIT License (MIT)
 

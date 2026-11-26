@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="badge-title">
+    <title id="badge-title">visionOS</title>
+    <svg x="106" y="28" width="300" height="300" viewBox="0 0 128 128" fill="#64748B"><path d="M12 47c1-14 9-20 24-22 19-3 37-3 56 0 15 2 23 8 24 22l3 23c2 18-9 30-26 30-13 0-19-10-29-10s-16 10-29 10C18 100 7 88 9 70z" fill="#64748B"/><path d="M19 50c1-10 9-16 20-17h50c11 1 19 7 20 17l2 20c2 12-7 21-19 21-11 0-19-11-28-11S47 91 36 91c-12 0-21-9-19-21z" fill="#172554"/><path d="M28 49c14-9 47-11 72-3" stroke="#93C5FD" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M8 57H3v22h8M120 57h5v22h-8" fill="#94A3B8"/></svg>
+    <text x="256" y="423" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="64" fill="#64748B">visionOS</text>
+</svg>

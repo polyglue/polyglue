@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="badge-title">
+    <title id="badge-title">Android XR</title>
+    <svg x="106" y="28" width="300" height="300" viewBox="0 0 128 128" fill="#64748B"><g stroke="#179A58" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 50a42 42 0 0 1 84 0M34 16l8 14M94 16l-8 14" fill="none"/><rect x="9" y="48" width="110" height="47" rx="16" fill="#3DDC84" stroke="none"/><path d="M19 58h90v20a8 8 0 0 1-8 8H78l-14-10-14 10H27a8 8 0 0 1-8-8z" fill="#174C3B" stroke="none"/><path d="M32 67h16M80 67h16" stroke="#9DF8C5"/></g></svg>
+    <text x="256" y="423" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="52" fill="#64748B">Android XR</text>
+</svg>

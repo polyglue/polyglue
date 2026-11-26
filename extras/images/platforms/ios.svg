@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="badge-title">
+    <title id="badge-title">iOS</title>
+    <svg x="106" y="28" width="300" height="300" viewBox="0 0 128 128" fill="#64748B"><rect x="34" y="7" width="60" height="114" rx="15" fill="#64748B"/><rect x="40" y="13" width="48" height="102" rx="10" fill="#E2E8F0"/><rect x="45" y="19" width="38" height="90" rx="7" fill="#60A5FA"/><rect x="53" y="18" width="22" height="6" rx="3" fill="#475569"/><path d="M45 86l38-28v43a8 8 0 0 1-8 8H53a8 8 0 0 1-8-8z" fill="#2563EB"/><rect x="54" y="104" width="20" height="2" rx="1" fill="#fff"/></svg>
+    <text x="256" y="423" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="64" fill="#64748B">iOS</text>
+</svg>

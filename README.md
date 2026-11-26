@@ -33,40 +33,44 @@ For example, share the same C++ code between an iOS app written in Swift and an 
 
 ## Languages
 
-<table>
-    <tr>
-        <td align="center"><img src="extras/images/languages/c.svg" width="50" height="50" alt="C logo"><br><strong>C</strong></td>
-        <td align="center"><img src="extras/images/languages/cpp.svg" width="50" height="50" alt="C++ logo"><br><strong>C++</strong></td>
-        <td align="center"><img src="extras/images/languages/java.svg" width="50" height="50" alt="Java logo"><br><strong>Java</strong></td>
-    </tr>
-    <tr>
-        <td align="center"><img src="extras/images/languages/kotlin.svg" width="50" height="50" alt="Kotlin logo"><br><strong>Kotlin</strong></td>
-        <td align="center"><img src="extras/images/languages/objective-c.svg" width="50" height="50" alt="Objective-C logo"><br><strong>Objective-C</strong></td>
-        <td align="center"><img src="extras/images/languages/swift.svg" width="50" height="50" alt="Swift logo"><br><strong>Swift</strong></td>
-    </tr>
-    <tr>
-        <td align="center"><img src="extras/images/languages/python.svg" width="50" height="50" alt="Python logo"><br><strong>Python</strong></td>
-        <td align="center"><img src="extras/images/languages/dart.svg" width="50" height="50" alt="Dart logo"><br><strong>Dart</strong></td>
-        <td align="center"><img src="extras/images/languages/csharp.svg" width="50" height="50" alt="C# logo"><br><strong>C#</strong></td>
-    </tr>
-    <tr>
-        <td align="center"><img src="extras/images/languages/javascript.svg" width="50" height="50" alt="JavaScript logo"><br><strong>JavaScript</strong></td>
-        <td align="center"><img src="extras/images/languages/typescript.svg" width="50" height="50" alt="TypeScript logo"><br><strong>TypeScript</strong></td>
-    </tr>
-</table>
+<p align="center">
+    <img src="extras/images/languages/c.svg" width="88" height="88" alt="C" title="C">
+    <img src="extras/images/languages/cpp.svg" width="88" height="88" alt="C++" title="C++">
+    <img src="extras/images/languages/java.svg" width="88" height="88" alt="Java" title="Java">
+    <img src="extras/images/languages/kotlin.svg" width="88" height="88" alt="Kotlin" title="Kotlin">
+    <img src="extras/images/languages/objective-c.svg" width="88" height="88" alt="Objective-C" title="Objective-C">
+    <img src="extras/images/languages/swift.svg" width="88" height="88" alt="Swift" title="Swift">
+    <img src="extras/images/languages/python.svg" width="88" height="88" alt="Python" title="Python">
+    <img src="extras/images/languages/dart.svg" width="88" height="88" alt="Dart" title="Dart">
+    <img src="extras/images/languages/csharp.svg" width="88" height="88" alt="C#" title="C#">
+    <img src="extras/images/languages/javascript.svg" width="88" height="88" alt="JavaScript" title="JavaScript">
+    <img src="extras/images/languages/typescript.svg" width="88" height="88" alt="TypeScript" title="TypeScript">
+</p>
 
 Integration targets:
 
-<table>
-    <tr>
-        <td align="center"><img src="extras/images/languages/flutter.svg" width="50" height="50" alt="Flutter logo"><br><strong>Flutter</strong></td>
-        <td align="center"><img src="extras/images/languages/webassembly.svg" width="50" height="50" alt="WebAssembly logo"><br><strong>WebAssembly</strong></td>
-    </tr>
-</table>
+<p align="center">
+    <img src="extras/images/languages/flutter.svg" width="88" height="88" alt="Flutter" title="Flutter">
+    <img src="extras/images/languages/webassembly.svg" width="88" height="88" alt="WebAssembly" title="WebAssembly">
+</p>
 
 ## Platforms
 
-Linux, Windows, macOS, Android, Android XR, iOS, iPadOS, tvOS, watchOS, visionOS, Mac Catalyst, Web and Node.js.
+<p align="center">
+    <img src="extras/images/platforms/linux.svg" width="88" height="88" alt="Linux" title="Linux">
+    <img src="extras/images/platforms/windows.svg" width="88" height="88" alt="Windows" title="Windows">
+    <img src="extras/images/platforms/macos.svg" width="88" height="88" alt="macOS" title="macOS">
+    <img src="extras/images/platforms/android.svg" width="88" height="88" alt="Android" title="Android">
+    <img src="extras/images/platforms/android-xr.svg" width="88" height="88" alt="Android XR" title="Android XR">
+    <img src="extras/images/platforms/ios.svg" width="88" height="88" alt="iOS" title="iOS">
+    <img src="extras/images/platforms/ipados.svg" width="88" height="88" alt="iPadOS" title="iPadOS">
+    <img src="extras/images/platforms/tvos.svg" width="88" height="88" alt="tvOS" title="tvOS">
+    <img src="extras/images/platforms/watchos.svg" width="88" height="88" alt="watchOS" title="watchOS">
+    <img src="extras/images/platforms/visionos.svg" width="88" height="88" alt="visionOS" title="visionOS">
+    <img src="extras/images/platforms/mac-catalyst.svg" width="88" height="88" alt="Mac Catalyst" title="Mac Catalyst">
+    <img src="extras/images/platforms/web.svg" width="88" height="88" alt="Web" title="Web">
+    <img src="extras/images/platforms/nodejs.svg" width="88" height="88" alt="Node.js" title="Node.js">
+</p>
 
 Choose the languages and targets for your project and compile the generated code with the appropriate toolchains. See the [target matrix](PROJECT.md#2-supported-languages-and-platforms) for runtime and build coverage.
 
