@@ -21,6 +21,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Complete type mapping contract](#54-complete-type-mapping-contract)
   - [Canonical equality, numeric conversion and legal value positions](#541-canonical-equality-numeric-conversion-and-legal-value-positions)
   - [One Dart API across native and web](#542-one-dart-api-across-native-and-web)
+  - [Concrete lowering rules for every type family](#543-concrete-lowering-rules-for-every-type-family)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
   - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
@@ -45,6 +46,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
   - [Unified library public entry points](#105-unified-library-public-entry-points)
   - [Shared target artifact ownership](#106-shared-target-artifact-ownership)
+  - [One public Apple module without language suffixes](#1061-one-public-apple-module-without-language-suffixes)
   - [Composition of libraries](#107-composition-of-libraries)
 - [11. Compiler and templates](#11-compiler-and-templates)
   - [Compiler pipeline](#111-pipeline)
@@ -673,7 +675,7 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 ### 5.4 Complete type mapping contract
 
-These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
 All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. Stream acquisition returns an owning stream handle, distinct from the subscription handle created when a consumer subscribes (section 14.3.2). `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
@@ -708,15 +710,15 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
 | `callback` | Callable passed to another implementation | Function table + context | Typed callback handle |
 | `async method / callback` | Operation with asynchronous completion | Completion + operation handle | Operation handle + completion |
-| `Stream<T>` | Sequence of asynchronous events | Subscription handle | Subscription handle |
+| `Stream<T>` | Owning stream; separate subscription | Stream handle + subscription handle | Stream handle + subscription handle |
 | `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
 | `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
 | `date` | Calendar date, without a time | int64_t epoch days | i64 epoch days |
 | `timestamp` | UTC instant, exact microseconds | int64_t UTC microseconds | i64 UTC microseconds |
 | `duration` | Signed elapsed nanoseconds | int64_t nanoseconds | i64 nanoseconds |
 | `uuid` | 128-bit identifier | 16-byte value | 16 canonical bytes |
-| `DataView` | Scoped read-only borrowed memory | Const pointer + length | Scoped offset + length |
-| `MutableDataView` | Scoped exclusive writable memory | Writable pointer + length | Exclusive scoped offset + length |
+| `DataView` | Scoped read-only borrowed memory | Validated borrow token + const pointer/length view | Validated borrow token + scoped offset/length |
+| `MutableDataView` | Scoped exclusive writable memory | Validated exclusive borrow token + pointer/length view | Validated exclusive borrow token + scoped offset/length |
 | `DataRef` | Shared owning buffer reference | Owning handle | Context-local owner handle |
 | `external` | User-defined host type with canonical mapping | Declared type / adapter | Declared canonical representation |
 
@@ -742,16 +744,16 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
 | `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
 | `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
-| `list<T>` | `std::vector<T>` | `List<T>` | `List<T>` | NSArray | [T] |
-| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet | `Set<T>` |
-| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary | `Dictionary<K,V>` |
-| `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
+| `list<T>` | `std::vector<T>` | `List<T>` (boxed) | `List<T>` | NSArray of boxed/typed objects | [T] |
+| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet of canonical keys | `Set<T>` or canonical-key wrapper |
+| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary with canonical keys/boxed values | `Dictionary<K,V>` or canonical-key wrapper |
+| `array<T>` | std::vector / array wrapper | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
 | `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
 | `async method / callback` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
-| `Stream<T>` | Async stream | Publisher adapter | Flow | Subscription + block | AsyncSequence |
+| `Stream<T>` | Owning async stream | Owning stream + Publisher adapter | Owning Flow adapter | Owning stream + subscription/block | Owning AsyncSequence adapter |
 | `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
 | `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
@@ -788,7 +790,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | list[T] | `List<T>` | `List<T>` | `IReadOnlyList<T>` | Array | `ReadonlyArray<T>` |
 | `set<T>` | set[T] | `Set<T>` | `Set<T>` | `IReadOnlySet<T>` | Set | `Set<T>` |
 | `map<K,V>` | dict[K,V] | `Map<K,V>` | `Map<K,V>` | `IReadOnlyDictionary<K,V>` | Map | `Map<K,V>` |
-| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / `Memory<T>` | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
+| `array<T>` | Owned typed buffer / list | Exact TypedData / wrapper | Exact TypedData / wrapper | T[] / owned typed wrapper | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
 | `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
@@ -825,6 +827,35 @@ Validate legal value positions recursively after generic and external-type expan
 The tables above describe platform-specific default type mappings. A Dart package targeting both native and Web, including a Flutter plugin with Web support, must instead resolve a portable public type profile before generating any public declarations. Configure targets.dart.integer_profile (and the Flutter integration's inherited Dart profile) as auto by default. Auto resolves portable for a declared native+web integration, native for an explicitly native-only package, and portable for web-only. Portable uses BigInt for both int64 and uint64 on every selected platform, including fields, optional/nested values, method parameters/returns and array elements. Smaller integers retain int. Exact typed array wrappers or element conversion are required when a native TypedData representation cannot preserve the portable public element type. Native-only may explicitly use int for int64, with checked conversions; native is invalid for a package promising Web compatibility. A consumer may explicitly select portable on native-only targets. No conditional public declaration, dynamic/Object substitution or conversion through double/JS Number to hide the difference.
 
 Use one public Dart declaration graph and distinct private FFI/JS adapters. Native int64 and uint64 conversion must preserve the full signed/unsigned bit pattern without first constructing an overflowing native int; use validated fixed-width chunks/typed bytes where necessary. The Web adapter uses exact BigInt or checked bit representations. Verify both extreme bounds and values above 2^53 with the same installed Dart source consumer on native and Web. Compare actual public signatures, not only runtime values. A platform-specific standalone Dart package can still use the separate native mapping from the table, but a Flutter plugin cannot silently change the public types of an existing imported Dart dependency; require a compatible portable dependency or explicitly constrain supported platforms.
+
+#### 5.4.3 Concrete lowering rules for every type family
+
+The tables describe semantic public types, not native object layouts. The type planner must resolve an exact representation, both conversion directions, ownership kind, legal positions, nullability, key semantics, required capability and any checked wrapper for every concrete instantiation. Missing coverage fails validation. A configurable representation must preserve exact semantics.
+
+| Family | Required concrete behavior |
+| --- | --- |
+| bool / signed integer | Fixed widths; C bool byte exactly 0/1; Java byte/short/int/long, Kotlin Byte/Short/Int/Long, Swift Int8/16/32/64, .NET sbyte/short/int/long; Python/JS/Dart validate values |
+| unsigned integer | Java short/int/long/BigInteger for 8/16/32/64; Kotlin UByte/UShort/UInt/ULong with checked signed JNI carriers; Swift UInt widths; .NET byte/ushort/uint/ulong; Dart/JS exact BigInt for uint64 |
+| floating | IEEE binary32/binary64, checked finite narrowing, negative zero/subnormal preservation, explicit NaN/infinity; no promised NaN payload bits |
+| string | Exact valid Unicode scalar sequence; UTF-8 byte length including embedded NUL; no null-terminated-only ABI or JNI modified UTF-8 codec |
+| bytes | Independent owned byte value; snapshot or explicit exclusive ownership transfer with no observable alias; no shared mutable byte array |
+| date/time/UUID | Date 0001–9999; timestamp/duration full signed 64-bit units; UUID 16 network-order bytes, explicit .NET Guid mixed-endian conversion |
+| enum/flags | Explicit signed int32 enum values and uint32 masks; reject unknown values/bits; Java/Kotlin ordinal is not IDL value |
+| records/variants | Validated value snapshots, copy value leaves and retain reference leaves; tag selects active variant; no memcpy of host objects |
+| optional/Result | Independent tags, no nested null flattening, scalar boxing where required; no payload for void success, separate runtime errors |
+| list/set/map | Exact recursive element plans; canonical equality; reject duplicate keys before host collapse; independent containers |
+| array | Owned variable-length sequence; exact primitive storage where supported, typed owner or element sequence otherwise; no zero-copy promise |
+| interface/callback/weak/token | Typed capability with validated context/generation and correct root/lease; atomic weak upgrade, independent cancellation token |
+| async/stream | Owning result with separate start, completion and execution leases; stream capability distinct from subscription |
+| external | Recursive canonical representation, checked adapters and explicit ownership; no foreign pointer as scalar |
+
+**JVM arrays and generics.** Java signed primitive arrays use byte[], short[], int[], long[], float[], double[] and boolean[]. Unsigned 8/16/32 arrays default to short[], int[], long[] with range checks; uint64 to BigInteger[] or an explicitly configured exact owning bit wrapper. Kotlin uses UByteArray/UShortArray/UIntArray/ULongArray with required opt-in where applicable, or an equivalent exact wrapper; JNI carrier bits are internal. Shared Java-owned models keep the actual Java field signatures. Java generic arguments and CompletableFuture results require boxed primitives and Void for no-payload success. Preserve legal null collection elements; avoid null-rejecting factories. Snapshot mutable arrays and containers.
+
+**Apple.** Objective-C Foundation collections and lightweight generic arguments require object types: box scalars with checked range and numeric kind (including NSNumber bool distinction), and use tagged wrappers for nested optional/variant/Result. Never insert nil in a collection. NSNull is not an independent nested presence tag. BOOL is converted to a canonical byte; NSInteger/Swift Int are not substitutes for fixed-width int64. Swift maps to native Optional, but imported Obj-C optional nesting needs tagged wrappers. Swift Result requires Error-conforming E or a generated tagged result. Completion APIs distinguish success-with-absence from NSError failure; use an explicit status/result box or native refinement when the importer cannot prove both. No exception unwinds across C.
+
+**Python, Dart, .NET, JS/TS.** Python bool is not integer input; check int bounds and snapshot mutable bytes-like inputs. Python typing/TypeScript types do not replace boundary validation. Dart portable 64-bit values require BigInt, exact chunk conversion and compatible typed array wrappers. .NET bool, char, string and platform-dependent native long are not canonical C layouts; marshal explicit byte bool, fixed-width integer and length-delimited UTF-8. JS validates Number before narrowing, BigInt64Array/BigUint64Array capability and exact element values; reject detached buffers, holes, undefined and coercions. TypeScript uses identical runtime checks. A signed bit carrier is not the mathematical unsigned value until decoded. Snapshot/transfer mutable typed arrays only under the value contract.
+
+**Void, errors and lengths.** Successful no-payload calls map to C status, C++ void/Future<void>, Java void/CompletableFuture<Void>, Kotlin Unit, Swift Void/async throws, Python None, Dart void/Future<void>, .NET void/Task and JS/TS undefined/Promise<void>. Failure and cancellation remain distinct from optional absence and business Result. All lengths use checked fixed-width ABI values: canonical native descriptors use uint64 byte/element lengths, validate size_t/JS safe indexing/JNI jsize/host bounds before narrowing; WASM32 offsets are checked within the owning instance. Checked multiplication, range, stride, recursive depth, allocation and cumulative element budgets apply before allocation or access. See section 13 for memory rules. No host object layout, unchecked integer-to-pointer conversion or hidden lossy fallback.
 
 ### 5.5 Per-type acceptance
 
@@ -1529,7 +1560,7 @@ targets:
   objc:
     output: ../../apple/Domain/ObjC
     prefix: DOM
-    module: AppDomainObjC
+    module: AppDomain
   swift:
     output: ../../apple/Domain/Swift
     module: AppDomain
@@ -1556,7 +1587,7 @@ targets:
     output: ../../native/domain/wasm
 ```
 
-The model_source and implementation_source settings express artifact ownership. Section 10.6 specifies automatic paired-target defaults and explicit independent mode. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on command-level target filters. Resolve paired-target ownership from the complete declared module or library target set before filtering. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
+The model_source and implementation_source settings express artifact ownership. Section 10.6 specifies automatic paired-target defaults and explicit independent mode. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on command-level target filters. Resolve paired-target ownership from the complete declared module or library target set before filtering. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, use the imported type directly in the mixed framework; emit a qualified public typealias only in a genuinely distinct facade module. Never emit a recursive same-module alias. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
 
 ### 7.4 Repository module configuration
 
@@ -1597,7 +1628,7 @@ targets:
   objc:
     output: ../../apple/Repository/ObjC
     prefix: REP
-    module: AppRepositoryObjC
+    module: AppRepository
   swift:
     output: ../../apple/Repository/Swift
     module: AppRepository
@@ -1660,7 +1691,7 @@ targets:
   objc:
     output: ../../apple/Network/ObjC
     prefix: NET
-    module: AppNetworkObjC
+    module: AppNetwork
   swift:
     output: ../../apple/Network/Swift
     module: AppNetwork
@@ -1844,7 +1875,7 @@ libraries:
         swift:
           module: AppBridge
         objc:
-          module: AppBridgeObjC
+          module: AppBridge
           prefix: AB
     artifact:
       formats: [xcframework, swiftpm]
@@ -1920,9 +1951,9 @@ libraries:
           include: ubook/ubook.hpp
           cmake_target: Ubook::Ubook
         objc:
-          module: UbookObjC
+          module: Ubook
           prefix: UB
-          include: UbookObjC/UbookObjC.h
+          include: Ubook/Ubook.h
         swift:
           module: Ubook
         java:
@@ -2208,9 +2239,9 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 | JS / TS | kebab-case .js/.ts/.d.ts as applicable | module-derived kebab-case package |
 | WASM | kebab-case .wasm and adapter source | owning library/selected module ID |
 
-A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default. When Objective-C and Swift are both declared in one Apple integration, the derived Clang module uses the PascalCase base plus ObjC and the Swift module uses the base without an affix. The same rule applies to unified library identities. Explicit module names override derivation, but a selected Swift/Clang pair cannot occupy the same import module name. A standalone Objective-C target may use the unadorned derived module name. A project or library may explicitly choose a project-wide prefix with per-module/category overrides. Do not change a defining module's default based on whether another library consumes it. Detect cross-module Objective-C runtime class-name collisions before publication. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
+A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default. When Objective-C and Swift are both declared in one Apple integration, the default is one mixed public framework/module using the unsuffixed derived PascalCase library name (or module name for standalone). Both languages import the same identity. The Apple build system coordinates the Swift module with its underlying Clang module; do not register two unrelated top-level modules with the same name. Internal modules may have distinct configurable technical names, never required consumer imports. Explicit separate public modules are opt-in and must use distinct names. See section 10.6.1. A project or library may explicitly choose a project-wide prefix with per-module/category overrides. Do not change a defining module's default based on whether another library consumes it. Detect cross-module Objective-C runtime class-name collisions before publication. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
 
-Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, argument_labels (where supported), variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. The paired JVM profile derives Kotlin as a configurable interface prefix; mixed static/instance companions derive Statics, and paired Apple Clang modules derive ObjC. Other public type/method affixes are empty except the C# async-method Async convention and the required/default C/Objective-C symbol prefixes. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
+Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, argument_labels (where supported), variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. The paired JVM profile derives Kotlin as a configurable interface prefix; mixed static/instance companions derive Statics, and mixed Apple frameworks use one unsuffixed public identity. Other public type/method affixes are empty except the C# async-method Async convention and the required/default C/Objective-C symbol prefixes. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
 
 Example effective C++ defaults:
 
@@ -2520,7 +2551,7 @@ Java/Kotlin examples illustrate alternative standalone API surfaces. If both are
 
 ```objc
 @import Foundation;
-@import AppDomainObjC;
+@import AppDomain;
 
 NS_SWIFT_NAME(UserRepository)
 @protocol REPUserRepository
@@ -2673,7 +2704,7 @@ Every library has an explicit public import plan per selected target. The defaul
 | --- | --- | --- |
 | C | `#include <ubook/ubook.h>` | Umbrella header with exported typed API and stable prefixed C symbols |
 | C++ | `#include <ubook/ubook.hpp>` | Self-contained umbrella header, public namespace aliases or intentionally unified declarations, relocatable CMake target |
-| Objective-C | `@import UbookObjC;` | Actual Clang module, umbrella header and compatible prefixed runtime classes |
+| Objective-C | `@import Ubook;` | Actual Clang module, umbrella header and compatible prefixed runtime classes |
 | Swift | `import Ubook` | Actual importable Swift module/target, native public declarations or explicit public typealiases and forwarding APIs |
 | Java | `import com.ubook.ProductChapterRepository;` | Actual public class/package layout in JAR/AAR; no fictitious Java re-export |
 | Kotlin | `import com.ubook.ProductChapterRepository` (Kotlin-only); `import com.ubook.KotlinProductChapterRepository` (default shared JVM profile) | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
@@ -2715,15 +2746,50 @@ Compute ownership from the complete declared target set, effective configuration
 | Combination | Automatic default for the same package/library | Explicit alternative |
 | --- | --- | --- |
 | Java + Kotlin, shared JVM package | Java owns shared value models and CompletableFuture interface; Kotlin owns distinct suspend interface with Kotlin prefix | Separate packages/models, explicit interface affixes or one public contract target |
-| Objective-C + Swift | Swift owns native Swift models/contracts; Obj-C owns its prefixed API in a distinct Clang module | model_source: objc shares representable imported models; explicit independent modules |
+| Objective-C + Swift | One mixed public framework/module; shared representable imported Obj-C value models by default, Swift-native callable refinements | Native Swift value models with checked conversions; explicit separate modules |
 | JavaScript + TypeScript | JavaScript owns ESM implementation and package metadata; TypeScript contributes declarations/type exports | Separate packages with explicitly selected implementation owners/loaders |
 | Dart + Flutter | Dart owns shared typed models/API; Flutter owns plugin metadata and exports the Dart API | Explicit separate Dart package dependency |
 
 For Java/Kotlin, the paired default is derived only when both are declared in a shared physical JVM package, not when a command happens to select one. Kotlin-only modules own their value models and use short UserRepository names. With paired targets the Kotlin interface prefix Kotlin is configurable. The two callable contracts share one canonical descriptor; typed adapters bridge suspend and CompletableFuture, never cast between unrelated interfaces. Java-owned models retain their actual JVM field types. Use checked conversions where needed or explicitly choose separate model layouts. No duplicate class files. Validate erasure, mangling and actual mixed-language consumers.
 
-For Apple, the native Swift module is the default owner of Swift contracts. Objective-C remains callable through its own prefixed public API. Use separate Clang module scope and supported importer refinement/unavailability where needed so an imported protocol cannot collide with the native Swift protocol in its public surface. Swift imported names follow swift_names defaults when visible. In the default native model profile, the two public host value types are distinct and converted using the canonical representation; never claim they are the same object. In model_source: objc, the imported type is the sole Swift model owner; expose a qualified public typealias where needed. Native Swift callable contracts remain the default unless an explicitly selected imported-contract profile proves identical signatures, async/errors and ownership. Compile actual Swift and Objective-C imports, including optional/error cases and collisions.
+For Apple use the mixed-framework identity defined in section 10.6.1. The paired profile defaults to model_source: objc for representable shared value models; Swift-only uses native Swift models. A type requiring a native Swift representation for exact semantics uses an explicit typed refinement/conversion without duplicate visible names. model_source: swift selects independent native value models and checked conversions. Objective-C remains usable with configurable prefixed symbols. Native Swift callable contracts or verified imported refinements expose one short Swift name; supported importer metadata and private bridge declarations prevent collisions. Compile actual imports, optional/error cases and model identities.
 
 For JS/TS, emit one ESM runtime, package metadata and loader per shared artifact, with .d.ts matching real exports and actual descriptor values. TypeScript-only generation still supplies executable JS, whether owned by its backend or explicitly declared JS dependency. A declaration file alone is not a provider. Dart/Flutter share one canonical Dart API for the same package integration. Native FFI and Web adapter selection does not duplicate models. Test target-filtered generation, then full generation; ownership and names must not drift or leave stale duplicate files.
+
+#### 10.6.1 One public Apple module without language suffixes
+
+Default api.apple.layout is mixed_framework when Swift and Objective-C are selected together. Derive the one public module/framework name from the library ID, or from the standalone module ID. A supported mixed Xcode framework exposes Objective-C through its umbrella header and Swift through the compiler's module and generated compatibility header. This is one coordinated framework identity, not two unrelated top-level modules or just a SwiftPM product alias. Do not invent a mixed-language SwiftPM source target where unsupported; build the mixed framework with Apple tooling and distribute its XCFramework through a binary target. Source integration uses supported native build metadata or proven private implementation targets and public facade. If the requested format cannot realize this identity, diagnose it and require a compatible explicit layout, never silently suffix the public name.
+
+```yaml
+libraries:
+  ubook:
+    modules: [domain, repository]
+    targets: [objc, swift]
+    api:
+      mode: unified
+      apple:
+        layout: mixed_framework
+        module: Ubook
+      targets:
+        objc:
+          prefix: UB
+```
+
+api.apple.module sets the common identity. Explicit api.targets.objc.module and api.targets.swift.module must agree in mixed_framework mode. Distinct explicit names require api.apple.layout: separate_modules. No default public ObjC, Swift, Native, Bridge or Internal suffix. Internal implementation modules may use configurable technical names but are not required consumer imports. Objective-C runtime class/protocol prefixes remain independently configurable and Swift imports remove generated affixes by default.
+
+```swift
+import Ubook
+
+let product = Product(id: 10)
+```
+
+```objc
+@import Ubook;
+// Alternatively: #import <Ubook/Ubook.h>
+UBProduct *product = [[UBProduct alloc] initWithId:10];
+```
+
+These are illustrative calls to the same representable model. A shared imported model already owned by the underlying Clang module must not be redeclared as a Swift type or recursive same-module typealias. Use NS_SWIFT_NAME for the short name; explicit qualified aliases are valid only for genuinely distinct defining modules. Native Swift refinements hide/rename competing imported declarations for Swift without removing Objective-C usability. Include the compiler-generated Swift compatibility header only where needed and avoid circular umbrella imports. Swift-only types are not fictitiously representable in Objective-C. Test separate installed Swift and Objective-C clients with the same Ubook import, shared models, callbacks, async optional results, native providers, static helpers, module verification and each actual Apple slice. SwiftPM binary targets must expose the actual module Ubook. Explicit separate public layouts remain configurable. See Apple's [Objective-C into Swift](https://developer.apple.com/documentation/swift/importing-objective-c-into-swift) and [Swift into Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c).
 
 ### 10.7 Composition of libraries
 
@@ -4171,7 +4237,7 @@ val users = registry.get(KotlinUserRepository.TYPE).findAll()
 **Provider and consumer:** typed generated protocols and proxy classes, copied completion blocks, typed callbacks and subscription cancellation. Use NSError or explicit status for runtime failures, Result for business failures. No NSException crosses the ABI. Annotate importable completion APIs for Swift where valid. Generate explicit Swift wrappers for ambiguous optional/error cases. Test callback block lifetime, reentrancy and dispatch queues.
 
 ```objc
-@import AppDomainObjC;
+@import AppDomain;
 
 id<REPUserRepository> repo = [registry userRepository];
 [repo findAllWithCompletion:^(NSArray<DOMUser *> *users, NSError *error) {
@@ -5245,7 +5311,7 @@ AppBridge.xcframework/
     └── AppBridge.framework/
 ```
 
-The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Preserve the public identities of generated Swift and Objective-C modules. An XCFramework contains variants of one library product, not unrelated modules as architecture slices. If separate frameworks are needed, produce one XCFramework per framework and a SwiftPM product referencing the required binary targets. Unified mode is the library default and requires a real importable public Swift/Clang module layout and compilation proof, even if several implementation frameworks are needed. Modular mode may distribute separately importable frameworks. SwiftPM product names alone do not satisfy this contract. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
+The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Preserve the public identities of generated Swift and Objective-C modules. An XCFramework contains variants of one library product, not unrelated modules as architecture slices. If separate frameworks are needed, produce one XCFramework per framework and a SwiftPM product referencing the required binary targets. Unified mode is the library default and requires a real importable public Swift/Clang module layout and compilation proof, even if several implementation frameworks are needed. Modular mode may distribute separately importable frameworks. SwiftPM product names alone do not satisfy this contract. Build the default mixed Apple framework under section 10.6.1 and package its XCFramework; test both installed consumer imports. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
 
 SwiftPM binary packaging produces a locally usable Package.swift and the required XCFrameworks. Reference the local artifact with binaryTarget(name:path:). For an explicitly configured remote distribution, produce a ZIP with the XCFramework at its root and compute its checksum using swift package compute-checksum. Emit binaryTarget(name:url:checksum:) only when a real remote URL is supplied. A local binary target does not require a remote URL or checksum in Package.swift. No fabricated download URL. A local archive/package must be usable before remote publication. Publishing is separate. Verify fresh SwiftPM/Xcode consumers import generated APIs and run on requested simulator/device. Include Objective-C and Swift consumers. Test visionOS independently. Verify package contains exactly the requested valid slices and no stale sanitizer/debug slice.
 

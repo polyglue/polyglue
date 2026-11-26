@@ -48,7 +48,7 @@ The runtime implements shared ABI mechanics, ownership, references, buffers, asy
 
 The type system supports built-in exact date, timestamp, duration and UUID values, with checked native conversions. Keep the built-in catalog limited to the specified common types and use external types or ordinary IDL for domain-specific values. External types use module-owned versioned descriptors, existing canonical ABI representations and explicit host-language adapters. Users must be able to add a type without editing or rebuilding the generator. Never silently truncate temporal values, invent a target mapping, evaluate descriptor code or use raw foreign pointers as integers. Follow the external type schema and tests in PROJECT.md.
 
-Modules are the unit of logical generation. Libraries aggregate modules for unified public APIs and binary distribution without changing logical module identity. Use libraries and --library as specified in PROJECT.md. Unified exposure is the default; modular exposure is explicit. Library dependencies preserve actual defining artifact ownership. Apply section 10.6 paired-target defaults and resolve ownership before command filters. IDL identities are case-sensitive; generated names are separate. All applicable presentation and integration defaults are documented, discoverable and independently configurable. C++ uses camelCase methods, fields and parameters by default. Swift public imports strip generated Objective-C affixes by default and support independent Swift signatures and argument labels. Use CMake for native code and the proper ecosystem tooling for Gradle, Apple, SwiftPM, Python, Dart/Flutter, .NET and JS/TS/WASM. Isolate final artifacts by library version, build number, platform, architecture or slice set, format, configuration and sanitizer. Keep build plans and subprocess execution in Python and reuse the same CLI locally and in CI. No duplicate build systems or speculative helper frameworks.
+Modules are the unit of logical generation. Libraries aggregate modules for unified public APIs and binary distribution without changing logical module identity. Use libraries and --library as specified in PROJECT.md. Unified exposure is the default; modular exposure is explicit. Library dependencies preserve actual defining artifact ownership. Apply section 10.6 paired-target defaults and resolve ownership before command filters. IDL identities are case-sensitive; generated names are separate. All applicable presentation and integration defaults are documented, discoverable and independently configurable. C++ uses camelCase methods, fields and parameters by default. Swift public imports strip generated Objective-C affixes by default and support independent Swift signatures and argument labels. Mixed Apple frameworks expose one unsuffixed public module for both Swift and Objective-C (section 10.6.1); separate public modules are explicit. Apply concrete lowering/boxing/array/ownership rules in section 5.4.3. Use CMake for native code and the proper ecosystem tooling for Gradle, Apple, SwiftPM, Python, Dart/Flutter, .NET and JS/TS/WASM. Isolate final artifacts by library version, build number, platform, architecture or slice set, format, configuration and sanitizer. Keep build plans and subprocess execution in Python and reuse the same CLI locally and in CI. No duplicate build systems or speculative helper frameworks.
 
 ## Type and platform reference
 
@@ -56,7 +56,7 @@ The following tables mirror the planned contract in PROJECT.md section 5.4. Keep
 
 ### Canonical type mapping
 
-These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
 All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
@@ -91,15 +91,15 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
 | `callback` | Callable passed to another implementation | Function table + context | Typed callback handle |
 | `async method / callback` | Operation with asynchronous completion | Completion + operation handle | Operation handle + completion |
-| `Stream<T>` | Sequence of asynchronous events | Subscription handle | Subscription handle |
+| `Stream<T>` | Owning stream; separate subscription | Stream handle + subscription handle | Stream handle + subscription handle |
 | `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
 | `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
 | `date` | Calendar date, without a time | int64_t epoch days | i64 epoch days |
 | `timestamp` | UTC instant, exact microseconds | int64_t UTC microseconds | i64 UTC microseconds |
 | `duration` | Signed elapsed nanoseconds | int64_t nanoseconds | i64 nanoseconds |
 | `uuid` | 128-bit identifier | 16-byte value | 16 canonical bytes |
-| `DataView` | Scoped read-only borrowed memory | Const pointer + length | Scoped offset + length |
-| `MutableDataView` | Scoped exclusive writable memory | Writable pointer + length | Exclusive scoped offset + length |
+| `DataView` | Scoped read-only borrowed memory | Validated borrow token + const pointer/length view | Validated borrow token + scoped offset/length |
+| `MutableDataView` | Scoped exclusive writable memory | Validated exclusive borrow token + pointer/length view | Validated exclusive borrow token + scoped offset/length |
 | `DataRef` | Shared owning buffer reference | Owning handle | Context-local owner handle |
 | `external` | User-defined host type with canonical mapping | Declared type / adapter | Declared canonical representation |
 
@@ -125,16 +125,16 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
 | `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
 | `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
-| `list<T>` | `std::vector<T>` | `List<T>` | `List<T>` | NSArray | [T] |
-| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet | `Set<T>` |
-| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary | `Dictionary<K,V>` |
-| `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
+| `list<T>` | `std::vector<T>` | `List<T>` (boxed) | `List<T>` | NSArray of boxed/typed objects | [T] |
+| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet of canonical keys | `Set<T>` or canonical-key wrapper |
+| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary with canonical keys/boxed values | `Dictionary<K,V>` or canonical-key wrapper |
+| `array<T>` | std::vector / array wrapper | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
 | `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
 | `async method / callback` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
-| `Stream<T>` | Async stream | Publisher adapter | Flow | Subscription + block | AsyncSequence |
+| `Stream<T>` | Owning async stream | Owning stream + Publisher adapter | Owning Flow adapter | Owning stream + subscription/block | Owning AsyncSequence adapter |
 | `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
 | `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
@@ -171,7 +171,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | list[T] | `List<T>` | `List<T>` | `IReadOnlyList<T>` | Array | `ReadonlyArray<T>` |
 | `set<T>` | set[T] | `Set<T>` | `Set<T>` | `IReadOnlySet<T>` | Set | `Set<T>` |
 | `map<K,V>` | dict[K,V] | `Map<K,V>` | `Map<K,V>` | `IReadOnlyDictionary<K,V>` | Map | `Map<K,V>` |
-| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / `Memory<T>` | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
+| `array<T>` | Owned typed buffer / list | Exact TypedData / wrapper | Exact TypedData / wrapper | T[] / owned typed wrapper | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
 | `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
