@@ -29,6 +29,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
     - [Lists and arrays](#lists-and-arrays)
     - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
+  - [Module versions and dependency identity](#621-module-versions-and-dependency-identity)
 - [7. Module-first configuration](#7-module-first-configuration)
   - [Operational defaults and diagnostics](#763-operational-defaults-and-diagnostics)
   - [Library and build configuration](#77-library-and-build-configuration)
@@ -54,6 +55,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
   - [Async, callbacks, cancellation and streams in motion](#145-async-callbacks-cancellation-and-streams-in-motion)
   - [Listeners and subscription patterns](#146-listeners-and-subscription-patterns)
+  - [Default delivery and callback scope](#1431-default-delivery-and-callback-scope)
 - [15. Interfaces and service discovery](#15-interfaces-and-service-discovery)
   - [Direct references and service registry flows](#155-direct-references-and-service-registry-flows)
   - [Registry identity, contexts and public API](#156-registry-identity-contexts-and-public-api)
@@ -204,7 +206,7 @@ Every language must be able to act as a consumer and as an implementation provid
 | JavaScript | WebAssembly / JS adapter | Promise |
 | TypeScript | JS implementation plus type declarations | Promise |
 
-Flutter is an integration target, not a separate language. JavaScript and TypeScript may share implementation artifacts. Java and Kotlin can share JVM models to avoid duplicate classes. Swift and Objective-C can share imported types or use distinct namespaced wrappers. Never generate conflicting definitions.
+Flutter is an integration target, not a separate language. JavaScript and TypeScript may share implementation artifacts. Java and Kotlin share JVM models by default when jointly declared in a shared package as defined in section 10.6; independent ownership remains configurable. Swift and Objective-C can share imported types or use distinct namespaced wrappers. Never generate conflicting definitions.
 
 ### 2.2 Platform matrix
 
@@ -521,7 +523,7 @@ This is an alternative fixture assuming the imported domain type exists. Generat
 
 The embedding application explicitly supplies a fixed static implementation to a generated context-bound facade or binds it as the default static implementation for that contract in the selected context. Validate canonical contract, context, owner and executor before publishing a binding. Use the same reference, operation and execution machinery as ordinary interfaces. Default binding has one slot per declaring contract per context, not a service stack. Duplicate binding fails without mutation. No dynamic replacement, priority, restoration or Service Registry lookup. Removing the binding ends class-level discovery; independently retained fixed facades remain valid while their actual provider is Open. Rebinding after explicit removal has a new unique control identity. Detach revokes bindings whose binding owner or actual provider belongs to the closing attachment. Closing the context revokes all bindings. Applications needing dynamic replacement use ordinary registered interfaces.
 
-Generate convenient class/type-level syntax where the language permits it and the embedding application has explicitly selected a default context and bound implementation. An absent or ambiguous context or binding reports a typed error. Never choose the last initialized context, a thread ID or an arbitrary language. Multiple contexts can always use explicitly bound facade objects. In Swift an all-static helper owns the short name; a mixed interface uses a separate static companion, default suffix Statics, so the native instance protocol does not collide. C exposes typed operations taking a bound static handle. Class-level convenience generation and companion naming are configurable. The static binding's lifetime is controlled explicitly, and no package import initializes a runtime.
+Generate convenient class/type-level syntax where the language permits it and the embedding application has explicitly selected a default context and bound implementation. An absent or ambiguous context or binding reports a typed error. Never choose the last initialized context, a thread ID or an arbitrary language. Multiple contexts can always use explicitly bound facade objects. In Swift an all-static helper owns the short name; a mixed interface uses a separate static companion, default suffix Statics, so the native instance protocol does not collide. C exposes typed operations taking a bound static handle. Class-level convenience generation and companion naming are configurable. The static binding's lifetime is controlled by a unique owning binding token with idempotent explicit removal and last-control-reference cleanup. It never removes another binding generation. Reuse registry control bookkeeping where appropriate without exposing static bindings as registry entries. No package import initializes a runtime.
 
 Illustrative Swift calls after explicit initialization:
 
@@ -610,7 +612,7 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 ### 5.4 Complete type mapping contract
 
-These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model only when explicitly configured. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
 All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
@@ -2596,7 +2598,7 @@ Every library has an explicit public import plan per selected target. The defaul
 | Objective-C | `@import UbookObjC;` | Actual Clang module, umbrella header and compatible prefixed runtime classes |
 | Swift | `import Ubook` | Actual importable Swift module/target, native public declarations or explicit public typealiases and forwarding APIs |
 | Java | `import com.ubook.ProductChapterRepository;` | Actual public class/package layout in JAR/AAR; no fictitious Java re-export |
-| Kotlin | `import com.ubook.ProductChapterRepository` | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
+| Kotlin | `import com.ubook.ProductChapterRepository` (Kotlin-only); `import com.ubook.KotlinProductChapterRepository` (default shared JVM profile) | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
 | Dart | `import 'package:ubook/ubook.dart';` | Public library entrypoint exports selected src declarations; conditional native/web adapter imports |
 | Flutter | `import 'package:ubook_flutter/ubook_flutter.dart';` | Plugin entrypoint exports the shared Dart API and platform initialization |
 | Python | `from ubook.api import ProductChapterRepository` | Explicit public api.py module re-exports selected defining symbols; __init__.py stays empty |
@@ -3871,12 +3873,12 @@ Distinguish the lifetime of the whole runtime context from an attached provider 
 
 For partial detach while the shared context continues running:
 
-1. Stop new calls, registrations and callback delivery admissions to the closing attachment. Make the owner-state change and exclusion from registry resolution atomic with respect to invocation admission. Remove active and hidden entries from every affected registry if either their registration owner or actual provider belongs to the closing attachment; restore the nearest still-live registrations, never entries whose registration owner or provider attachment is closing. Do not close unaffected registries or reject calls to unrelated live providers.
+1. Stop new calls, registrations and callback delivery admissions to the closing attachment. Make the owner-state change and exclusion from registry resolution atomic with respect to invocation admission. Revoke explicit static bindings owned by or hosted in the closing attachment in the same admission transition. Remove active and hidden entries from every affected registry if either their registration owner or actual provider belongs to the closing attachment; restore the nearest still-live registrations, never entries whose registration owner or provider attachment is closing. Do not close unaffected registries or reject calls to unrelated live providers.
 2. Request cancellation for operations tied to the closing attachment (as provider, consumer or callback owner) and stop new stream/listener delivery to it. Retain execution resources until actual work is safe. Unregistration alone does not cancel ordinary in-flight operations; this is a separate lifecycle action required for detach.
 3. Drain actual execution and invalidate the attachment's handles, subscriptions and callback admission state. Other fixed references to its providers must no longer be callable. Retain enough runtime-owned metadata to reject stale handles safely without dereferencing freed foreign objects.
 4. Release all affected adapters, callback roots and transferred payloads on their live owning executors and drain any releases scheduled by cleanup. Detach the attachment only after its resources are safe. If draining cannot finish, report the shutdown failure and keep required resources alive; never reinsert the closing providers or call a dead isolate.
 
-Full context shutdown follows sections 12.2 and 14.4: reject all new business work, cancel/drain actual execution, remove all registrations, invalidate handles, drain resulting thread-affine releases, then detach. No restoration is callable while the entire context is closing. Keep cleanup available after business calls have been blocked. Partial detach is not full context shutdown.
+Full context shutdown follows sections 12.2 and 14.4: reject all new business work, revoke static binding discovery, cancel/drain actual execution, remove all registrations and static binding roots, invalidate handles, drain resulting thread-affine releases, then detach. No restoration is callable while the entire context is closing. Keep cleanup available after business calls have been blocked. Partial detach is not full context shutdown.
 
 For Flutter, activity recreation or moving an app to the background does not by itself imply a provider runtime has been destroyed. Plugin detach, engine destruction and hot restart must explicitly clean up the appropriate attachment generation. Multiple engines may use separate contexts/registries for isolated service sets or deliberately share one context and registry; in the shared case each engine has its own owner identity, and the usual explicit registration policy decides which provider is active. Destroying one engine removes only its entries and callbacks, even when its provider is hidden by another engine's override. Never silently route to another engine's registry.
 
