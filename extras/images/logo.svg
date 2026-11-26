@@ -1,9 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
-  <title id="title">PolyGlue</title>
-  <desc id="desc">Two interlocking geometric links representing native interoperability between programming languages.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112" role="img" aria-labelledby="title">
+  <title id="title">PolyGlue symbol</title>
   <g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="#36D9BB" d="M60 40 44 31 16 47v32l28 16 30-17V60"/>
-    <path stroke="#78A9FF" d="M68 88 84 97l28-16V49L84 33 54 50v18"/>
-    <path stroke="#36D9BB" d="M44 95 74 78V60"/>
+    <path stroke="#5165F5" d="M45 25 15 55 45 85 69 61"/>
+    <path stroke="#10AE9F" d="M67 87 97 57 67 27 43 51"/>
   </g>
 </svg>
