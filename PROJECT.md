@@ -150,14 +150,14 @@ polyglue list targets
 polyglue --version
 ```
 
-When a selected module depends on another module, resolve its source or prebuilt manifest automatically. Only generate the selected target and its required source dependencies. Validation must happen before writes. The config inspection command prints the effective merged settings, resolved paths and their origins.
+Without a target filter, generate all public targets explicitly selected by the requested modules. With a target filter, generate only that target and its required source dependency closure, including internal bridge artifacts. Resolve source and prebuilt dependencies automatically. A module.yaml used directly inherits built-in and module defaults only. To apply project defaults, select the module through its polyglue.yaml. Do not search parent directories for an implicit project. Validation must happen before writes. The config inspection command prints the effective merged settings, resolved paths and their origins.
 
 ### 3.2 Official and local generator
 
 After release:
 
 ```bash
-uvx polyglue@<authorized-published-version> generate
+uvx polyglue generate
 pip install polyglue
 polyglue generate
 ```
@@ -167,8 +167,8 @@ From source:
 ```bash
 git clone https://github.com/polyglue/polyglue.git
 cd polyglue
-uv sync
-uv run polyglue generate --config examples/polyglue.yaml
+uv sync --locked
+uv run --locked polyglue generate --config examples/polyglue.yaml
 uv tool install --editable .
 ```
 
@@ -211,16 +211,16 @@ One installed Python CLI is the entry point for generation and native build orch
 Illustrative CLI (commands to implement and test, not available yet):
 
 ```bash
-uv run polyglue doctor --target kotlin --platform android
-uv run polyglue generate --module repository --target kotlin
-uv run polyglue build --product mobile --platform android --configuration release
-uv run polyglue package --product mobile --format aar
-uv run polyglue package --product apple --format xcframework
-uv run polyglue package --product apple --format swiftpm
-uv run polyglue package --product desktop --format cmake
-uv run polyglue test --target cpp --sanitizer address
-uv run polyglue test --target cpp --sanitizer thread
-uv run polyglue run --target flutter --platform android
+uv run --locked polyglue doctor --target kotlin --platform android
+uv run --locked polyglue generate --module repository --target kotlin
+uv run --locked polyglue build --product mobile --platform android --configuration release
+uv run --locked polyglue package --product mobile --format aar
+uv run --locked polyglue package --product apple --format xcframework
+uv run --locked polyglue package --product apple --format swiftpm
+uv run --locked polyglue package --product desktop --format cmake
+uv run --locked polyglue test --target cpp --sanitizer address
+uv run --locked polyglue test --target cpp --sanitizer thread
+uv run --locked polyglue run --target flutter --platform android
 ```
 
 Use explicit module/target selection for source generation and explicit product selection for multi-module binary artifacts. Resolve missing or ambiguous product/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Support an explicit incremental mode with input fingerprint verification, an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
@@ -525,7 +525,7 @@ Rules: all integral conversions validate range and type (Python bool is not acce
 | external | Declared adapter | Declared adapter | Declared adapter | Declared adapter |
 | DataView / MutableDataView / DataRef | See section 13 | See section 13 | See section 13 | See section 13 |
 
-Nested optional values cannot collapse distinct absence states. Either use a tagged wrapper or reject the unsupported nesting explicitly. Set/map keys must have portable equality and hashing. For the initial implementation restrict keys to bool, integer, string, enum and UUID unless a portable equality policy has been proven. Do not use object identity for value keys. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit. The exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
+Nested optional values cannot collapse distinct absence states. Use an explicit tagged wrapper when nullable syntax collapses those states. Missing, present absent inner value and present inner payload must round-trip distinctly. Set/map keys must have portable equality and hashing. For the initial implementation restrict keys to bool, integer, string, enum and UUID unless a portable equality policy has been proven. Do not use object identity for value keys. Define key equality by canonical values: exact integers, Unicode scalar sequences without implicit normalization, enum values and canonical UUID bytes. Sets and maps have no portable iteration-order guarantee. Reject duplicate canonical keys in incoming representations rather than silently overwrite entries. Preserve infinity, signed zero and NaN classification for floats, without promising NaN payload bits across runtimes. Float keys are excluded by the initial portable key policy. Primitive array mappings that cannot retain exact contiguous representation must use an exact wrapper or reject a zero-copy request. Time conversion into lower-precision host types is explicit. The exact canonical representation must survive round trips. UUID bytes use network order, including .NET conversion.
 
 ### 5.5 Per-type acceptance
 
@@ -533,7 +533,7 @@ Use the shared conformance inventory and risk-based coverage policy in section 1
 
 ### 5.6 Built-in date and time types
 
-Date and time interoperability is a built-in feature, not a user-required extension. Distinguish an instant from a calendar date and a duration. Never interpret a date as a local midnight timestamp. Use the proleptic Gregorian calendar, UTC and POSIX-style epoch semantics (no distinct leap-second encoding).
+Date and time interoperability is a built-in feature, not a user-required extension. Keep built-ins limited to the common types in section 5.1. Domain-specific colors, vectors, money and geographic coordinates use ordinary IDL or external types unless explicitly requested otherwise. Distinguish an instant from a calendar date and a duration. Never interpret a date as a local midnight timestamp. Use the proleptic Gregorian calendar, UTC and POSIX-style epoch semantics (no distinct leap-second encoding).
 
 | IDL type | Canonical value | Meaning |
 | --- | --- | --- |
@@ -877,7 +877,7 @@ From lowest to highest priority:
 4. Target settings inside that module.
 5. Declaration annotations for supported properties.
 
-Project defaults may include target-specific defaults. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
+Project defaults and module defaults use the same defaults key. Apply shared settings before target-specific settings at each level. Normalize naming shorthand before merging, for example methods: camelCase means methods: {case: camelCase}. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
 
 ### 7.2 Global configuration
 
@@ -898,7 +898,6 @@ defaults:
     encoding: utf-8
     line_endings: lf
     generated_warning: true
-    deterministic: true
   targets:
     cpp:
       standard: 20
@@ -908,13 +907,8 @@ defaults:
         fields: camelCase
         files: kebab-case
     objc:
-      arc: true
-      nullability: true
       swift_names:
         enabled: true
-    swift:
-      native_async: true
-      strict_concurrency: true
     dart:
       naming:
         types: PascalCase
@@ -922,7 +916,7 @@ defaults:
         files: snake_case
 ```
 
-Global defaults must not enable undeclared targets automatically. Each module explicitly selects its outputs.
+Global defaults must not enable undeclared targets automatically. Each module explicitly selects its outputs. Determinism, ABI validation, ownership safety, ARC where required, nullability correctness and strict concurrency checks are mandatory invariants, not options to disable.
 
 ### 7.3 Domain module configuration
 
@@ -1250,6 +1244,8 @@ These are defaults, not mandatory language standards. Support PascalCase, camelC
 
 Use hyphens for multiword repository-owned filenames and directories wherever possible, including IDL, native C/C++ headers and sources, Jinja2 templates, CMake helper scripts, documentation, standalone Python scripts, CI workflows, assets and tests. Do not use underscores unless a language or tool requires them or the adopted language profile mandates the exact convention. Python importable modules/packages and __init__.py, enforced Dart file_names conventions, symbol-named Java/Kotlin/Swift files and required tool entrypoints are narrow exceptions. Keep these exceptions explicit. This is a filename policy, not a rule to rename valid identifiers, ABI symbols, JSON/YAML keys, package names or environment variables. Consumer naming overrides are still available, but the built-in defaults follow this policy. Validate path conventions and compile generated imports/includes after changing filenames.
 
+Within each naming category, an explicit case, prefix or suffix overrides only that property. Inherit unspecified properties from the appropriate general category or target defaults. An async-method suffix does not discard method casing. Apply prefixes exactly once.
+
 ### 8.2 Prefixes and suffixes per module and category
 
 Within domain:
@@ -1288,7 +1284,7 @@ Repository can independently use REP and an interface suffix such as Protocol. W
 | domain.UserStatus | DOMUserStatus | UserStatus |
 | repository.UserRepository | REPUserRepositoryProtocol | UserRepository |
 
-A category-specific prefix replaces the target-wide prefix. It is not concatenated twice. For source filenames derive names from the final emitted symbol unless explicitly configured otherwise. An imported type always uses the defining module's resolved name, never the consuming module's prefix.
+A category-specific prefix replaces the target-wide prefix. It is not concatenated twice. Apply the configured filename convention to the final emitted symbol, subject to required type filenames. C/C++ filenames default to kebab-case while identifiers retain their configured case. An imported type always uses the defining module's resolved name, never the consuming module's prefix.
 
 C# configuration example:
 
@@ -1910,7 +1906,7 @@ A JNI adapter's context owns a global Java object reference. A Swift adapter own
 
 ### 12.2 Runtime lifecycle
 
-One runtime instance per explicitly shared context. Multiple libraries must link to the same intended context. Use opaque generation-checked handles. Validate handle kind, generation, origin and ABI. Pair allocators and deleters. No managed object pointer, C++ STL layout or exception crosses the C ABI directly.
+One runtime instance per explicitly shared context. Multiple libraries must link to the same intended context. Use opaque generation-checked handles. Validate kind, generation, origin and ABI against runtime-owned metadata before obtaining a live reference. Do not dereference an arbitrary caller-supplied pointer for validation. Acquire a strong reference atomically with validation to prevent concurrent disposal. This is an in-process interoperability contract, not a sandbox against arbitrary native memory access. Pair allocators and deleters. No managed object pointer, C++ STL layout or exception crosses the C ABI directly.
 
 Do not hold internal locks during foreign calls, callbacks, scheduling or destruction. Define shutdown ordering, pending-operation drain/cancellation, registration invalidation and thread-affine release. Test reentrancy, nested cross-language calls, duplicate runtime instances, stale handles, allocator mismatch, refcount overflow, weak references and shutdown races.
 
@@ -1933,7 +1929,7 @@ interface ImageProcessor {
 }
 ```
 
-Borrowed views may not escape the validated synchronous scope. Reject borrowed returns, storage in escaping records/collections and async arguments when no safe lifetime can be established. Managed wrappers must provide checked scoped access. Unsafe raw pointer escapes are explicitly outside safe guarantees. Mutable views require exclusive access.
+Borrowed views may not escape the validated synchronous scope. DataView and MutableDataView are permitted only as direct synchronous parameters, including synchronous callback parameters under the same scope rules. Reject borrowed returns, stored fields, collection elements, async parameters and escaping captures. Use DataRef for independent or asynchronous lifetimes. A DataRef does not grant exclusive write access merely because its reference count is one. Managed wrappers must provide checked scoped access. Unrestricted raw pointers are not part of the default safe API. Couple validation to actual access so concurrent close cannot invalidate memory between the check and its use. Mutable views require exclusive access.
 
 DataRef retains the true owner, including for subranges. Last release executes the correct deleter once on an appropriate executor. Default shared access is read-only. Explicit conversion to bytes copies. Unsupported shared memory conversions must fail or request an explicit copy rather than silently copying.
 
@@ -2019,13 +2015,13 @@ interface Camera {
 }
 ```
 
-Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. No unbounded camera frame queue.
+Map to idiomatic async streams (Dart Stream, Kotlin Flow, Swift AsyncSequence, .NET IAsyncEnumerable, Python async iterator, JS AsyncIterable, C/C++ subscription). Define subscription ownership, bounded queue, backpressure, drop policy, ordered events, cancellation, terminal event and buffer retention. Use one bounded subscription contract, not a new streaming framework. Default to demand/backpressure for lossless streams. Camera previews may explicitly select latest-frame behavior with a bounded queue and immediate release of dropped frames. No unbounded camera frame queue.
 
 ### 14.4 Operation state and threading
 
-Each operation has one terminal transition: success, failure or cancellation. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
+Each operation has one caller-visible terminal transition: success, failure or cancellation. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
-Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination.
+Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation, drains actual execution and queued releases, then invalidates handles and detaches the runtime. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
 
 ## 15. Interfaces and service discovery
 
@@ -2516,7 +2512,7 @@ record CameraFrame {
     width: int32;
     height: int32;
     stride: int32;
-    timestamp: int64;
+    capturedAt: timestamp;
     format: PixelFormat;
     data: DataRef;
 }
@@ -2534,13 +2530,13 @@ interface ImageProcessor {
 }
 ```
 
-Capture a real camera image on supported devices, pass a retained CPU-accessible frame to a provider implemented in another language, convert to grayscale and display the result. Define pixel layout, stride, orientation, alpha preservation, format conversion and buffer lifetime. Reject unsupported pixel formats or explicitly convert.
+Capture a real camera image on supported devices, pass a retained CPU-accessible frame to a provider implemented in another language, convert to grayscale and display the result. Accept RGB8, RGBA8 and BGRA8 with byte stride. Normalize orientation before crossing the boundary in this sample. Use a deterministic integer calculation: gray = (77 * red + 150 * green + 29 * blue + 128) >> 8. Set RGB channels to gray, preserve alpha and leave row padding unchanged. Validate positive dimensions, bytes per pixel, stride and checked buffer bounds. Any camera-specific YUV/GPU conversion is explicit in the capture adapter. Reject unsupported pixel formats or explicitly convert.
 
 CI uses deterministic known-pixel fixtures, padded strides, odd sizes and invalid inputs, and verifies exact grayscale output plus copy instrumentation. Hardware camera tests and fixture tests are separate evidence. Do not claim real camera coverage solely from a fixture.
 
 ### 17.4 Fake login and repository
 
-A minimal login form or CLI submits fictional username/password values, calls an Auth implementation in another runtime, and receives a populated User with id, name, email and loggedIn. Invalid credentials return a typed LoginError. Never log passwords. Include the domain/repository async list, optional, integer, bool and void methods from section 4.
+A minimal login form or CLI submits fictional username/password values, calls the Auth implementation defined by the Result example in section 5.3 in another runtime, and receives a populated User with id, name, email and loggedIn. Use one fixed fictional account and an invalid-credentials case. No server, account database or authentication framework is required. Invalid credentials return a typed LoginError. Never log passwords. Include the domain/repository async list, optional, integer, bool and void methods from section 4.
 
 ### 17.5 Cross-language application acceptance
 
@@ -2612,7 +2608,7 @@ No finite test suite proves that all possible defects are absent. The acceptance
 
 ### 18.5 Exhaustive declared type and language-pair coverage
 
-Maintain a checked-in, machine-readable inventory of every built-in type, external fixture type and valid usage category. Derive expected case IDs from a small shared fixture inventory, target capability rules and actual runtime coexistence matrix. Use ordinary data files and the existing test tools rather than a separate testing framework. The test harness must compare expected cases with observed executions and fail on missing, skipped or duplicated required results. Coverage is exhaustive over the declared finite fixture matrix and supported capabilities. Arbitrary unbounded generic nesting or all possible values cannot be exhaustively enumerated. Use property tests, bounded nesting and fuzzing for the remaining input space.
+Maintain a checked-in, machine-readable inventory of every built-in type, external fixture type and valid usage category. Derive expected case IDs from a small shared fixture inventory and a reviewed runtime coexistence matrix independent of backend self-reported capabilities. A backend cannot reduce mandatory scope by declaring an unimplemented type unsupported. A genuine technical restriction needs documented evidence and owner approval if it removes a required deliverable. Missing tools or unfinished implementation are blockers. Use ordinary data files and the existing test tools rather than a separate testing framework. The test harness must compare expected cases with observed executions and fail on missing, skipped or duplicated required results. Coverage is exhaustive over the declared finite fixture matrix and supported capabilities. Arbitrary unbounded generic nesting or all possible values cannot be exhaustively enumerated. Use property tests, bounded nesting and fuzzing for the remaining input space.
 
 For each feasible ordered pair A -> B (A consumes, B implements), test all supported types with independently computed expected values. Reverse B -> A is a separate required direction. Native C/C++ loopback is a useful baseline but is not a substitute for actual cross-language pairs. A JNI -> Dart or Swift -> Python path is tested when both runtime hosts actually coexist, including their native bridge. Unsupported platform/runtimes require an explicit reason and may not be marked passing.
 
@@ -2667,7 +2663,7 @@ Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only a
 
 ### 19.2 CI rules
 
-PR and main runs execute the required deterministic compiler, target, conformance and package checks for the implemented scope. Run independent jobs concurrently and reuse build outputs safely. Bounded sanitizer regression checks remain mandatory for native changes. Run longer stress/fuzz and extended device matrices only on deliberate manual validation or before an authorized release. Do not create unnecessary scheduled jobs. Release gates require all mandatory evidence on the exact candidate SHA. Use the latest stable verified toolchains and actions under section 3.7, pinned to reviewed revisions. Use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
+PR and main runs execute the required deterministic compiler, target, conformance and package checks for the implemented scope. Documentation-only changes may run documentation checks without rebuilding binaries if CI configuration, fixtures and executable sources are unchanged. Never report non-executed jobs as passed or use this shortcut for final acceptance. Run independent jobs concurrently and reuse build outputs safely. Bounded sanitizer regression checks remain mandatory for native changes. Run longer stress/fuzz and extended device matrices only on deliberate manual validation or before an authorized release. Do not create unnecessary scheduled jobs. Release gates require all mandatory evidence on the exact candidate SHA. Use the latest stable verified toolchains and actions under section 3.7, pinned to reviewed revisions. Use least permissions, safe caches, timeouts and reproducible build environments. No secrets in untrusted PR jobs.
 
 Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/test matrix, build logs and benchmark data as artifacts. Confirm jobs actually ran, inspect failures, fix root causes, rerun and record the SHA. Platform/runner unavailability remains an explicit blocker. Do not claim a passing run from a queued workflow or successful compilation alone.
 
@@ -2925,7 +2921,7 @@ FetchContent_MakeAvailable(polyglue)
 target_link_libraries(app PRIVATE PolyGlue::runtime)
 ```
 
-The final implementation must provide relocatable config/version/target files, proper BUILD_INTERFACE and INSTALL_INTERFACE paths, runtime headers, correct transitive dependencies and optional generated module package exports. Test an independent consumer from a relocated installation, not just a target inside the repository. Test both static/shared linkage, multiple generated modules, custom implementation sources and a consumer with its own build flags. Never overwrite an existing consumer CMakeLists.txt unless explicitly generating a new package into an owned directory.
+The final implementation must provide relocatable config/version/target files, proper BUILD_INTERFACE and INSTALL_INTERFACE paths, runtime headers, correct transitive dependencies and generated module package exports when package mode is selected. Test an independent consumer from a relocated installation, not just a target inside the repository. Test both static/shared linkage, multiple generated modules, custom implementation sources and a consumer with its own build flags. Never overwrite an existing consumer CMakeLists.txt unless explicitly generating a new package into an owned directory.
 
 ### 20.5 Python build orchestration and artifact pipeline
 
@@ -3090,7 +3086,7 @@ AppBridge.xcframework/
     └── AppBridge.framework/
 ```
 
-The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
+The actual slice identifiers are produced by Apple tools, not guessed by PolyGlue. Preserve the public identities of generated Swift and Objective-C modules. An XCFramework contains variants of one library product, not unrelated modules as architecture slices. If separate frameworks are needed, produce one XCFramework per framework and a SwiftPM product referencing the required binary targets. A single aggregated framework requires an explicit public module layout and compilation proof. Include requested tvOS/watchOS/Catalyst variants as configured. Verify Info.plist library descriptors, Mach-O architecture, LC_BUILD_VERSION platform and minimum OS, actual optimization settings, public symbols, module interfaces, dependency install names/rpaths, and any required code signatures. Generate debug symbols where applicable and verify dSYM UUIDs match the exact slice binaries. Static libraries need a documented symbolication strategy rather than invented dSYM guarantees. Preserve original Swift compiler interface metadata. Remove machine-specific paths only by supported reproducible build configuration, never by modifying binary signatures or invalidating module interfaces. Signing policy is explicit. No credentials required for unsigned simulator builds.
 
 SwiftPM binary packaging produces an XCFramework archive preserving framework structure, checksum using swift package compute-checksum, and a valid Package.swift with configured platforms, products and binaryTarget URL/checksum or local path. No fabricated download URL. A local archive/package must be usable before remote publication. Publishing is separate. Verify fresh SwiftPM/Xcode consumers import generated APIs and run on requested simulator/device. Include Objective-C and Swift consumers. Test visionOS independently. Verify package contains exactly the requested valid slices and no stale sanitizer/debug slice.
 
@@ -3165,11 +3161,11 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement records, enums, flags, variants, interfaces, inheritance, callbacks, factories/static operations and concrete generics. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
 - [ ] Implement async declarations, typed errors/Result, streams, cancellation and weak references with explicit legal usage rules. Reject borrowed types in escaping/async positions.
 - [ ] Provide clear diagnostics with file, line, relevant symbol, module and target. Validate the entire selected plan before writing. Fail on invalid config, type mapping, name, path or missing dependency.
-- [ ] Expose CLI generate, validate, config show, list targets, version and local Python API. Support project, individual module and selected target invocation, including source dependency closure and installed/offline generation.
+- [ ] Expose CLI generate, validate, config show, list targets, version and local Python API. Support project, individual module and selected target invocation, including source dependency closure, explicit standalone versus project defaults and installed/offline generation.
 
 ### 22.3 Module system, configuration and output planning
 
-- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking and config-relative paths.
+- [ ] Implement project defaults, module defaults, target overrides and declaration annotations with defined precedence, validated schema, type checking, normalized naming shorthand and config-relative paths. Do not expose settings that disable safety or deterministic generation.
 - [ ] Support independent Domain, Repository and Network module configurations and IDL sources, with correct import resolution regardless of physical paths, prefixes and package names.
 - [ ] Implement source and prebuilt dependencies, transitive resolution, compatible canonical symbol metadata and artifact validation. Reject duplicate or incompatible artifacts without trying old formats.
 - [ ] Implement per-target paths, header/source directories, package, namespace, module, assembly, naming, prefix/suffix by symbol category, acronym rules, visibility, availability and build settings.
@@ -3189,7 +3185,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.5 Built-in types and extension mechanism
 
 - [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Verify boundaries, invalid encodings, null and empty distinctions.
-- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, exact tags, equality/hash constraints and invalid cases.
+- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and contiguous array types. Test valid nested combinations, distinct nested optional presence states, exact tags, canonical equality/hash constraints and duplicate keys.
 - [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. Preserve calendar versus UTC semantics, signed exact units, canonical UUID order and checked native conversions.
 - [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope and ownership contracts. Do not silently copy when a zero-copy contract is requested.
 - [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
@@ -3202,7 +3198,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters and explicit context initialization/shutdown. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
-- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Keep active provider/argument references until execution cannot access them.
+- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases before runtime detach.
 - [ ] Implement bounded streams, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, explicit replacement/scoped restoration, tokens and missing-service errors. No implicit alternate-provider retry.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
@@ -3234,7 +3230,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Isolate builds by product, platform, SDK variant, architecture, configuration and sanitizer. Verify incremental invalidation, clean build equivalence, missing output rejection and safe owned cleanup.
 - [ ] Build and inspect C/C++ desktop static/shared libraries, headers and relocatable CMake exports. Install and run an independent consumer after relocating the package.
 - [ ] Build Java/Kotlin desktop JAR and Android AAR with native architecture slices, required dependencies and release/R8 rules. Inspect classes, native binaries, alignment and real clean consumers.
-- [ ] Build Objective-C/Swift XCFramework for requested Apple SDK slices, keeping device/simulator/Catalyst distinct. Validate Info.plist, Mach-O platform/architecture, headers/modules and matching debug symbols as applicable.
+- [ ] Build Objective-C/Swift XCFramework for requested Apple SDK slices, keeping device/simulator/Catalyst distinct and preserving public module identities when packaging multiple frameworks. Validate Info.plist, Mach-O platform/architecture, headers/modules and matching debug symbols as applicable.
 - [ ] Generate valid local and remote SwiftPM integration with archive/checksum and no fabricated URL. Test a separate Swift and Objective-C consumer.
 - [ ] Build the pure Python generator wheel/sdist and target-specific native bindings wheels. Inspect archive metadata/resources and install outside the source tree.
 - [ ] Build and validate Dart/Flutter packages and plugins, .NET NuGet packages, JS/TS npm packages and WASM binaries/loader assets. Run real installed consumers.

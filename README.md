@@ -2,7 +2,7 @@
 
 **One definition. Multiple languages. Native interoperability.**
 
-PolyGlue is a cross-platform interface compiler and code generator designed for type-safe, bidirectional interoperability between programming languages.
+PolyGlue is a planned cross-platform interface compiler and code generator for type-safe, bidirectional interoperability between programming languages.
 
 Define your data models, interfaces, callbacks, and asynchronous operations once, then generate idiomatic native bindings for multiple languages. Implementations can live in any compatible target runtime, rather than being restricted to C++.
 
@@ -23,7 +23,7 @@ Define your data models, interfaces, callbacks, and asynchronous operations once
 - Per-module and per-target configuration for naming conventions, prefixes, namespaces, packages, output paths, imports, annotations, and formatting.
 - Native support libraries maintained and tested in the same repository as the generator.
 - Deterministic code generation, CMake native builds and Python-orchestrated packaging for AAR, XCFramework and other target-native formats.
-- Distribution through PyPI, local installation, and standalone tooling.
+- Local installation using uv, with future PyPI distribution only after explicit approval.
 
 ## Example
 
