@@ -947,6 +947,9 @@ targets:
     output: ../../android/generated/domain/kotlin
     package: com.app.domain
     model_source: java
+    naming:
+      interfaces:
+        prefix: Kotlin
   objc:
     output: ../../apple/Domain/ObjC
     prefix: DOM
@@ -977,7 +980,7 @@ targets:
     output: ../../native/domain/wasm
 ```
 
-The model_source and implementation_source settings express intentional artifact ownership. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and Kotlin emits KotlinUserRepository with its suspend API. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
+The model_source and implementation_source settings express intentional artifact ownership. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on which targets happen to be selected for a particular command. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, emit a public Swift typealias to the imported Objective-C type in AppDomain or the configured Swift module so dependent Swift modules can import that type. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
 
 ### 7.4 Repository module configuration
 
@@ -1012,6 +1015,9 @@ targets:
     output: ../../android/generated/repository/kotlin
     package: com.app.repository
     model_source: java
+    naming:
+      interfaces:
+        prefix: Kotlin
   objc:
     output: ../../apple/Repository/ObjC
     prefix: REP
@@ -1072,6 +1078,9 @@ targets:
     output: ../../android/generated/network/kotlin
     package: com.app.network
     model_source: java
+    naming:
+      interfaces:
+        prefix: Kotlin
   objc:
     output: ../../apple/Network/ObjC
     prefix: NET
@@ -1157,6 +1166,9 @@ targets:
     output: ../../android/generated/repository/kotlin
     package: com.app.repository
     model_source: java
+    naming:
+      interfaces:
+        prefix: Kotlin
     build:
       android_namespace: com.app.repository
       consumer_rules: ../../android/consumer-rules.pro
@@ -2049,7 +2061,7 @@ Proposed Kotlin registration:
 
 ```kotlin
 val registry = ServiceRegistry.global
-val registration = registry.register(HttpClient.TYPE, AndroidHttpClient())
+val registration = registry.register(KotlinHttpClient.TYPE, AndroidHttpClient())
 ```
 
 Dart resolution:
@@ -2148,32 +2160,24 @@ The implementation function above is illustrative. Examples must supply a real i
 
 ### 16.2 Concrete provider-to-consumer example
 
-A handwritten Kotlin repository implements the generated interface. It may use a database or the deterministic sample fixture:
+A handwritten Kotlin repository implements the generated interface from the shared JVM configuration in section 7.4. The executable sample uses a small deterministic in-memory store, not a real database dependency. This reduced excerpt illustrates the generated suspend API:
 
 ```kotlin
-class AndroidUserRepository(
-    private val database: UserDatabase
-) : UserRepository {
-    override suspend fun findById(id: Long): User? =
-        database.findById(id)
+class AndroidUserRepository(private val store: UserStore) : KotlinUserRepository {
+    override suspend fun findById(id: Long): User? = store.findById(id)
 
-    override suspend fun findAll(): List<User> =
-        database.findAll()
+    override suspend fun findAll(): List<User> = store.findAll()
 
-    override suspend fun count(): Long =
-        database.count()
+    override suspend fun count(): Long = store.count()
 
-    override suspend fun exists(id: Long): Boolean =
-        database.exists(id)
-
-    // Implement all remaining generated methods in the runnable sample.
+    override suspend fun exists(id: Long): Boolean = store.exists(id)
 }
 ```
 
 Register the implementation in the shared Android runtime during plugin initialization:
 
 ```kotlin
-val registration = ServiceRegistry.global.register(UserRepository.TYPE, AndroidUserRepository(database))
+val registration = ServiceRegistry.global.register(KotlinUserRepository.TYPE, AndroidUserRepository(store))
 ```
 
 Dart consumes the same contract and the imported domain model:
@@ -2185,8 +2189,8 @@ final user = await repository.findById(10);
 final count = await repository.count();
 final exists = await repository.exists(10);
 
-for (final user in users) {
-  print(user.name);
+for (final item in users) {
+  print(item.name);
 }
 ```
 
@@ -2278,8 +2282,8 @@ CompletableFuture<List<User>> users = repo.findAll();
 **Provider and consumer:** suspend methods, cancellation-aware continuations and Flow for streams. Bridge Java CompletableFuture when sharing API artifacts. Cancellation and exceptions map to native terminal states without resuming a continuation twice. Use structured concurrency or supplied CoroutineScope/dispatcher. No GlobalScope or blocking event loops. Android UI/system APIs dispatch to the main looper only when required. Kotlin providers can be registered or injected and invoked by Dart or C++.
 
 ```kotlin
-val registration = registry.register(UserRepository.TYPE, repositoryImpl)
-val users = registry.get(UserRepository.TYPE).findAll()
+val registration = registry.register(KotlinUserRepository.TYPE, repositoryImpl)
+val users = registry.get(KotlinUserRepository.TYPE).findAll()
 ```
 
 **CI:** kotlin-desktop.yml exercises JVM on desktop and Kotlin↔Java/C++. Kotlin-android.yml builds Android Gradle project, packages ABI-specific .so, runs instrumented tests/emulator and Flutter↔Kotlin integration in both directions. Test coroutine cancellation, thread dispatch, activity recreation, provider detach, JNI references, camera buffer release and exact unsigned mapping. Test Android XR separately when device/emulator is available.
