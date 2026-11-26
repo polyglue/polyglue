@@ -27,7 +27,7 @@ Define your data models, interfaces, callbacks, and asynchronous operations once
 
 ## Example
 
-The following IDL illustrates the proposed syntax:
+The following IDL illustrates the proposed syntax. The examples are not executable until the generator is implemented:
 
 ```typescript
 module domain;
