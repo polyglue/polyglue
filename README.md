@@ -18,7 +18,7 @@ Imagine a mobile app written in Flutter that needs to use an Android feature wri
 
 PolyGlue is designed to solve that problem. Define your data and methods once, then generate the code that connects the selected programming languages. Write the actual implementation in one language and use it from another.
 
-The goal is to make native cross-language calls feel like ordinary method calls, without requiring a server or JSON conversion.
+The goal is to make native cross-language calls feel like ordinary method calls, without requiring a server or converting every call into JSON (a text-based data format).
 
 > PolyGlue is in early development. The features, examples and targets below describe the planned design, not verified support.
 
@@ -54,7 +54,7 @@ flowchart LR
     R <-->|Typed calls and results| B
 ```
 
-For example, a Dart app calls findById, a Kotlin implementation finds the user, and the generated bridge returns the User to Dart. The same idea works in reverse when the selected runtimes support that direction. PolyGlue generates the connection, not your application's business logic.
+For example, a Dart app calls `findById`, a Kotlin implementation looks up the ID, and the generated bridge returns a `User` to Dart. If there is no matching user, it returns an absent value. That is a successful lookup, not a failed call. The same idea works in reverse when the selected runtimes support that direction. PolyGlue generates the connection, not your application's business logic.
 
 ## Features
 
@@ -65,9 +65,9 @@ For example, a Dart app calls findById, a Kotlin implementation finds the user, 
 - 💾 **Shared memory:** pass borrowed or owned buffers with clear lifetime rules.
 - 🔄 **Service registry:** register, find and replace implementations when needed.
 - 🎨 **Customization:** control naming, prefixes, annotations and templates per module.
-- 🛠️ **Build tools:** generate, compile, test and package with one Python CLI.
-- 📦 **SDK distribution:** produce versioned native libraries, AARs, XCFrameworks and ecosystem packages.
-- ☁️ **Cloud deployment:** optionally upload validated SDKs to S3, R2 or compatible storage.
+- 🛠️ **Build tools:** generate, compile, test and package with one Python command-line tool.
+- 📦 **SDK distribution:** produce versioned software development kits (SDKs), including Android AARs, Apple XCFrameworks and other language packages.
+- ☁️ **Cloud deployment:** optionally upload validated SDKs to Amazon S3, Cloudflare R2 or compatible object storage.
 - ✅ **Quality:** verify real cross-language calls, memory safety and packaged consumers.
 
 ## Supported languages and platforms
@@ -94,7 +94,7 @@ Flutter and WebAssembly are integration targets. Flutter uses Dart, and WebAssem
 | ⌚ watchOS | C, C++, Objective-C, Swift |
 | 🥽 visionOS | C, C++, Objective-C, Swift |
 | 💻 Mac Catalyst | C, C++, Objective-C, Swift |
-| 🌐 Web | C/C++ through WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
+| 🌐 Web and Node.js | C/C++ through WebAssembly, JavaScript, TypeScript, Dart and Flutter Web where supported |
 
 ## Workflow
 

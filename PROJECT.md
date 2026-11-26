@@ -173,7 +173,7 @@ Flutter is an integration target, not a separate language. JavaScript and TypeSc
 | watchOS | C, C++, Objective-C, Swift | SDK build and simulator |
 | visionOS | C, C++, Objective-C, Swift | SDK build and visionOS simulator/device |
 | Mac Catalyst | C, C++, Objective-C, Swift | SDK build and execution |
-| WebAssembly | C/C++, JS, TS, Dart/Flutter Web where supported | Node and browser execution |
+| Web (browser) and Node.js | C/C++ via WASM, JS, TS, Dart/Flutter Web where supported | Node and browser execution as applicable |
 
 The table is a required coverage plan, not verified support. SDK floors in examples are illustrative until the current toolchain matrix is validated. Each combination requires a capability entry and actual evidence. Native visionOS support is independent of Flutter. Native Flutter visionOS is conditional on upstream SDK/engine support. Flutter Web uses JS/WASM adapters rather than dart:ffi. Additional runtime combinations require explicit tests.
 
@@ -426,6 +426,23 @@ interface PagedUserRepository {
 
 Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Separately generated modules must agree on specialization identity and ABI. Reject open generics at a concrete binary boundary.
 
+### 4.5 Constants, inheritance and factory flow
+
+Constants and defaults become generated values, not runtime lookup calls. Interface inheritance and concrete generic specialization are resolved before generation. Static operations and factories bind to an explicitly selected implementation rather than a hidden global service.
+
+```mermaid
+flowchart TD
+    A["IDL constant, inherited interface or generic declaration"] --> B["Resolve type, range and inherited members"]
+    B --> C["Generate concrete target declaration"]
+    C --> D{"Value or callable contract?"}
+    D -->|Value| E["Caller uses generated constant or default"]
+    D -->|Callable| F["Bind explicit provider or factory"]
+    F --> G["Consumer invokes typed operation"]
+    G --> H["Provider returns value or owning reference"]
+    H --> I["Caller receives converted return"]
+    B -->|Invalid| X["Compile-time diagnostic"]
+```
+
 ## 5. Type system
 
 ### 5.1 Types to implement and test
@@ -434,17 +451,17 @@ Generic source types are instantiated consistently. C uses concrete generated ty
 | --- | --- |
 | Scalar | bool, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64 |
 | Text / binary | string, bytes |
-| Collections | list<T>, set<T>, map<K,V>, array<T> |
-| Optional / variant | optional<T>, variant |
+| Collections | `list<T>`, `set<T>`, `map<K,V>`, `array<T>` |
+| Optional / variant | `optional<T>`, variant |
 | Named | record, enum, flags, interface |
 | Special memory | DataView, MutableDataView, DataRef |
-| Errors | Result<T,E> |
+| Errors | `Result<T,E>` |
 | Time and identity | date, timestamp, duration, uuid |
-| Behavior | callback, async method, Stream<T> |
-| Lifetime / control | WeakRef<T>, CancellationToken |
+| Behavior | callback, async method, `Stream<T>` |
+| Lifetime / control | `WeakRef<T>`, CancellationToken |
 | External | Explicitly declared type with per-target adapter |
 
-`void` is a return-only type, including Result success with no payload. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ vector<bool> bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
+`void` is a return-only type, including Result success with no payload. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
 
 ### 5.2 Return mapping examples
 
@@ -453,8 +470,8 @@ These are semantic API mappings. An async declaration wraps the corresponding ty
 | IDL | C++ | Kotlin | Swift | Dart |
 | --- | --- | --- | --- | --- |
 | User | User | User | User | User |
-| optional<User> | std::optional<User> | User? | User? | User? |
-| list<User> | std::vector<User> | List<User> | [User] | List<User> |
+| `optional<User>` | `std::optional<User>` | User? | User? | User? |
+| `list<User>` | `std::vector<User>` | `List<User>` | [User] | `List<User>` |
 | int64 | int64_t | Long | Int64 | int (native) |
 | bool | bool | Boolean | Bool | bool |
 | void | void | Unit | Void | void |
@@ -468,7 +485,7 @@ For JavaScript and TypeScript, use bigint when exact 64-bit integer representati
 - Specify collection equality, hashing, supported map keys, duplicate entries, ordering and nesting limits.
 - Distinguish null, absent, empty and zero. Enums use explicit unique signed 32-bit values. Flags use unsigned 32-bit masks with explicit named bits and optional named combinations. Reject unknown enum values and unknown flag bits at the boundary. Zero is a valid empty flags value. These are closed current contracts, not forward-compatibility mechanisms.
 - Define date, timestamp and duration units and UUID byte order. Test exact round trips as specified in section 5.6.
-- Result<T,E> represents business success or failure. Result<void,E> has a success tag without a value payload. E must be a legal non-void owning value type. Runtime/ABI failures use a separate status, including conversion failure, missing service and invalid handle. Cancellation is a separate terminal status. No cross-ABI exception unwinding. A failed invocation or conversion must never look like a successful optional absence or a business error.
+- `Result<T,E>` represents business success or failure. `Result<void,E>` has a success tag without a value payload. E must be a legal non-void owning value type. Runtime/ABI failures use a separate status, including conversion failure, missing service and invalid handle. Cancellation is a separate terminal status. No cross-ABI exception unwinding. A failed invocation or conversion must never look like a successful optional absence or a business error.
 - External types require declared import paths, ABI representation, marshaller, ownership and tests for each target. No unsupported target fallback.
 
 Example:
@@ -550,17 +567,17 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `float32` | float | float | Float | float | Float |
 | `float64` | double | double | Double | double | Double |
 | `string` | std::string | String | String | NSString | String |
-| `bytes` | std::vector<uint8_t> | byte[] | ByteArray | NSData | Data |
+| `bytes` | `std::vector<uint8_t>` | byte[] | ByteArray | NSData | Data |
 | `void` | void | void / Void | Unit | void | Void |
 | `record` | struct | Immutable class | data class | NSObject model | struct or imported model |
 | `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
 | `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
 | `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
-| `list<T>` | std::vector<T> | List<T> | List<T> | NSArray | [T] |
-| `set<T>` | std::set / hash set | Set<T> | Set<T> | NSSet | Set<T> |
-| `map<K,V>` | std::map / hash map | Map<K,V> | Map<K,V> | NSDictionary | Dictionary<K,V> |
+| `list<T>` | `std::vector<T>` | `List<T>` | `List<T>` | NSArray | [T] |
+| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet | `Set<T>` |
+| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary | `Dictionary<K,V>` |
 | `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
-| `optional<T>` | std::optional<T> | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | Optional<T> |
+| `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
@@ -569,7 +586,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
 | `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
-| `timestamp` | sys_time<microseconds> | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
+| `timestamp` | `sys_time<microseconds>` | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
 | `duration` | std::chrono::nanoseconds | Duration | java.time.Duration | Exact duration wrapper | Duration or exact wrapper |
 | `uuid` | UUID value wrapper | UUID | UUID | NSUUID | UUID |
 | `DataView` | Scoped read-only span | Checked read view | Checked read view | Checked read view | Scoped read-only access |
@@ -599,16 +616,16 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `enum` | Enum | enum | enum | enum | Frozen constants | Checked numeric type |
 | `flags` | IntFlag / checked wrapper | Flags wrapper | Flags wrapper | Flags enum / wrapper | Checked mask | Checked mask |
 | `variant` | Tagged dataclass union | Sealed class | Sealed class | Tagged record hierarchy | Tagged object | Discriminated union |
-| `list<T>` | list[T] | List<T> | List<T> | IReadOnlyList<T> | Array | ReadonlyArray<T> |
-| `set<T>` | set[T] | Set<T> | Set<T> | IReadOnlySet<T> | Set | Set<T> |
-| `map<K,V>` | dict[K,V] | Map<K,V> | Map<K,V> | IReadOnlyDictionary<K,V> | Map | Map<K,V> |
-| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / Memory<T> | TypedArray / Array | TypedArray / ReadonlyArray<T> |
+| `list<T>` | list[T] | `List<T>` | `List<T>` | `IReadOnlyList<T>` | Array | `ReadonlyArray<T>` |
+| `set<T>` | set[T] | `Set<T>` | `Set<T>` | `IReadOnlySet<T>` | Set | `Set<T>` |
+| `map<K,V>` | dict[K,V] | `Map<K,V>` | `Map<K,V>` | `IReadOnlyDictionary<K,V>` | Map | `Map<K,V>` |
+| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / `Memory<T>` | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
 | `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
 | `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
 | `async method` | Awaitable / async def | Future | Future | Task | Promise | Promise |
-| `Stream<T>` | AsyncIterator | Stream | Stream | IAsyncEnumerable<T> | AsyncIterable | AsyncIterable<T> |
+| `Stream<T>` | AsyncIterator | Stream | Stream | `IAsyncEnumerable<T>` | AsyncIterable | `AsyncIterable<T>` |
 | `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
 | `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
@@ -661,7 +678,7 @@ record User {
 | Target | Calendar date | UTC instant | Duration |
 | --- | --- | --- | --- |
 | C | Checked epoch-day value | int64 microseconds | int64 nanoseconds |
-| C++ | std::chrono::year_month_day | sys_time<microseconds> or exact wrapper | chrono::nanoseconds |
+| C++ | std::chrono::year_month_day | `sys_time<microseconds>` or exact wrapper | chrono::nanoseconds |
 | Java | java.time.LocalDate | java.time.Instant | java.time.Duration |
 | Kotlin/JVM | java.time.LocalDate | java.time.Instant | java.time.Duration or explicit Kotlin Duration adapter |
 | Objective-C | Generated calendar-date value | Exact value plus NSDate conversion | Exact nanosecond value |
@@ -868,9 +885,9 @@ Publish the descriptor schema with the generator package, document exact adapter
 
 ### 5.8 Optional values, nulls and defaults
 
-All values are required and non-null unless declared as optional<T>. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
+All values are required and non-null unless declared as `optional<T>`. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
 
-At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of optional<optional<T>> are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. Omission is a construction-time rule, not an extra wire state.
+At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of `optional<optional<T>>` are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. Omission is a construction-time rule, not an extra wire state.
 
 | Input or state | Meaning |
 | --- | --- |
@@ -929,7 +946,7 @@ Text uses UTF-8. Ordinary bytes are independent values, not shared buffers.
 
 #### Records and generic records
 
-A record is a value, not a remote object. A concrete Page<User> uses the same field conversion rules as User.
+A record is a value, not a remote object. A concrete `Page<User>` uses the same field conversion rules as User.
 
 ```mermaid
 flowchart TD
@@ -982,7 +999,9 @@ Only construction applies defaults. The bridge carries the presence tag, not the
 ```mermaid
 flowchart TD
     A["Construct record or supply argument"] --> B{"Missing record field?"}
-    B -->|Yes| C["Apply declared default or optional absence"]
+    B -->|Yes| L{"Default declared or field optional?"}
+    L -->|Yes| C["Apply declared default or optional absence"]
+    L -->|No| X["Validation error"]
     B -->|No| D["Use explicit value"]
     C --> E{"Valid for declared type?"}
     D --> E
@@ -2378,8 +2397,10 @@ flowchart TD
     F --> G["Provider adapter encodes return or status"]
     G --> H["Consumer adapter decodes return"]
     H --> I["Release call references and return"]
-    B -->|Invalid| X["Runtime error"]
+    B -->|Invalid| X["Runtime error and cleanup"]
+    C -->|Conversion fails| X
     G -->|Failure| X
+    H -->|Conversion fails| X
 ```
 
 The return path must release temporary values on both success and failure. A foreign method or deleter is never invoked under the runtime lock.
@@ -2554,7 +2575,7 @@ The consumer receives a future. The implementation may complete immediately or l
 flowchart TD
     A["Consumer starts async call"] --> B["Retain arguments, provider and completion token"]
     B --> C{"Start accepted?"}
-    C -->|No| X["Immediate failure, no completion"]
+    C -->|No| X["Release start references, return failure without completion"]
     C -->|Yes| D["Schedule or execute provider"]
     D --> E["Provider completes with value or error"]
     E --> F{"Win terminal transition?"}
@@ -2562,7 +2583,7 @@ flowchart TD
     F -->|No| H["Release late payload without callback"]
     G --> I["Caller await finishes"]
     D --> J["Actual execution finishes"]
-    J --> K["Release execution resources"]
+    J --> K["Release execution resources when no longer owned"]
 ```
 
 #### Callbacks in the opposite direction
@@ -3027,7 +3048,7 @@ app_repository_plugin/
 
 **Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Span/ReadOnlySpan scoped borrowed access. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
 
-**Provider and consumer:** Task<T>/Task for async, typed delegates, IAsyncEnumerable and CancellationToken adapter. Use completion sources with asynchronous continuation scheduling where needed. Exactly-once completion. Map cancellation without prematurely releasing active native resources. Use stable unmanaged entrypoints or rooted delegates. Exceptions never cross native ABI. Managed provider registration works from C++/Dart where the .NET host is available. Do not assume arbitrary embedding. Specify supported .NET hosting and NativeAOT modes separately.
+**Provider and consumer:** `Task<T>`/Task for async, typed delegates, IAsyncEnumerable and CancellationToken adapter. Use completion sources with asynchronous continuation scheduling where needed. Exactly-once completion. Map cancellation without prematurely releasing active native resources. Use stable unmanaged entrypoints or rooted delegates. Exceptions never cross native ABI. Managed provider registration works from C++/Dart where the .NET host is available. Do not assume arbitrary embedding. Specify supported .NET hosting and NativeAOT modes separately.
 
 ```csharp
 using var registration = registry.Register<IUserRepository>(implementation);
@@ -3058,7 +3079,7 @@ const users = await repo.findAll();
 
 **Types and memory:** exact mappings match JavaScript runtime. Interfaces/read-only models, tagged unions, bigint, typed arrays and explicit nullable/optional states. TypeScript declarations do not substitute runtime validation. Model the owner/borrow API without claiming the TS type checker can enforce lifetime of escaped views.
 
-**Provider and consumer:** strongly typed interfaces, Promise<T>, AsyncIterable<T>, callback signatures, AbortSignal and typed registry descriptors. Generated declarations match actual runtime exports and implementation signatures. Emit a real value export such as UserRepositoryType for each generated interface descriptor, in addition to the TypeScript interface declaration. Do not access static members on an erased interface or use a type-only import as a runtime value. Verify both valid and invalid type-check fixtures.
+**Provider and consumer:** strongly typed interfaces, `Promise<T>`, `AsyncIterable<T>`, callback signatures, AbortSignal and typed registry descriptors. Generated declarations match actual runtime exports and implementation signatures. Emit a real value export such as UserRepositoryType for each generated interface descriptor, in addition to the TypeScript interface declaration. Do not access static members on an erased interface or use a type-only import as a runtime value. Verify both valid and invalid type-check fixtures.
 
 ```typescript
 const repo: UserRepository = registry.get(UserRepositoryType);
@@ -3098,6 +3119,22 @@ WebAssembly is a transport/execution target, not another IDL language.
 Physical device tests are not replaceable by a simulator for device-only features. Record hardware access as blocked when unavailable. Do not require a physical camera for platforms without appropriate APIs. The grayscale computation and buffer transfer remain mandatory with fixtures. All supported platform targets must build and execute at least their applicable conformance cases.
 
 ### 16.19 Concrete runtime paths in both directions
+
+The following diagram summarizes the adapters required for all language targets. Connections are possible only when both runtimes can be loaded and safely called in the same execution context. The platform matrix in section 2 defines where to prove these paths.
+
+```mermaid
+flowchart TD
+    Core["Shared native C ABI and runtime"] <-->|Native API| C["C and C++"]
+    Core <-->|JNI| JVM["Java and Kotlin"]
+    Core <-->|Apple adapter| Apple["Objective-C and Swift"]
+    Core <-->|CPython adapter| Py["Python"]
+    Core <-->|FFI| Dart["Dart and Flutter native"]
+    Core <-->|P/Invoke or hosting adapter| NET["C#"]
+    Wasm["C ABI compiled into WASM instance"] <-->|WASM adapter| Web["JavaScript and TypeScript"]
+    Web <-->|JS interop| DartWeb["Dart and Flutter Web"]
+```
+
+The browser WASM instance has its own memory and runtime context. A native process handle cannot cross into an unrelated WASM instance. Each adapter is responsible for the execution context, error and lifetime rules in its language profile.
 
 #### Flutter on Android, Apple and Web
 
@@ -3274,7 +3311,7 @@ All backends consume the same IDL fixtures and named test cases. Generate fresh 
 | Buffers | DataView, MutableDataView, DataRef, bytes, alias/copy/lifetime rules |
 | Registry | Lookup, fixed/dynamic references, override, explicit scoped restoration, concurrent teardown |
 
-Exercise legal nested compositions (e.g. optional<list<User>>, list<optional<User>>, Result<Page<User>, Error>) and reject forbidden combinations. Select cases for distinct conversion, nullability and ownership behavior. See section 18.5 for the pair matrix.
+Exercise legal nested compositions (e.g. `optional<list<User>>`, `list<optional<User>>`, `Result<Page<User>, Error>`) and reject forbidden combinations. Select cases for distinct conversion, nullability and ownership behavior. See section 18.5 for the pair matrix.
 
 ### 18.2 Memory safety and concurrency
 
@@ -3432,6 +3469,24 @@ Use supported GitHub Actions and ecosystem caches rather than inventing a cache 
 Do not cache secrets, signing materials, test verdicts or unverified final binaries. Never use a cached test result as evidence of execution on a new revision. Restore dependency downloads and compiler outputs only when their real input identity matches. Do not share release/debug/sanitizer artifacts or host/target binaries. Use immutable same-run artifacts for generated code, native libraries and test packages needed by several jobs, with SHA and manifest checks. Ordinary tests run after restoring caches. A cache miss must still work from a clean checkout. Use broad restore keys only for dependency downloads whose checksums and lockfile resolution are revalidated, never for ABI-sensitive binaries.
 
 Keep workflows readable, use reusable setup only for actual repeated work, use parallel independent language jobs and avoid reinstalling SDKs/dependencies or rebuilding identical native slices multiple times. Avoid uncontrolled matrix multiplication and oversubscription. Set bounded timeouts, cancel superseded PR runs when appropriate, retain meaningful logs and artifact reports, and measure cold/warm CI duration and cache hits. Fix a measured bottleneck rather than adding speculative tooling. Do not skip tests based on a cache hit or use path filters that omit affected transitive consumers.
+
+### 19.7 CI cache and evidence flow
+
+A cache may save build work, but it must never stand in for a real test execution.
+
+```mermaid
+flowchart TD
+    A["Checkout exact commit"] --> B["Resolve locked tools and dependencies"]
+    B --> C{"Matching cache available?"}
+    C -->|Yes| D["Restore validated cached inputs"]
+    C -->|No| E["Fetch or build required inputs"]
+    D --> F["Generate and compile current revision"]
+    E --> F
+    F --> G["Run required target and interop tests"]
+    G --> H{"Required cases passed?"}
+    H -->|Yes| I["Publish evidence and validated artifacts"]
+    H -->|No| X["Fail CI or report missing capability"]
+```
 
 ## 20. Repository documentation and branding
 

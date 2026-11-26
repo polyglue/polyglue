@@ -52,6 +52,8 @@ Modules are the unit of generation. Products aggregate modules for binary distri
 
 The following tables mirror the planned contract in PROJECT.md section 5.4. Keep the two copies identical when modifying a mapping. These are required target mappings, not evidence of implemented support. A backend must not invent a different representation merely to pass its tests.
 
+### Canonical type mapping
+
 These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Flutter uses the Dart native or Dart Web column according to its platform. Java and Kotlin share one model only when explicitly configured. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
 All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. `async method` is a declaration modifier rather than a value type. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
@@ -115,17 +117,17 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `float32` | float | float | Float | float | Float |
 | `float64` | double | double | Double | double | Double |
 | `string` | std::string | String | String | NSString | String |
-| `bytes` | std::vector<uint8_t> | byte[] | ByteArray | NSData | Data |
+| `bytes` | `std::vector<uint8_t>` | byte[] | ByteArray | NSData | Data |
 | `void` | void | void / Void | Unit | void | Void |
 | `record` | struct | Immutable class | data class | NSObject model | struct or imported model |
 | `enum` | enum class | Generated enum | enum class | NS_ENUM | enum |
 | `flags` | Flags wrapper | Flags wrapper | Flags wrapper | NS_OPTIONS | OptionSet |
 | `variant` | std::variant | Tagged class | Sealed class | Tagged object | Associated-value enum |
-| `list<T>` | std::vector<T> | List<T> | List<T> | NSArray | [T] |
-| `set<T>` | std::set / hash set | Set<T> | Set<T> | NSSet | Set<T> |
-| `map<K,V>` | std::map / hash map | Map<K,V> | Map<K,V> | NSDictionary | Dictionary<K,V> |
+| `list<T>` | `std::vector<T>` | `List<T>` | `List<T>` | NSArray | [T] |
+| `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet | `Set<T>` |
+| `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary | `Dictionary<K,V>` |
 | `array<T>` | std::vector / array wrapper | Primitive array / wrapper | Primitive array / wrapper | Typed buffer / wrapper | Typed buffer / wrapper |
-| `optional<T>` | std::optional<T> | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | Optional<T> |
+| `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
@@ -134,7 +136,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `WeakRef<T>` | Weak interface reference | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | Token wrapper | Token wrapper |
 | `date` | std::chrono::year_month_day | LocalDate | LocalDate | Calendar date wrapper | Calendar date wrapper |
-| `timestamp` | sys_time<microseconds> | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
+| `timestamp` | `sys_time<microseconds>` | Instant | Instant | Exact wrapper + NSDate conversion | Exact wrapper + Date conversion |
 | `duration` | std::chrono::nanoseconds | Duration | java.time.Duration | Exact duration wrapper | Duration or exact wrapper |
 | `uuid` | UUID value wrapper | UUID | UUID | NSUUID | UUID |
 | `DataView` | Scoped read-only span | Checked read view | Checked read view | Checked read view | Scoped read-only access |
@@ -164,16 +166,16 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `enum` | Enum | enum | enum | enum | Frozen constants | Checked numeric type |
 | `flags` | IntFlag / checked wrapper | Flags wrapper | Flags wrapper | Flags enum / wrapper | Checked mask | Checked mask |
 | `variant` | Tagged dataclass union | Sealed class | Sealed class | Tagged record hierarchy | Tagged object | Discriminated union |
-| `list<T>` | list[T] | List<T> | List<T> | IReadOnlyList<T> | Array | ReadonlyArray<T> |
-| `set<T>` | set[T] | Set<T> | Set<T> | IReadOnlySet<T> | Set | Set<T> |
-| `map<K,V>` | dict[K,V] | Map<K,V> | Map<K,V> | IReadOnlyDictionary<K,V> | Map | Map<K,V> |
-| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / Memory<T> | TypedArray / Array | TypedArray / ReadonlyArray<T> |
+| `list<T>` | list[T] | `List<T>` | `List<T>` | `IReadOnlyList<T>` | Array | `ReadonlyArray<T>` |
+| `set<T>` | set[T] | `Set<T>` | `Set<T>` | `IReadOnlySet<T>` | Set | `Set<T>` |
+| `map<K,V>` | dict[K,V] | `Map<K,V>` | `Map<K,V>` | `IReadOnlyDictionary<K,V>` | Map | `Map<K,V>` |
+| `array<T>` | Typed buffer / list | TypedData / wrapper | TypedData / wrapper | T[] / `Memory<T>` | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
 | `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
 | `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
 | `async method` | Awaitable / async def | Future | Future | Task | Promise | Promise |
-| `Stream<T>` | AsyncIterator | Stream | Stream | IAsyncEnumerable<T> | AsyncIterable | AsyncIterable<T> |
+| `Stream<T>` | AsyncIterator | Stream | Stream | `IAsyncEnumerable<T>` | AsyncIterable | `AsyncIterable<T>` |
 | `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
 | `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
@@ -203,7 +205,7 @@ Collection key types are limited to bool, integer, string, enum and UUID, plus e
 | watchOS | C, C++, Objective-C, Swift | SDK build and simulator |
 | visionOS | C, C++, Objective-C, Swift | SDK build and visionOS simulator/device |
 | Mac Catalyst | C, C++, Objective-C, Swift | SDK build and execution |
-| WebAssembly | C/C++, JS, TS, Dart/Flutter Web where supported | Node and browser execution |
+| Web (browser) and Node.js | C/C++ via WASM, JS, TS, Dart/Flutter Web where supported | Node and browser execution as applicable |
 
 Flutter uses Dart bindings and platform integration, not a separate type system. WASM uses the canonical ABI lowering and generated web bindings. All platform entries remain planned until their required build and execution evidence exists.
 
@@ -211,7 +213,7 @@ Flutter uses Dart bindings and platform integration, not a separate type system.
 
 Every instant crosses as signed UTC epoch microseconds, without reading the host default timezone. Convert timezone-aware inputs to UTC before crossing. Never assume a timezone for naive or ambiguous values. Return UTC-native instants when a native conversion is representable and reject precision/range loss. A calendar date crosses as Gregorian epoch days without time or timezone, and durations cross as signed nanoseconds. Apply these rules recursively in external adapters, collections, callbacks, async, streams and records.
 
-All types are non-null unless declared optional<T>. Every method argument is supplied explicitly. Only record construction may apply a declared default for an omitted field. An omitted optional without a default is absent. Explicit null means absent for an optional and an error for a required value, never a request to use a default. Preserve empty, false and zero values. Use a presence tag at the ABI for every optional layer. Do not read or release inactive payloads. Nested optional states must remain distinct even if a host's nullable type collapses them. Use typed wrappers for those cases and for nullable Objective-C collection elements. JS/TS use null for absence, reject explicit undefined for values and sparse array holes, and reserve undefined for a no-payload void return. A missing map key differs from a present key with an absent optional value. A failed invocation, business error and cancellation differ from successful absence. Apply PROJECT.md section 5.8 and the shared conformance fixtures.
+All types are non-null unless declared `optional<T>`. Every method argument is supplied explicitly. Only record construction may apply a declared default for an omitted field. An omitted optional without a default is absent. Explicit null means absent for an optional and an error for a required value, never a request to use a default. Preserve empty, false and zero values. Use a presence tag at the ABI for every optional layer. Do not read or release inactive payloads. Nested optional states must remain distinct even if a host's nullable type collapses them. Use typed wrappers for those cases and for nullable Objective-C collection elements. JS/TS use null for absence, reject explicit undefined for values and sparse array holes, and reserve undefined for a no-payload void return. A missing map key differs from a present key with an absent optional value. A failed invocation, business error and cancellation differ from successful absence. Apply PROJECT.md section 5.8 and the shared conformance fixtures.
 
 ## README, branding and diagrams
 
