@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
   <title id="title">PolyGlue</title>
-  <g fill="none" stroke="#7957F5" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M20 103V25h30a22 22 0 0 1 0 44H20"/>
-    <path d="M108 43H97a30 30 0 0 0 0 60h11V74H94"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
+    <path stroke="#F59E0B" d="M19 55V40C19 28 29 18 41 18H75C87 18 97 28 97 40C97 48 87 52 75 52H61"/>
+    <path stroke="#EA580C" d="M109 73V88C109 100 99 110 87 110H53C41 110 31 100 31 88C31 80 41 76 53 76H67"/>
   </g>
 </svg>
