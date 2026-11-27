@@ -2293,7 +2293,7 @@ All three swift_names values above are built-in defaults even when the entire sw
 
 A category-specific prefix replaces the target-wide prefix. It is not concatenated twice. Apply the configured filename convention to the final emitted symbol, subject to required type filenames. C/C++ filenames default to kebab-case while identifiers retain their configured case. An imported type always uses the defining module's resolved name, never the consuming module's prefix.
 
-C# optional naming override example (neither I nor Async is a built-in affix):
+C# naming configuration example (I is opt-in; Async is the default only for genuinely asynchronous operations):
 
 ```yaml
 targets:
@@ -2328,7 +2328,7 @@ naming:
 
 Define normalization and preservation policies per target. Default acronym segmentation recognizes the listed acronym dictionary and normalizes word casing deterministically. The acronym list and per-target casing/preservation rules are configurable. Test HTTPClient, XMLParser, getUserID, GPUTexture2D, URLRequest and IPv6Address. Expected normalized examples: httpClient / http_client, getUserId / get_user_id, gpuTexture2D / gpu_texture_2d. Swift-specific public names may explicitly preserve ID/URL spelling via the resolved acronym policy or annotations; do not invent semantic rewrites.
 
-Handle reserved words through legal escaping where appropriate (Swift/Kotlin backticks, C# @identifier) or configured suffixes. Detect collisions after all conversions, including user_id vs userId, generated proxies vs user types, Unicode/case-folded filenames, Java/Kotlin duplicate JVM types and reserved Windows filenames. Fail genuine public collisions with both source locations; allocate private implementation names internally under section 8.11.5. Never silently rename public symbols to resolve an ambiguity.
+Handle reserved words through legal escaping where appropriate (Swift/Kotlin backticks, C# @identifier) or configured suffixes. Detect collisions after all conversions, including user_id vs userId, private-name allocation vs user types, Unicode/case-folded filenames, Java/Kotlin duplicate JVM types and reserved Windows filenames. Fail genuine public collisions with both source locations; allocate private implementation names internally under section 8.11.5. Never silently rename public symbols to resolve an ambiguity.
 
 ### 8.4 Formatting and headers
 
@@ -2366,7 +2366,7 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 | Kotlin | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
 | Dart / Flutter | PascalCase | camelCase | camelCase | camelCase | camelCase |
 | Python | PascalCase | snake_case | snake_case | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
-| C# | PascalCase | PascalCase (no default async suffix) | public properties PascalCase; parameters/locals/private camelCase | PascalCase | PascalCase |
+| C# | PascalCase | PascalCase; Async suffix only for async declarations | public properties PascalCase; parameters/locals/private camelCase | PascalCase | PascalCase |
 | JavaScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
 | TypeScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
 | WASM | C ABI internal representation; JS/TS facade uses its target defaults | C ABI internal names; no public raw offsets | Canonical boundary layout; JS/TS facade defaults | Facade target defaults | Facade target defaults |
@@ -2387,7 +2387,7 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 
 A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default. When Objective-C and Swift are both declared in one Apple integration, the default is one mixed public framework/module using the unsuffixed derived PascalCase library name (or module name for standalone). Both languages import the same identity. The Apple build system coordinates the Swift module with its underlying Clang module; do not register two unrelated top-level modules with the same name. Internal modules may have distinct configurable technical names, never required consumer imports. Explicit separate public modules are opt-in and must use distinct names. See section 10.6.1. A project or library may explicitly choose a project-wide prefix with per-module/category overrides. Do not change a defining module's default based on whether another library consumes it. Detect cross-module Objective-C runtime class-name collisions before publication. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
 
-Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. No language-name prefix, separate static-helper suffix or asynchronous-method suffix is added by default. Mixed Apple frameworks use one unsuffixed public identity. C and Objective-C keep configurable global-symbol prefixes to prevent real native linkage/runtime collisions. Java/Kotlin use distinct actual package scopes if independent callable artifacts must coexist (section 10.6). C# I and Async affixes are explicit opt-in presentation choices. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
+Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. No language-name prefix or separate static-helper suffix is added by default. C# adds Async only to genuinely asynchronous operations; other targets have no automatic async suffix unless explicitly configured. Mixed Apple frameworks use one unsuffixed public identity. C and Objective-C keep configurable global-symbol prefixes to prevent real native linkage/runtime collisions. Java/Kotlin use distinct actual package scopes if independent callable artifacts must coexist (section 10.6). C# I is opt-in. C# Async is the default for genuinely async operations only and may be explicitly disabled. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
 
 Example effective C++ defaults:
 
@@ -2483,7 +2483,7 @@ A synchronous method may cross only a supported synchronous execution path; choo
 
 The prefix remains in Objective-C symbols. To keep a generated affix on Swift imports, set remove_prefix or remove_suffix to false explicitly. Setting swift_names.enabled false disables the optional imported-name metadata, not the independent Swift backend's native naming rules. An imported-model configuration that cannot satisfy the selected public Swift contract must generate an appropriate typed facade or report an incompatibility; it must not silently leak a different public API. Validate actual Swift compiler-visible names, not macro text alone.
 
-Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python owning awaitable consumer / async def provider, C# Task without an automatic name suffix, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
+Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python owning awaitable consumer / async def provider, C# Task with the Async suffix only for genuinely async declarations, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
 
 ### 8.8 Public signature resolution and identity
 
@@ -2499,7 +2499,7 @@ Resolve the following distinct layers before rendering any output:
 | Internal linkage | Canonical ABI descriptors and stable function/operation IDs, thunks, adapter symbols, ownership and executor metadata; never derived from public names |
 | Presentation | File paths, documentation, source aliases and import spelling; cannot change actual ownership or runtime meaning |
 
-Use the precedence in section 7.1 independently per property. For callable categories, first merge each category across the configuration layers in section 7.1, then resolve general method settings followed by static/async category settings (async-specific settings override the same static-specific property for a static async operation), then declaration annotations. A project async_methods.suffix wins over a module methods.suffix unless the module overrides async_methods.suffix itself; an explicitly empty specialized suffix clears the inherited one. No built-in async suffix for any target. Explicit complete public names replace automatic case/affix application for that identifier; an explicit empty name is invalid. Module/package names, type names, parameter identifiers and external labels are separate properties. Declaration annotations never rename a dependency as seen through another module. Validate all known annotations even when a target is not selected; target-specific collision and representability checks run on the selected public plan and its dependency closure. The registered annotation catalog must document accepted declaration kinds, value grammar, precedence and any applicability constraints.
+Use the precedence in section 7.1 independently per property. For callable categories, first merge each category across the configuration layers in section 7.1, then resolve general method settings followed by static/async category settings (async-specific settings override the same static-specific property for a static async operation), then declaration annotations. A project async_methods.suffix wins over a module methods.suffix unless the module overrides async_methods.suffix itself; an explicitly empty specialized suffix clears the inherited one. C# has a built-in Async suffix only for async_methods; all other targets default to an empty async suffix. Never apply an async-specific affix to a synchronous operation. Explicit complete public names replace automatic case/affix application for that identifier; an explicit empty name is invalid. Module/package names, type names, parameter identifiers and external labels are separate properties. Declaration annotations never rename a dependency as seen through another module. Validate all known annotations even when a target is not selected; target-specific collision and representability checks run on the selected public plan and its dependency closure. The registered annotation catalog must document accepted declaration kinds, value grammar, precedence and any applicability constraints.
 
 Implement a target-independent resolved public signature IR, with backend-specific semantic validation, not template string replacement. Include canonical operation ID, declaration span, effective setting origins, owner, public qualified name, member kind, static/instance/factory status, ordered parameter IDs, public labels/keyword names, local identifiers, mapped parameter and result types, generic/receiver constraints, async/error form, availability and visibility, native linkage, and any facade-to-owner mapping. Model generated constructors, accessors, static member exposure, callback adapters, protocol requirements, default helpers and aliases in the same symbol inventory. The provider, consumer, proxy, registry helpers, docs, imports, manifests and tests must read the same plan. Do not independently recompute spelling in templates. Parameter conversion is by canonical position/ID, never by a public string lookup.
 
@@ -2695,7 +2695,7 @@ All targets use independent names derived from IDL and registered target annotat
 | Python | PascalCase classes, snake_case methods/parameters, explicit positional-or-keyword names where supported, async provider/consumer as specified. Check self/cls and Python reserved names, generated special methods and package exports. No runtime overload guessing or unsupported typing-only overloads. |
 | Dart | PascalCase classes, camelCase methods/parameters, Future for async. Preserve mandatory positional arguments by default; use required named parameters only when a separately registered callable-form feature explicitly supports them and preserves the same required canonical arguments. No overloads by type, no implicit optionality. Check library privacy and generated accessors. |
 | Flutter | Uses the same resolved Dart public API on supported native and web platforms, not separate Flutter naming rules. Platform adapters, plugin channel names if used, JNI and Apple internals do not enter the public Dart signature. |
-| C# | PascalCase public types/methods/properties, camelCase parameters and Task for asynchronous operations without a default suffix. An explicitly configured suffix or full explicit name changes presentation only. Check CLR mapped overloads, inherited members, property/event accessors and generated members. Named arguments use resolved parameter identifiers. |
+| C# | PascalCase public types/methods/properties, camelCase parameters and Task and the Async suffix for genuinely asynchronous operations only. An explicit empty async suffix or full explicit name may omit it without changing semantics. Check CLR mapped overloads, inherited members, property/event accessors and generated members. Named arguments use resolved parameter identifiers. |
 | JavaScript | PascalCase public types, camelCase methods/parameters, Promise for async, positional arguments by default. Check package exports, prototype/static members and dangerous or reserved property names. No runtime guessing of overloads; explicit distinct names where necessary. |
 | TypeScript | Same actual callable exports and runtime names as paired JavaScript, with typed declarations and Promise. Type-only overload declarations are valid only if a real unambiguous runtime implementation preserves the canonical operation identity; never fabricate overload support by declaration alone. |
 | WebAssembly | Internal typed ABI exports/imports and canonical layout; public consumer uses selected JS/TS or Dart facade. Validate export and adapter names independently; no raw numeric pointer/offset API as an idiomatic facade. |
@@ -2749,11 +2749,11 @@ requires these default public call shapes (illustrative, not full executable pro
 | Kotlin | val repository = ProductChapterRepository.create(catalogId = catalogId); val chapters = repository.findAll() |
 | Python | repository = await ProductChapterRepository.create(catalog_id=catalog_id); chapters = await repository.find_all() |
 | Dart / Flutter | final repository = await ProductChapterRepository.create(catalogId); final chapters = await repository.findAll(); |
-| C# | var repository = await ProductChapterRepository.Create(catalogId); var chapters = await repository.FindAll(); |
+| C# | var repository = await ProductChapterRepository.CreateAsync(catalogId); var chapters = await repository.FindAllAsync(); |
 | JS / TS | const repository = await ProductChapterRepository.create(catalogId); const chapters = await repository.findAll(); |
 | WASM | Same public JS/TS or Dart facade; internal typed ABI is not the consumer API |
 
-The C# naming convention Async is optional through naming.async_methods.suffix: Async or an exact target name. Default Create and FindAll still return Task<T>. Do not strip an explicit IDL word Async or emit duplicate alias methods by default. All other target casing follows section 8.5.
+C# follows its native convention: static async create becomes CreateAsync returning Task<ProductChapterRepository>; static create becomes Create returning ProductChapterRepository (or the specified synchronous error/result form). Likewise async findAll becomes FindAllAsync and sync findAll becomes FindAll. The Async suffix is configurable via naming.async_methods.suffix (explicit empty string disables it), and an exact target name may omit it. Do not append Async twice when the resolved stem already ends in that semantic token. No generated synchronous method may advertise Async merely because it calls native code, executes on an application worker, uses a callback internally, or returns an already completed wrapper around blocking work. Validate Async as a terminal naming token across target conventions: reject misleading synchronous callable names or configured async affixes rather than silently altering an explicit name. A genuinely async operation has the canonical async contract and real asynchronous admission/completion, cancellation and execution semantics in section 14; immediate completion is legal, but blocking the caller to perform the underlying work then returning a completed Task is not an async adapter. A bounded worker for genuinely blocking provider work is permitted only under the explicit executor policy, with nonblocking caller admission. Do not generate duplicate aliases by default. Other targets retain native async/await, Future, Promise or completion forms with their documented naming defaults.
 
 #### 8.11.2 Native strategies
 
@@ -3078,7 +3078,7 @@ namespace App.Repository;
 
 public interface IUserRepository
 {
-    Task<IReadOnlyList<User>> FindAll();
+    Task<IReadOnlyList<User>> FindAllAsync();
 }
 ```
 
@@ -4069,7 +4069,7 @@ final response = await client.request(request);
 ```
 
 ```csharp
-var response = await client.Request(request);
+var response = await client.RequestAsync(request);
 ```
 
 ```python
@@ -4317,7 +4317,7 @@ interface BatteryMonitor {
 In this example the provider retains one callback reference; a non-null value replaces the current listener and null clears it. The optional callback is an optional owning callable handle, not an optional function pointer borrowed from the caller. A callback passed to a listener setter has a retained lifetime, as opposed to a scoped callback argument. The retained parameter annotation specifies this lifetime explicitly under section 14.2. The provider must acquire its own callback reference before acknowledging the setter; if the operation fails before committing the slot change, the previous callback remains installed. A setter is an operation on this particular object, not on every object implementing BatteryMonitor. Setting a listener does not register a service or change the active provider.
 
 ```dart
-final monitor = registry.get(BatteryMonitorType);
+final monitor = registry.get<BatteryMonitor>();
 
 await monitor.setListener((level) async {
   print('Battery: $level');
@@ -4381,7 +4381,7 @@ interface BatterySource {
 ```
 
 ```dart
-final source = registry.get(BatterySourceType);
+final source = registry.get<BatterySource>();
 final changes = await source.levelChanges();
 final subscription = changes.listen((level) {
   print('Battery: $level');
@@ -4626,7 +4626,7 @@ Equivalent usage patterns for every host (blocking method spelling illustrative,
 | Python | Existing thread/executor calls client.request_blocking(request), with actual adapter releasing interpreter lock where safe | await client.request(request) |
 | Dart native | Existing worker isolate with valid own attachment and locally acquired client calls requestBlocking(request) | await client.request(request) |
 | Flutter native | Same worker-isolate restriction; communicate transferable result to UI isolate | await client.request(request) on UI isolate |
-| C# | Existing Thread or deliberate Task.Run(() => client.RequestBlocking(request)) with valid handle lease | await client.Request(request) |
+| C# | Existing Thread or deliberate Task.Run(() => client.RequestBlocking(request)) with valid handle lease | await client.RequestAsync(request) |
 | JS / TS | Only supported worker-local WASM/native binding, not arbitrary blocking browser HTTP; use async if transport is event-loop-bound | await client.request(request) |
 | Flutter Web / WASM | No baseline general synchronous HTTP worker path; only independently proven worker-local blocking transport; otherwise reject | Host async HTTP bridge / Promise or Future |
 
@@ -4738,7 +4738,7 @@ C#:
 
 ```csharp
 var client = ServiceRegistry.Global.Get<HttpClient>();
-var response = await client.Request(request);
+var response = await client.RequestAsync(request);
 ```
 
 Python:
@@ -4962,14 +4962,14 @@ let platformRegistration = try registry.register(DeviceService.self, implementat
 In the browser, register the JavaScript/TypeScript implementation through the generated shared JS/WASM adapter:
 
 ```typescript
-const platformRegistration = registry.register(DeviceServiceType, new WebDeviceService(), RegistrationPolicy.ScopedOverride);
+const platformRegistration = registry.register(DeviceService, new WebDeviceService(), RegistrationPolicy.ScopedOverride);
 ```
 
 Flutter installs its own optional override after attachment, using Dart native bindings or Dart Web bindings as appropriate:
 
 ```dart
 final registry = ServiceRegistry.global;
-final flutterRegistration = registry.register(DeviceServiceType, FlutterDeviceService(), policy: RegistrationPolicy.scopedOverride);
+final flutterRegistration = registry.register<DeviceService>(FlutterDeviceService(), policy: RegistrationPolicy.scopedOverride);
 ```
 
 Now C++ can invoke the Dart implementation through its previously created dynamic proxy:
@@ -5025,8 +5025,8 @@ class FlutterDeviceService implements DeviceService {
   }
 }
 
-final previous = registry.get(DeviceServiceType);
-final registration = registry.register(DeviceServiceType, FlutterDeviceService(previous), policy: RegistrationPolicy.scopedOverride);
+final previous = registry.get<DeviceService>();
+final registration = registry.register<DeviceService>(FlutterDeviceService(previous), policy: RegistrationPolicy.scopedOverride);
 ```
 
 This example assumes serialized application startup for the capture and register steps. A separate get and register pair is not an atomic compare-and-swap; concurrent initialization must be coordinated by the application. Kotlin or Swift can use the same pattern with a fixed reference to C++. Do not resolve the same interface dynamically inside its active override when intending to invoke the previous provider; that can recurse into the override itself. Explicit delegation does not change the captured identity when the previous registration is removed. It also does not keep a foreign executor alive indefinitely: if the previous provider's runtime is detached, its old handle cannot be called and must report a lifetime error. No automatic selection of another provider for a failed delegated call. Release captured references when the decorating provider is disposed and avoid ownership cycles.
@@ -5351,7 +5351,7 @@ app_repository_plugin/
 
 ### 16.14 C# backend
 
-**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods by default; Async method suffix and I interface prefix are opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
+**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods by default; Async is the default suffix only for genuinely asynchronous operations and can be disabled; I interface prefix is opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
 
 **Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Checked borrowed access by default; explicit scoped unsafe Span/ReadOnlySpan interop only when the lease cannot escape its valid access scope. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
 
@@ -5360,7 +5360,7 @@ app_repository_plugin/
 ```csharp
 using var registration = registry.Register<UserRepository>(implementation);
 var repo = registry.Get<UserRepository>();
-var users = await repo.FindAll();
+var users = await repo.FindAllAsync();
 ```
 
 **CI:** csharp.yml runs dotnet build/test on Windows/Linux/macOS with pinned SDK, C#↔C/C++, GC stress and forced collection, delegate lifetime, SafeHandle explicit/finalizer cleanup, struct size/offset assertions, cancellation and native thread callbacks. Test package/project reference and platform native-library resolution. Sample console or simple UI with all three scenarios.
@@ -5575,7 +5575,7 @@ Illustrative consumer expressions, in their proper async context, using the defa
 | Swift | let response = try await client.request(input: request) |
 | Python | response = await client.request(request) |
 | Dart / Flutter | final response = await client.request(request); |
-| C# | var response = await client.Request(request); |
+| C# | var response = await client.RequestAsync(request); |
 | JS / TS | const response = await client.request(request); |
 | WASM | Typed async C/C++ start or JS facade Promise; no blocking JS import waiting for result |
 
@@ -6084,7 +6084,7 @@ Build an independently authored expected public signature inventory per target f
 | naming.jvm | Actual Java/Kotlin clients and providers; JVM erasure, suspend/static/property lowering, Kotlin named arguments on Kotlin facade, shared class ownership and explicit distinct packages |
 | naming.python | Installed module, keyword and positional invocation, async and static calls, reserved/self/cls names and overload rejection |
 | naming.dart-flutter | Native and web compile/run with same Dart API; reject unsupported named/overload forms, test required named arguments only if the registered feature is supported |
-| naming.csharp | Actual compiled named/positional calls with Create/FindAll/Request returning Task, no implicit Async suffix, explicit opt-in suffix and exact override, CLR overload/property collisions and native invocation |
+| naming.csharp | Actual compiled named/positional calls: CreateAsync/FindAllAsync/RequestAsync for canonical async operations, Create/FindAll/Request for sync operations, explicit empty async suffix and exact override; reject misleading sync Async names and prove nonblocking async admission, CLR overload/property collisions and native invocation |
 | naming.js-ts-wasm | Run actual JS exports and typed TS consumer against same runtime; test rejected overloads/export collisions, Promise and WASM facade parity |
 | naming.diagnostics | Report both conflicting logical IDs, source spans, target, final signatures, config origins and collision domain; no partial output or successful manifest on failure |
 
@@ -6092,7 +6092,7 @@ Include negative cases for generated helpers colliding with user symbols, inheri
 
 ### 18.19 No-leakage public API conformance
 
-Compile installed consumers with exact section 8.11 call shapes for all targets, with independently authored mixed, all-static, instance-only and self-returning factory fixtures. Execute both directions and verify static and instance providers can live in distinct attachments. Verify owning return, injection, weak refs, base views, callbacks, streams, fixed and dynamic registry identity. Compile Swift nested provider, facade and registry overload, plus independent Objective-C client with no competing imported public names. Compile and run same simple-name JVM contracts in actual separate packages, shared models and filter-stable names; reject genuine binary-name conflicts. Compile default C# Create/FindAll/Request with Task and optional Async naming separately. Compile Dart reified registry access on native and web; run same-name real JS/TS exports including static calls. Test missing/duplicate/stale default selection, two contexts, removal versus admission, fixed facade, detach/close, no implicit initialization and internal symbol collision isolation. Inspect actual installed public names and imports: no required static helper, language-prefixed callable type or separate type token solely due to implementation mechanics. Preserve semantics, ownership, cancellation and errors. Text-only snapshots are insufficient; unavailable toolchains are blocked, not passed.
+Compile installed consumers with exact section 8.11 call shapes for all targets, with independently authored mixed, all-static, instance-only and self-returning factory fixtures. Execute both directions and verify static and instance providers can live in distinct attachments. Verify owning return, injection, weak refs, base views, callbacks, streams, fixed and dynamic registry identity. Compile Swift nested provider, facade and registry overload, plus independent Objective-C client with no competing imported public names. Compile and run same simple-name JVM contracts in actual separate packages, shared models and filter-stable names; reject genuine binary-name conflicts. Compile default C# CreateAsync/FindAllAsync/RequestAsync with Task and synchronous Create/FindAll/Request without Async; separately test explicit empty suffix, no doubled suffix, rejection of misleading sync Async names, and actual asynchronous admission/execution rather than Task-wrapped caller blocking. Compile Dart reified registry access on native and web; run same-name real JS/TS exports including static calls. Test missing/duplicate/stale default selection, two contexts, removal versus admission, fixed facade, detach/close, no implicit initialization and internal symbol collision isolation. Inspect actual installed public names and imports: no required static helper, language-prefixed callable type or separate type token solely due to implementation mechanics. Preserve semantics, ownership, cancellation and errors. Text-only snapshots are insufficient; unavailable toolchains are blocked, not passed.
 
 ## 19. GitHub Actions
 
@@ -6869,7 +6869,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement a fake login form or CLI invoking a foreign provider, returning populated User and typed invalid-credential errors. Never log credentials.
 - [ ] Implement repository methods returning records, lists, optionals, integers, bool and void asynchronously across modules and runtimes.
 - [ ] Run every supported type across every feasible ordered caller/provider language pair with independent expected values, both directions and distinct async/callback/stream/ownership cases.
-- [ ] Implement the no-leakage native public API policy (section 8.11), same-type static/instance invocation, scoped provider roles, typed registry resolution, default-context controls, C# opt-in affixes and real JVM scopes where required; execute installed consumer/provider cases in section 18.19.
+- [ ] Implement the no-leakage native public API policy (section 8.11), same-type static/instance invocation, scoped provider roles, typed registry resolution, default-context controls, C# async-only suffix, opt-in interface affixes and real JVM scopes where required; execute installed consumer/provider cases in section 18.19.
 - [ ] Execute the independent public signature/importer conformance inventory in section 18.18 against installed packages and real compilers; prove canonical dispatch unchanged by names, exact static and instance Swift call sites, native/imported ownership, language-specific collision diagnostics and consumer/provider parity.
 - [ ] Test relevant invalid inputs and actual failure modes, with bounded deterministic tests and property/fuzz coverage only where useful. Reuse shared fixtures. Reject missing expected case IDs.
 - [ ] Run appropriate sanitizer and runtime diagnostics, verify actual instrumentation, test memory and concurrency regression paths and document any blocked hardware/toolchain checks.
