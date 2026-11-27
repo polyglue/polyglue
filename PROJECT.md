@@ -47,6 +47,9 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Complete public naming defaults](#85-complete-public-naming-defaults)
   - [Formatting and customization profiles](#86-formatting-and-customization-profiles)
   - [Idiomatic public signatures and Swift import defaults](#87-idiomatic-public-signatures-and-swift-import-defaults)
+  - [Public signature resolution and identity](#88-public-signature-resolution-and-identity)
+  - [Swift signature grammar and Apple exposure](#89-swift-signature-grammar-and-apple-exposure)
+  - [Idiomatic callable surfaces for every target](#810-idiomatic-callable-surfaces-for-every-target)
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
   - [Unified library public entry points](#105-unified-library-public-entry-points)
@@ -125,6 +128,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Application-owned thread and reverse-callback conformance](#1815-application-owned-thread-and-reverse-callback-conformance)
   - [Independent coverage, regression and performance gates](#1816-independent-coverage-regression-and-performance-gates)
   - [Final contract closure and negative evidence](#1817-final-contract-closure-and-negative-evidence)
+  - [Public signature and importer conformance](#1818-public-signature-and-importer-conformance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
   - [CI trust boundaries](#1961-ci-trust-boundaries)
@@ -2491,6 +2495,240 @@ The prefix remains in Objective-C symbols. To keep a generated affix on Swift im
 
 Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python owning awaitable consumer / async def provider, C# Task with Async suffix, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
 
+### 8.8 Public signature resolution and identity
+
+**Mandatory language-native public API.** A consumer or provider should not need to learn the spelling, naming conventions or incidental representation of any other language to use a generated library. The bridge is an implementation detail. Preserve the logical meaning, ordering, types, errors, ownership, dispatch and cancellation of every operation. Do not automatically shorten semantic names: findAllByCatalogIdOrderBySequence may explicitly become findAll, but its ordering behavior remains part of the contract and documentation. A target name is not a semantic alias and cannot select a different provider.
+
+Resolve the following distinct layers before rendering any output:
+
+| Layer | Examples / rules |
+| --- | --- |
+| Canonical identity | Defining module, declaration ID, canonical signature, static/instance discriminator, generic specialization identity; independent of target spelling |
+| Public source identity | Actual owning module/package/namespace, enclosing type, public member name, argument labels or keyword names, local parameter names, mapped types, visibility, async/error form and generic constraints |
+| Public binary identity | Objective-C runtime names/selectors, JVM binary descriptors, .NET metadata, Swift compiler symbols, exported C/C++ symbols as applicable; not necessarily identical to source identity |
+| Internal linkage | Canonical ABI descriptors and stable function/operation IDs, thunks, adapter symbols, ownership and executor metadata; never derived from public names |
+| Presentation | File paths, documentation, source aliases and import spelling; cannot change actual ownership or runtime meaning |
+
+Use the precedence in section 7.1 independently per property. For callable categories, resolve general method settings first, then the applicable static/async category settings (async-specific settings override the same static-specific property for a static async operation), then declaration-level overrides. Explicit complete public names replace automatic case/affix application for that identifier; an explicit empty name is invalid. Module/package names, type names, parameter identifiers and external labels are separate properties. Declaration annotations never rename a dependency as seen through another module. Validate all known annotations even when a target is not selected; target-specific collision and representability checks run on the selected public plan and its dependency closure. The registered annotation catalog must document accepted declaration kinds, value grammar, precedence and any applicability constraints.
+
+Implement a target-independent resolved public signature IR, with backend-specific semantic validation, not template string replacement. Include canonical operation ID, declaration span, effective setting origins, owner, public qualified name, member kind, static/instance/factory status, ordered parameter IDs, public labels/keyword names, local identifiers, mapped parameter and result types, generic/receiver constraints, async/error form, availability and visibility, native linkage, and any facade-to-owner mapping. Model generated constructors, accessors, static companions, callback adapters, protocol requirements, default helpers and aliases in the same symbol inventory. The provider, consumer, proxy, registry helpers, docs, imports, manifests and tests must read the same plan. Do not independently recompute spelling in templates. Parameter conversion is by canonical position/ID, never by a public string lookup.
+
+Resolution order:
+
+1. Resolve the canonical declaration graph, including inherited operations, concrete generic owners and source/prebuilt dependencies.
+2. Normalize effective naming settings, tokenize acronyms and derive each target's public scope and symbols from logical IDL names.
+3. Apply explicit names, labels and other supported annotations; map actual host types and callable forms, including any generated helpers and synthetic bridge parameters.
+4. Plan public ownership, aliases, native/imported Apple representation and other shared artifact surfaces before computing final imports.
+5. Check source, runtime, binary, inherited, generated-member, export and filesystem collision domains, including the full selected dependency and library assembly closure.
+6. Compute canonical linkage independently; produce the validated render model and manifests. Fail before changing generated files if a collision or unsupported mapping exists.
+
+A naming-only override must leave canonical operation identity, ABI contract fingerprints, provider dispatch, parameter ordering and value marshalling unchanged. It can change public binary or source compatibility, so record a separate public API fingerprint. A source or prebuilt library may not be silently renamed by downstream defaults. Re-export only real supported aliases and reject ambiguous publication. The generator must not automatically append arbitrary numbers, hide a user symbol, drop a meaningful word, change an async operation to sync, or resolve a collision by generation order.
+
+Collision analysis uses the language's actual rules, not one global case-insensitive set. Check keywords and legal escaping, lexical normalization, namespaces, package exports, inherited and generated members, overloads after type mapping/erasure, host runtime names, library dependencies, and normalized filesystem paths. Two declarations sharing a canonical operation through inheritance may share one implementation where the host supports it; unrelated logical operations must not merge. Require explicit overrides for unresolved ambiguity. Diagnostics must identify target, logical IDs, original source locations, conflicting final qualified signatures, configuration origins, collision domain and suggested legal resolution. Escaping a keyword must be tracked as syntax rather than part of the underlying name. No invisible fallback or lossy transliteration. External/adapter types participate in collision analysis using their actual resolved host representation.
+
+### 8.9 Swift signature grammar and Apple exposure
+
+#### 8.9.1 Names, labels, parameters and precedence
+
+Swift has distinct type names, base member names, external argument labels and internal parameter identifiers. The Swift native facade owns its planned public name; Objective-C owns its own selector and runtime class/protocol name. The same Swift call shape is required for native and imported exposure when both represent the same logical operation. Use Swift's [API design guidelines](https://www.swift.org/documentation/api-design-guidelines/) and compiler-verified names; defaults are deterministic rather than an attempt to infer English semantics.
+
+The following forms extend the existing registered annotations in sections 8.7 and 9.2:
+
+| Form | Meaning |
+| --- | --- |
+| @swift.name("Product") on a type | Explicit unqualified Swift type name |
+| @swift.name("find") on a method | Override base name; keep separately resolved labels |
+| @swift.name("find(id:)") | Explicit base name and one external label |
+| @swift.name("find(_:)") | Omit one external label |
+| @swift.name("index(of:in:)") | Two ordered labels; internal names remain independent |
+| @swift.name("reset()") | Explicit zero-argument method |
+| @swift.name("init(id:name:)") | Initializer signature only on a declaration that actually supports constructor exposure |
+| @swift.name("identifier") on a parameter | Override local parameter identifier; default parameter_names policy uses this identifier unless a label is explicitly supplied |
+| @swift.label("of") or @swift.label("_") on a parameter | Override that parameter's external label; _ means no external label |
+
+For ordinary callable names, the signature string is an identifier optionally followed by parentheses containing zero or more identifier-or-underscore tokens, each terminated by a colon. Parse the entire string; no whitespace, dots, module qualification, operators, generic argument syntax, types, default values, return arrows, async/throws suffixes, arbitrary Swift expressions or backticks in this annotation grammar. Use legal target identifiers; escape permitted contextual/reserved identifiers in emitted source only where the compiler and selected importer support them. The underscore is reserved as the no-label marker, never a standalone type/base/local parameter name. The special base init is accepted only for an actual supported initializer shape, never to convert an ordinary method or static factory into an initializer by naming alone. Type/field/enum/parameter simple-name annotations do not accept callable syntax. Record constructors derived from fields use the resolved field names and existing record-construction contract; do not invent new IDL constructor declarations or allow arbitrary per-constructor annotations until that declaration form is supported. An annotation on a callback type names the type, not its invocation signature.
+
+Full signatures describe only the ordered logical parameters of the declaration. Exclude self, implicit context, continuation, completion block, NSError out parameter, buffer counts and other synthetic bridge arguments. Parameter order and count are invariant. The Swift code generator emits a local identifier distinct from its external label when needed, e.g. index(of chapterId: Int64, in chapters: [ProductChapter]); use find(_ id: Int64) for omission. A parameter annotation cannot change its type or introduce a default. All ordinary method arguments remain mandatory under section 5.8.
+
+Configuration follows existing target settings and inherits through project/library/module defaults:
+
+```yaml
+targets:
+  swift:
+    argument_labels:
+      policy: parameter_names
+    naming:
+      methods: camelCase
+      parameters: camelCase
+  objc:
+    prefix: UBRepository
+    swift_names:
+      enabled: true
+      remove_prefix: true
+      remove_suffix: true
+```
+
+argument_labels.policy is a validated enum: parameter_names (all use resolved Swift parameter names), omit_first (only index zero is unlabeled), omit_all (all unlabeled). Empty parameter lists remain empty. Resolve local identifiers, then derive labels from the policy, then apply @swift.label; a full @swift.name signature is authoritative for labels but any explicit @swift.label on the same slot must agree or fail with both spans. A simple method-name override leaves those labels intact. Two conflicting name annotations or duplicated annotations are rejected. No automatic removal of the first label merely because Objective-C embeds it in a selector. Apply the same policy to native Swift instance/static operations and their importer/facade plan; generated record construction keeps its field-label defaults unless supported constructor-specific metadata explicitly changes them. Closures/function types use the host's actual unlabeled invocation syntax, not artificial external labels.
+
+#### 8.9.2 Static helpers, services and end-to-end examples
+
+This all-static fixture is independent of the instance-service fixture in section 8.7. It assumes the domain import exists. Both interfaces are bound to a provider as specified in section 4.6.
+
+```text
+module repository;
+
+import domain.ProductChapter;
+
+interface ProductChapterRepository {
+    @swift.name("findAll(catalogId:ascending:)")
+    static findAllByCatalogIdOrderBySequence(
+        catalogId: int64,
+        ascending: bool
+    ): list<ProductChapter>;
+}
+
+interface ProductChapterHelper {
+    @swift.name("index(of:in:)")
+    static getIndexByChapterIdAndList(
+        chapterId: int64,
+        chapters: list<ProductChapter>
+    ): int32;
+}
+```
+
+Illustrative native Swift public declarations (bodies dispatch through the already bound static facade):
+
+```swift
+public enum ProductChapterRepository {
+    public static func findAll(
+        catalogId: Int64,
+        ascending: Bool
+    ) throws -> [ProductChapter] {
+        // Generated typed invocation and error conversion.
+        try repositoryBinding.findAllByCatalogIdOrderBySequence(
+            catalogId, ascending
+        )
+    }
+}
+
+public enum ProductChapterHelper {
+    public static func index(
+        of chapterId: Int64,
+        in chapters: [ProductChapter]
+    ) throws -> Int32 {
+        // Generated typed invocation and error conversion.
+        try helperBinding.getIndexByChapterIdAndList(chapterId, chapters)
+    }
+}
+```
+
+The binding identifiers above stand for generated private typed adapters, not globals that create or guess a runtime context. Their actual implementation follows section 4.6. A real consumer, after explicit context setup and binding, writes:
+
+```swift
+import Ubook
+
+let chapters = try ProductChapterRepository.findAll(
+    catalogId: product.catalogId,
+    ascending: true
+)
+let index = try ProductChapterHelper.index(
+    of: chapter.chapterId,
+    in: chapters
+)
+```
+
+For an async declaration use try await; do not suppress bridge errors or make a synchronous cross-executor call legal through naming. A real instance service instead uses the typed registry or an injected reference, e.g. try await repository.findAll(catalogId: catalogId, ascending: true). The class-level and instance forms are not interchangeable. Mixed static/instance interfaces use the configured companion name (default Statics) and one instance contract; an all-static interface owns its short name. A factory remains a factory even when renamed and must preserve its return ownership and explicit binding.
+
+Additional examples (shown as independent method names/call shapes, not a change to runtime/error syntax):
+
+| Annotation | Planned Swift invocation spelling |
+| --- | --- |
+| @swift.name("find(id:)") | find(id: 10) |
+| @swift.name("find(_:)") | find(10) |
+| @swift.name("remove(at:)") | remove(at: 2) |
+| @swift.name("save(_:)") | save(product) |
+| @swift.name("move(_:to:)") | move(item, to: destination) |
+| @swift.name("index(of:in:)") | index(of: id, in: chapters) |
+| @swift.name("refresh()") | refresh() |
+
+#### 8.9.3 Objective-C selectors, imported names and native wrappers
+
+For a representable imported type, generate a legal Objective-C declaration and explicit NS_SWIFT_NAME (or applicable compiler attribute) from the planned Swift signature. Do not concatenate the Objective-C prefix into the native Swift type name. The default swift_names affix flags act only on affixes introduced by the Objective-C name resolver. An explicit @swift.name wins over those flags; when a native Swift naming profile is explicitly configured it must be reflected in importer metadata where representable. When no explicit Swift naming override exists, retaining an Objective-C-generated affix via remove_prefix/remove_suffix false affects the imported public surface, and any corresponding native facade must agree or the mixed plan must be rejected. With swift_names.enabled false, an importer-only exposure must still be proven to match the planned Swift contract, or use a native facade or diagnose the mismatch. An independent native Swift API does not obtain its names from the selector.
+
+Illustrative header for the importer-owned model path (shared ProductChapter assumed, with an actual typed error mapping):
+
+```objc
+NS_SWIFT_NAME(PolyGlueImportedProductChapterHelper)
+@interface UBHelperProductChapterHelper : NSObject
+
++ (BOOL)getIndexByChapterIdAndList:(int64_t)chapterId
+                         chapters:(NSArray<UBDomainProductChapter *> *)chapters
+                            index:(int32_t * _Nonnull)index
+                            error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_UNAVAILABLE("Use the generated Swift facade");
+
+@end
+```
+
+This error/out-parameter example is intentionally not a claim that the importer can synthesize an Int32 throwing return. For this shape, the public Swift helper is a native facade; do not also import the Objective-C type under the same Swift name. In this native facade layout the Objective-C class has a distinct technical Swift import name; additionally keep that bridge type outside the normal public Swift API using a supported private implementation boundary or importer unavailability where applicable. The facade must call an accessible private bridge thunk (not the unavailable method). The actual Objective-C public API remains usable. If an imported-only declaration can faithfully represent the planned call, generate its exact explicit Swift name instead. For example, the following independent no-error illustrative declaration demonstrates the attribute syntax and label mapping only, not a PolyGlue invocation that can fail:
+
+```objc
+NS_SWIFT_NAME(IndexExample)
+@interface UBIndexExample : NSObject
++ (int32_t)indexForValue:(int64_t)value
+    NS_SWIFT_NAME(index(of:));
+@end
+```
+
+Objective-C selector arity counts the actual Objective-C parameters including synthetic error/completion parameters. Swift logical label arity counts logical parameters only. Compute both from their respective lowering plans; do not mechanically reuse the label count for NS_SWIFT_NAME or NS_SWIFT_ASYNC_NAME. For async use actual supported Clang/Apple SDK attributes only when completion/error/optional shapes and ownership agree with the planned Swift signature. Otherwise emit an explicit native Swift async throws wrapper with the same planned labels, exactly-once completion and cancellation semantics. A native Swift-only public type need not be exposed through @objc. Do not use @objcMembers indiscriminately, attach invalid Sendable metadata, or introduce a second native model simply to hide an imported one.
+
+For each canonical Apple declaration choose one exposure owner per public Swift scope: imported Objective-C declaration, native Swift declaration/facade, or a valid alias/re-export to a genuinely distinct owner. For native facade ownership, eliminate competing imported names for Swift (private implementation module, distinct internal/refined name, or supported importer unavailability as appropriate). NS_REFINED_FOR_SWIFT alone is not proof of absence of a conflicting public symbol. Never call an unavailable symbol from Swift; use accessible private typed C/Objective-C++ adapter paths. Do not promise that an underscored imported declaration is private simply because of spelling. Check the actual public module interface and usable exports. Shared models preserve one canonical public host type unless explicitly separate representation and conversion are configured under section 10.6.1. Public Objective-C selectors/runtime class names are checked separately, including across loaded modules and frameworks; separate Swift modules cannot resolve Objective-C runtime class collisions.
+
+#### 8.9.4 Modules, overloads and generated members
+
+By default a selected mixed Apple library publishes one real unsuffixed module (section 10.6.1), e.g. import Ubook. In explicitly modular or separate-library layouts where the corresponding modules actually exist, the consumer can import UBDomain, UBRepository and UBHelper and use UBRepository.ProductChapterRepository for disambiguation. Do not manufacture these imports as aliases for folders or require language-suffixed modules. In one unified module duplicate short public types must be explicitly renamed or exported through a valid distinct namespace/facade; a fictitious submodule qualifier is not a solution.
+
+Validate Swift collisions by enclosing scope, declaration kind, base name, ordered external labels, host-mapped types, generic constraints, static/instance and actual Swift compiler overload rules. Check potential ambiguity introduced by default arguments on generated constructors, inherited protocol requirements, extensions, generated accessors, static companions, imported Objective-C categories/selectors and compiler-synthesized names. Neither local parameter identifiers nor return/error spelling alone is a valid way to disambiguate logical overloads. Do not rely on async/throws differences to split operations with the same canonical signature. Reject unsupported or ambiguous call shapes, including optional/literal conversions that make required fixture calls ambiguous. Check Objective-C method families (init, new, copy, mutableCopy, alloc), ARC ownership, selectors and availability so a naming override cannot change ownership semantics. A distinct Swift name does not repair a conflicting Objective-C selector. Override a selector independently or use the appropriate facade.
+
+### 8.10 Idiomatic callable surfaces for every target
+
+All targets use independent names derived from IDL and registered target annotations. The language profile owns syntax, not semantics. Use target-specific name overrides for deliberate semantic shortening; do not automatically translate Swift labels to other languages. Parameter name overrides affect keyword/named-argument APIs only where supported. For positional languages they affect declaration/documentation, not call dispatch. No target may change parameter order, required argument count, ownership, execution or errors because of presentation.
+
+| Target | Public shape and naming-specific validation |
+| --- | --- |
+| C | snake_case module-prefixed functions and typed receiver/static handles; no language overloads or named arguments. Stable signature-derived overload symbols as in section 4.7. Check global identifiers, typedef/tag/macro names, exported symbols and reserved implementation prefixes. Preserve typed status/out parameters. |
+| C++ | PascalCase types, camelCase methods/parameters by default; namespace-qualified types, actual overloads, RAII and configured static companion. Check mapped signatures, cv/ref constraints where supported, inherited members, constructors/destructors and reserved identifiers. Do not expose raw ABI names in normal API. |
+| Objective-C | Independent configurable prefixed types, complete selectors via registered @objc.selector, distinct instance/class dispatch, compiler-checked method families, property accessors, protocol requirements, nullability and synthetic error/completion arity. Swift annotations do not change selectors. |
+| Swift | PascalCase types, camelCase methods, independently configurable labels/local names, native protocols and async throws where required; section 8.9 owns imported/native visibility, static and constructor rules. |
+| Java | PascalCase types, camelCase methods, positional arguments, actual packages, CompletableFuture for async. Check JVM descriptors after erasure, inherited/interface/default methods, generated accessors and static helpers. No parameter-name-only overloads. |
+| Kotlin | PascalCase types, camelCase methods, named arguments where Kotlin declarations support them, suspend for async, companion/static exposure where supported. Check JVM erasure, suspend lowering, property getter/setter collisions and Java-visible synthetic methods. Java-origin methods do not acquire Kotlin named-argument support. Use a genuine Kotlin facade where required; share the JVM owner. |
+| Python | PascalCase classes, snake_case methods/parameters, explicit positional-or-keyword names where supported, async provider/consumer as specified. Check self/cls and Python reserved names, generated special methods and package exports. No runtime overload guessing or unsupported typing-only overloads. |
+| Dart | PascalCase classes, camelCase methods/parameters, Future for async. Preserve mandatory positional arguments by default; use required named parameters only when a separately registered callable-form feature explicitly supports them and preserves the same required canonical arguments. No overloads by type, no implicit optionality. Check library privacy and generated accessors. |
+| Flutter | Uses the same resolved Dart public API on supported native and web platforms, not separate Flutter naming rules. Platform adapters, plugin channel names if used, JNI and Apple internals do not enter the public Dart signature. |
+| C# | PascalCase public types/methods/properties, camelCase parameters and Task/Async suffix for asynchronous operations. A full explicit method name replaces the automatic suffix. Check CLR mapped overloads, inherited members, property/event accessors and generated members. Named arguments use resolved parameter identifiers. |
+| JavaScript | PascalCase public types, camelCase methods/parameters, Promise for async, positional arguments by default. Check package exports, prototype/static members and dangerous or reserved property names. No runtime guessing of overloads; explicit distinct names where necessary. |
+| TypeScript | Same actual callable exports and runtime names as paired JavaScript, with typed declarations and Promise. Type-only overload declarations are valid only if a real unambiguous runtime implementation preserves the canonical operation identity; never fabricate overload support by declaration alone. |
+| WebAssembly | Internal typed ABI exports/imports and canonical layout; public consumer uses selected JS/TS or Dart facade. Validate export and adapter names independently; no raw numeric pointer/offset API as an idiomatic facade. |
+
+Where two targets share a physical artifact, maintain one owner under sections 10.5–10.6. Independent naming does not authorize two incompatible definitions of one JVM class or JS runtime export; plan a legal facade, alias or separate explicit layout, otherwise diagnose the conflict. Python keyword names, Kotlin named arguments, Dart required named arguments and C# named arguments are source API compatibility surfaces; preserve them in the public manifest. A target without a registered argument-label feature rejects such metadata rather than ignoring it. Known annotations for an unselected language still follow section 9.2 validation. Do not add generic raw language snippets to the IDL.
+
+Example public spelling for an ordinary already-resolved instance repository with independently configured names, with error and async syntax omitted here solely to illustrate names and parameter presentation:
+
+| Target | Call spelling |
+| --- | --- |
+| C | repository_find_all(repository, catalog_id, ascending, ...out) (illustrative status/out form) |
+| C++ | repository.findAll(catalogId, ascending) |
+| Objective-C | [repository findAllByCatalogIdOrderBySequence:catalogId ascending:ascending] (actual lowered error/completion arguments may follow) |
+| Swift | repository.findAll(catalogId: catalogId, ascending: ascending) |
+| Java | repository.findAll(catalogId, ascending) |
+| Kotlin | repository.findAll(catalogId = catalogId, ascending = ascending) (Kotlin-owned declaration) |
+| Python | repository.find_all(catalog_id=catalog_id, ascending=ascending) |
+| Dart / Flutter | repository.findAll(catalogId, ascending) |
+| C# | repository.FindAll(catalogId: catalogId, ascending: ascending) |
+| JS / TS / WASM facade | repository.findAll(catalogId, ascending) |
+
+These names are presentation examples with explicit shortening of the long IDL name, not new automatic naming heuristics. The native API must remain typed and idiomatic for providers as well as callers, in both directions. A provider override/implementation must implement the resolved native contract and dispatch to the same canonical operation ID.
+
 ## 9. Annotations and platform attributes
 
 ### 9.1 Universal annotations
@@ -2551,7 +2789,7 @@ Annotations are allowed on modules, records, interfaces, enums, enum members, fi
 | NS_DESIGNATED_INITIALIZER / NS_UNAVAILABLE | Initialization contract |
 | @discardableResult | Intentional result-discard support |
 
-Automatically infer safe attributes from IDL when possible. Annotations override naming or supported metadata, not safety rules. Section 8.7 is the required default Swift public-signature and importer policy. NS_SWIFT_NAME and NS_SWIFT_ASYNC_NAME must be generated only for valid declarations and tested against the actual Clang/Swift importer. The Swift signature plan, not selector spelling, defines public argument labels and names. The generated Objective-C and Swift APIs must both remain usable.
+Automatically infer safe attributes from IDL when possible. Annotations override naming or supported metadata, not safety rules. Section 8.7 is the required default Swift public-signature and importer policy. NS_SWIFT_NAME and NS_SWIFT_ASYNC_NAME must be generated only for valid declarations and tested against the actual Clang/Swift importer. The Swift signature plan, not selector spelling, defines public argument labels and names. Sections 8.8–8.10 define the exact signature grammar, parameter-label precedence, native/imported exposure ownership and independent collision domains; section 18.18 defines the compiler-backed acceptance inventory. The generated Objective-C and Swift APIs must both remain usable.
 
 Illustrative Objective-C output for a reduced User record (id, name and optional email):
 
@@ -2893,7 +3131,7 @@ In modular mode, expose selected modules through their own configured package/mo
 
 #### 10.5.1 Library API manifest and compatibility
 
-Alongside module manifests, emit a library API manifest derived from the resolved public plan. Include library ID, selected targets, api.mode, exported canonical declaration IDs, target public qualified names and signatures, actual defining artifact owners, import/include/entrypoint names, required dependencies, runtime/ABI identity, visibility, effective config fingerprint and the owned files/content hashes. Version/build identity is included only for packaging as defined in section 7.8. Different libraries with the same logical type may have distinct physical presentation plans; the runtime must still validate matching logical identity and compatible ABI before sharing a handle. A naming-only change does not alter the logical ID or canonical operation contract, but can change source/binary public compatibility, selectors, JVM class identities and package fingerprints. Distinguish those changes from ABI compatibility. Build plans and installed consumer checks use actual names and fingerprinted artifacts. Never silently publish a changed public API under already committed immutable package coordinates.
+Alongside module manifests, emit a library API manifest derived from the resolved public plan. Include library ID, selected targets, api.mode, exported canonical declaration IDs, target public qualified names and signatures, actual defining artifact owners, import/include/entrypoint names, required dependencies, runtime/ABI identity, visibility, effective config fingerprint and the owned files/content hashes. Version/build identity is included only for packaging as defined in section 7.8. Different libraries with the same logical type may have distinct physical presentation plans; the runtime must still validate matching logical identity and compatible ABI before sharing a handle. Record the resolved public signature inventory from section 8.8 (including external labels, keyword names, local identifiers, member kind, host-mapped signature, owner and exposure strategy) and a separate deterministic public API fingerprint. A naming-only change does not alter the logical ID or canonical operation contract, but can change source/binary public compatibility, selectors, JVM class identities and package fingerprints. Distinguish those changes from ABI compatibility. Build plans and installed consumer checks use actual names and fingerprinted artifacts. Never silently publish a changed public API under already committed immutable package coordinates.
 
 ### 10.6 Shared target artifact ownership
 
@@ -5746,6 +5984,31 @@ Use existing test infrastructure and expand the same independent case inventory.
 
 Update existing cross-language conformance fixtures rather than adding a parallel test system. Before calling the specification complete for implementation, verify that every documented public type and operation has exactly one authoritative semantic rule, a concrete lowering and ownership plan, an executor/lifecycle contract, an independent positive and negative acceptance case, and a public documentation example where applicable. Each selected profile must demonstrate actual execution, packaging and installed-consumer evidence, with unsupported/blocked paths explicit. This gate is not a guarantee that future compiler/SDK defects cannot exist; review actual implementation and update the specification for newly discovered constraints without silently changing semantics.
 
+### 18.18 Public signature and importer conformance
+
+Build an independently authored expected public signature inventory per target from sections 8.7–8.10. Do not derive expected names from the generator's manifest. Test minimal defaults and deliberate overrides, both consumers and providers, in standalone, unified, modular and applicable prebuilt/composed layouts. Use actual target compilers and installed artifacts, not only text snapshots.
+
+| Case ID | Mandatory evidence |
+| --- | --- |
+| naming.identity | Rename type/method/parameter/label/selector independently; canonical IDs, contract fingerprints and operation dispatch remain equal; source/binary API fingerprint changes where applicable |
+| naming.precedence | Each configuration layer, static/async category overlap, explicit empty affix, explicit complete name, parameter override and acronym/keyword escape; record effective origins |
+| naming.swift-grammar | Simple and full names, zero/multiple labels, repeated labels where legal, first/middle/last omission, all three label policies, local vs external identifiers; reject malformed signature, wrong arity, wrong declaration kind, conflicting labels, invalid identifier or unsupported initializer |
+| naming.swift-static | Compile and call exact repository/helper fixture in section 8.9.2 after explicit binding; missing/duplicate binding, independent contexts, mixed companion, direct instance service and async factory; same values and errors through canonical dispatch |
+| naming.swift-import | Compile actual prefixed/suffixed Objective-C imports with metadata; default flags, retained affixes, explicit name, metadata disabled, selectors with synthetic completion/error args; verify compiler-visible name and faithful imported or native wrapper shape |
+| naming.swift-ownership | Installed mixed framework exposes only one intended Swift type/member owner; native wrappers do not duplicate imported models/protocols; Objective-C client remains usable; inspect generated Swift interface/actual exported declarations and compile negative public-import probes where applicable |
+| naming.swift-modules | Actual import Ubook, explicitly modular qualified imports, same short name in separate real modules, rejection of conflicting unified names and Objective-C runtime collisions |
+| naming.swift-overloads | Same base with different labels or legal host-mapped types, provider conformance, inherited/generated members, defaulted constructor ambiguity, illegal return-only/logical overloads and importer collisions |
+| naming.apple-runtime | Compile and execute both directions on applicable Apple SDKs; selector/runtime names, method families, NSError/nullability, optional absence, async completion and cancellation; public availability, actor metadata, shared ownership and real XCFramework slices |
+| naming.c-cpp | Real installed header/library calls, namespace/affix override, typed static handles, canonical overload linkage, reserved symbols and mapped overload conflicts |
+| naming.jvm | Actual Java/Kotlin clients and providers; JVM erasure, suspend/static/property lowering, Kotlin named arguments on Kotlin facade, shared class ownership and explicit distinct packages |
+| naming.python | Installed module, keyword and positional invocation, async and static calls, reserved/self/cls names and overload rejection |
+| naming.dart-flutter | Native and web compile/run with same Dart API; reject unsupported named/overload forms, test required named arguments only if the registered feature is supported |
+| naming.csharp | Actual compiled named/positional calls, Async suffix and explicit override, CLR overload/property collisions and native invocation |
+| naming.js-ts-wasm | Run actual JS exports and typed TS consumer against same runtime; test rejected overloads/export collisions, Promise and WASM facade parity |
+| naming.diagnostics | Report both conflicting logical IDs, source spans, target, final signatures, config origins and collision domain; no partial output or successful manifest on failure |
+
+Include negative cases for generated helpers colliding with user symbols, inherited operation identity, keyword escapes producing equal effective names, acronym normalization, file case-folding, prebuilt symbol ownership, public aliases and target-specific annotations on the wrong declaration kind. Verify argument labels/keyword names in the installed package and not merely in generated source. Check public source and binary inventory with appropriate toolchain inspection (e.g. Swift module interfaces and compiler imports, JVM descriptors, CLR metadata, C exported symbols, JS package exports). Compile actual consumer call sites for every distinct public profile; execute representative calls to distinguish misrouting or parameter swaps from a cosmetic pass. Where a platform/toolchain is unavailable record blocked, not passed. Keep all cases planned until the generator and real target evidence exist.
+
 ## 19. GitHub Actions
 
 ### 19.1 Workflows and independent checks
@@ -6449,6 +6712,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
 - [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments, including scoped/retained/one-shot callback parameters as specified in section 14.2. Enforce actual semantics where applicable, not comments alone.
 - [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes. Swift imported names remove generated affixes by default; implement complete @swift.name signatures and explicit argument labels/omission.
+- [ ] Implement the resolved public signature IR, separate source/binary API identity and canonical ABI identity, exact Swift signature grammar and parameter-label precedence, independent Objective-C selector/importer lowering, native/imported exposure ownership, shared-artifact collision checks and target-native callable surfaces from sections 8.8–8.10. Preserve errors, ownership and execution semantics.
 - [ ] Verify customized templates, imports, naming and generated build files compile in each applicable target. Test one representative real override path per distinct backend behavior.
 
 ### 22.5 Built-in types and extension mechanism
@@ -6520,6 +6784,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement a fake login form or CLI invoking a foreign provider, returning populated User and typed invalid-credential errors. Never log credentials.
 - [ ] Implement repository methods returning records, lists, optionals, integers, bool and void asynchronously across modules and runtimes.
 - [ ] Run every supported type across every feasible ordered caller/provider language pair with independent expected values, both directions and distinct async/callback/stream/ownership cases.
+- [ ] Execute the independent public signature/importer conformance inventory in section 18.18 against installed packages and real compilers; prove canonical dispatch unchanged by names, exact static and instance Swift call sites, native/imported ownership, language-specific collision diagnostics and consumer/provider parity.
 - [ ] Test relevant invalid inputs and actual failure modes, with bounded deterministic tests and property/fuzz coverage only where useful. Reuse shared fixtures. Reject missing expected case IDs.
 - [ ] Run appropriate sanitizer and runtime diagnostics, verify actual instrumentation, test memory and concurrency regression paths and document any blocked hardware/toolchain checks.
 
