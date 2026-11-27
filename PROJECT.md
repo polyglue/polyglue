@@ -37,6 +37,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
     - [Lists and arrays](#lists-and-arrays)
     - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
+  - [Conventional implementation layout](#611-conventional-implementation-layout)
   - [Module versions and dependency identity](#621-module-versions-and-dependency-identity)
 - [7. Module-first configuration](#7-module-first-configuration)
   - [Operational defaults and diagnostics](#763-operational-defaults-and-diagnostics)
@@ -118,6 +119,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [HTTP execution, ownership and cancellation across all targets](#1721-http-execution-ownership-and-cancellation-across-all-targets)
 - [18. Test specification](#18-test-specification)
   - [Coverage and test design policy](#180-coverage-and-test-design-policy)
+  - [Mandatory 100% Python generator coverage](#1801-mandatory-100-python-generator-coverage)
   - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
   - [Deterministic lifecycle race fixtures](#188-deterministic-lifecycle-race-fixtures)
   - [Default profiles and installed public API conformance](#189-default-profiles-and-installed-public-api-conformance)
@@ -132,12 +134,15 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Public signature and importer conformance](#1818-public-signature-and-importer-conformance)
   - [No-leakage public API conformance](#1819-no-leakage-public-api-conformance)
 - [19. GitHub Actions](#19-github-actions)
+  - [Isolated CI execution](#1911-isolated-ci-execution)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
   - [CI trust boundaries](#1961-ci-trust-boundaries)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
   - [README and logo](#202-readme-and-logo)
   - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
+  - [Conventional module CMake integration](#2044-conventional-module-cmake-integration)
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
+  - [Trusted project-local Python actions](#2052-trusted-project-local-python-actions)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
   - [Library deployment to S3-compatible object storage](#2010-library-deployment-to-s3-compatible-object-storage)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
@@ -406,7 +411,7 @@ Use explicit module/target selection for standalone generation and explicit libr
 
 All CLI entry points use the same project/config resolver and immutable generation/build plan. generate and validate remain SDK-free. build calls generation when required, package consumes the corresponding staged build, test consumes the exact selected output, and deploy consumes the verified existing package. No parallel implementations of dependency discovery, toolchain selection, version propagation, artifact hashing or command execution. The commands are thin entry points, not separate orchestration engines. Reuse native ecosystem tooling and explicit user source/build integration rather than reimplementing it.
 
-Module discovery, conventional handwritten implementation folders, generated sources and optional local CMake entrypoints use the same resolved project plan (sections 6.1.1, 7.7, 20.4.2). A local Python action file may replace an explicitly requested build/package/deploy action through run(params: dict) (section 20.5.2). Missing file means built-in behavior. Existing projects can build generated sources using their own tools. Never import local Python or execute CMake during generate, validate or configuration inspection.
+Module discovery, conventional handwritten implementation folders, generated sources and optional local CMake entrypoints use the same resolved project plan (sections 6.1.1, 7.7, 20.4.4). A local Python action file may replace an explicitly requested build/package/deploy action through run(params: dict) (section 20.5.2). Missing file means built-in behavior. Existing projects can build generated sources using their own tools. Never import local Python or execute CMake during generate, validate or configuration inspection.
 
 ### 3.5 Development version and release authorization
 
@@ -1586,7 +1591,7 @@ my-project/
                 └── linux/
 ```
 
-All implementation directories and files are optional; no empty scaffolding. A module may contain only IDL. Use the actual declared target IDs for language folders and actual platform IDs for platform folders. Only modules in the selected dependency closure participate; only selected languages and platform variants contribute sources. Generation and clean never overwrite or delete handwritten code. Explicit implementation roots and extra source/dependency lists remain supported. Existing projects can opt out of conventional discovery with an explicit source plan. CMake integration and Python local actions are explained in sections 20.4.2 and 20.5.2.
+All implementation directories and files are optional; no empty scaffolding. A module may contain only IDL. Use the actual declared target IDs for language folders and actual platform IDs for platform folders. Only modules in the selected dependency closure participate; only selected languages and platform variants contribute sources. Generation and clean never overwrite or delete handwritten code. Explicit implementation roots and extra source/dependency lists remain supported. Existing projects can opt out of conventional discovery with an explicit source plan. CMake integration and Python local actions are explained in sections 20.4.4 and 20.5.2.
 
 A module is the fundamental unit of logical compilation, dependency resolution and independent generation. It can be distributed independently or composed into a library with other modules. A project is a collection of modules, optional library definitions and shared defaults, not a mandatory monolithic input. A logical module name is not automatically a public language import name.
 
@@ -6253,11 +6258,11 @@ Compile installed consumers with exact section 8.11 call shapes for all targets,
 
 | Workflow / job | Required execution |
 | --- | --- |
-| generator | Ruff, Python unit/property tests, grammar, config, generation |
+| generator | Ruff, Python unit/property tests, grammar, config, generation, exact 100% statement and branch coverage |
 | c | Generated C consumer/provider. GCC/Clang/MSVC where applicable |
 | cpp | Generated C++ consumer/provider. CMake/CTest and compiler matrix |
 | java | JVM/JNI bidirectional conformance, CheckJNI |
-| kotlin-desktop | JVM desktop and coroutine interop |
+| kotlin (desktop) | JVM desktop and coroutine interop |
 | kotlin-android | Android emulator, JNI integration, sample app |
 | objc | Objective-C++ and Swift import tests |
 | swift | Native macOS Swift tests, actors, ARC |
@@ -6304,7 +6309,7 @@ Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/t
 
 ### 19.3 Target coverage and evidence gates
 
-Each target-specific job owns its toolchain setup, fresh generation, build, actual execution and test artifact publication. Shared workflow code does not create upstream job dependencies. Compare expected case IDs to observed results; fail missing execution or unavailable required tooling explicitly.
+Each target-specific job owns its toolchain setup, fresh generation, build, actual execution and test artifact publication. Use a matrix job only when there are distinct compiler, architecture, platform or runtime paths to validate; every entry performs its own generation and tests. Shared workflow code does not create upstream job dependencies. Compare expected case IDs to observed results; fail missing execution or unavailable required tooling explicitly.
 
 | Target | Primary test tools | Required output |
 | --- | --- | --- |
@@ -6590,7 +6595,7 @@ target_link_libraries(app PRIVATE PolyGlue::runtime)
 
 The final implementation must provide relocatable config/version/target files, proper BUILD_INTERFACE and INSTALL_INTERFACE paths, runtime headers, correct transitive dependencies and generated module package exports when package mode is selected. Test an independent consumer from a relocated installation, not just a target inside the repository. Test both static/shared linkage, multiple generated modules, custom implementation sources and a consumer with its own build flags. Never overwrite an existing consumer CMakeLists.txt unless explicitly generating a new package into an owned directory.
 
-#### 20.4.2 Conventional module CMake integration
+#### 20.4.4 Conventional module CMake integration
 
 The built-in generated top-level CMake entrypoint consumes the resolved library/module plan for a specific platform, SDK variant, architecture, configuration and linkage. The Python planner deterministically discovers recognized source extensions in selected language and platform folders, canonicalizes/deduplicates and emits explicit source lists. Do not scan unrelated modules, unselected languages or stale generated directories. Generated source manifests are authoritative. Handwritten source roots, public headers, target dependencies and extra explicit sources enter the same plan. Managed source goes to its ecosystem tooling, not CMake.
 
@@ -6727,7 +6732,7 @@ Call one function run(params: dict) -> dict with a fresh complete resolved non-s
 | artifact | Expected outputs/format or exact selected package manifest and hashes |
 | tools / options | Resolved tool paths/versions, jobs and validated command options |
 
-The local action replaces only the selected delivery implementation; prerequisites and canonical generation/validation still use the built-in planner. Build/package returns {"artifacts": [actual staged paths]}; validate returned schema, required outputs, metadata, architecture, hashes and containment using common verification, and write canonical manifests from actual results. Custom deploy returns receipt data (manifest hash, selected destination, object keys/hashes and verification evidence). Validate against the selected artifact. Do not report user-defined delivery as verified built-in S3 unless actual required remote verification occurred. No success=True-only return, silent fallback or implicit version change. Custom package consumes the planned build/stage; custom deploy never rebuilds.
+The local action replaces only the selected delivery implementation; prerequisites and canonical generation/validation still use the built-in planner. For deploy, validate the exact local artifact and applicable passing test evidence before any action executes. No automatic action chaining beyond the documented build/package prerequisites. Build/package returns {"artifacts": [actual staged paths]}; validate returned schema, required outputs, metadata, architecture, hashes and containment using common verification, and write canonical manifests from actual results. Custom deploy returns receipt data (manifest hash, selected destination, object keys/hashes and verification evidence). Validate against the selected artifact. Do not report user-defined delivery as verified built-in S3 unless actual required remote verification occurred. No success=True-only return, silent fallback or implicit version change. Custom package consumes the planned build/stage; custom deploy never rebuilds.
 
 ```python
 from pathlib import Path
@@ -6847,7 +6852,7 @@ Record input identity and output checksums separately. A clean build may produce
 
 ### 20.8 Build and packaging documentation
 
-Add docs/build.md, docs/dependencies.md, docs/packaging.md, docs/deployment.md, docs/templates.md and per-format guides for CMake, Android AAR/JAR, Apple XCFramework/SwiftPM, Python wheels, Dart/Flutter, NuGet and npm/WASM. Explain prerequisites, CLI commands, configuration, output directory, standalone consumer integration, debugging, supported architectures and offline dependency setup. Include complete copyable examples and verify them in CI. AGENTS.md requires keeping the toolchain/build layout consistent, using the CLI for CI, testing artifacts independently and not introducing unnecessary dependencies or duplicate build systems.
+Add docs/build.md, docs/dependencies.md, docs/packaging.md, docs/deployment.md, docs/templates.md and per-format guides for CMake, Android AAR/JAR, Apple XCFramework/SwiftPM, Python wheels, Dart/Flutter, NuGet and npm/WASM. Explain prerequisites, CLI commands, configuration, output directory, standalone consumer integration, debugging, supported architectures and offline dependency setup. Include complete copyable examples and verify them in CI. AGENTS.md requires keeping the toolchain/build layout consistent, using the generator CLI for every baseline CI job, using optional delivery commands for separate packaging tests once implemented, testing artifacts independently and not introducing duplicate build systems.
 
 ### 20.9 Owner engineering standards and AGENTS.md
 
@@ -6861,7 +6866,7 @@ AGENTS.md must cover architecture, code ownership, repository organization, Git 
 
 ### 20.10 Library deployment to S3-compatible object storage
 
-Support one optional S3-compatible deployment implementation for AWS S3, Cloudflare R2 and compatible services, using the already validated artifact plan and hashes. Users may deploy the same output through their own pipeline; no mandatory cloud dependency. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes can use the project-local deploy.py action or consumer CI. Built-in S3/R2 remains a fully specified P2 deliverable; custom actions need not install boto3 unless they use it.
+Support one optional S3-compatible deployment implementation for AWS S3, Cloudflare R2 and compatible services, using the already validated artifact plan and hashes. Users may deploy the same output through their own pipeline; no mandatory cloud dependency. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes can use the project-local deploy.py action or consumer CI. Custom delivery still requires the verified local manifest and applicable passing test evidence under section 20.7; no bypass of artifact identity or release authorization. Built-in S3/R2 remains a fully specified P2 deliverable; custom actions need not install boto3 unless they use it.
 
 Use the latest stable verified boto3/botocore versions through a Python optional dependency extra named deploy. Keep the compiler, native runtime, generation and ordinary packaging independent of the deployment dependency. An installed tool without the extra produces a clear instruction to install it when deploy is explicitly requested. No AWS CLI or cloud credentials required for local generation/build/package.
 
