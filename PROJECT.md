@@ -205,6 +205,8 @@ A record carries data, an enum names allowed choices, and an interface describes
 
 For a first project, start with a record and one interface method. Generate bindings for two languages, implement the method in one language and call it from the other. Once that works, add a second module, optional values, asynchronous methods and callbacks. Use shared buffers when the application needs to avoid copying large data. Use the registry when the application needs to find or replace an implementation at runtime. Build and package the library after the calls work. Deployment is optional. The later chapters explain each step in depth.
 
+**Product priority.** PolyGlue is first a source generator. P0: correct, deterministic, intelligent Python generation for all declared targets, 100% Python statement and branch coverage, and real compile/run conformance of generated bindings with the shared runtime. P1: conventional per-platform build and package convenience, including handwritten implementations, AAR and XCFramework assembly. P2: optional distribution/deploy convenience, including S3/R2. Real native builds and execution for P0 conformance do not depend on completion of the P1/P2 CLI. All remain required planned deliverables before full project release; P1/P2 must not delay the generator. No native SDK, cloud access or local Python/CMake execution is required to generate source.
+
 ### 1.1 Required outcomes
 
 **Convention over configuration.** Public API naming, actual module/package/namespace, output and build integration, public presentation and template overrides have deterministic documented defaults and granular overrides where meaningful. Internal symbol names, temporary variables, private storage, marshalling strategies and core algorithms are generator responsibilities, not configuration categories. A minimal module works without copying a large template. Do not expose a choice unless its user-visible benefit or distinct integration requirement is documented.
@@ -361,11 +363,11 @@ Use an installed CLI as the baseline. A bundled executable without a separately 
 
 ### 3.3 Tooling
 
-Latest stable CPython (verify actual release and dependency compatibility before locking), uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
+Latest stable CPython (verify actual release and dependency compatibility before locking), uv, pyproject.toml, uv.lock, Lark, Jinja2, safe YAML loading, typed dataclasses, argparse, pytest, pytest-cov/coverage.py with branch measurement, Hypothesis and Ruff. Native support: C++20, C ABI, CMake and standard toolchains. Avoid duplicate configuration or CLI frameworks, mandatory formatters, generators requiring Scala/JVM and unnecessary build systems.
 
 ### 3.4 Build, test and packaging commands
 
-One installed Python CLI is the entry point for generation and native build orchestration. A repository-local invocation uses the same code as the installed CLI. Do not maintain a second independent task runner.
+One installed Python CLI is the entry point for generation and optional native build orchestration. The build/package/deploy conveniences actually produce the requested library formats from the standard layout, but are secondary to source generation. A repository-local invocation uses the same code as the installed CLI. Do not maintain a second independent task runner.
 
 | Command | Responsibility |
 | --- | --- |
@@ -403,6 +405,8 @@ uv run --locked polyglue run --target flutter --platform android
 Use explicit module/target selection for standalone generation and explicit library selection for library source assembly and binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous library/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Use verified incremental reuse by default with input fingerprint validation, support an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
 
 All CLI entry points use the same project/config resolver and immutable generation/build plan. generate and validate remain SDK-free. build calls generation when required, package consumes the corresponding staged build, test consumes the exact selected output, and deploy consumes the verified existing package. No parallel implementations of dependency discovery, toolchain selection, version propagation, artifact hashing or command execution. The commands are thin entry points, not separate orchestration engines. Reuse native ecosystem tooling and explicit user source/build integration rather than reimplementing it.
+
+Module discovery, conventional handwritten implementation folders, generated sources and optional local CMake entrypoints use the same resolved project plan (sections 6.1.1, 7.7, 20.4.2). A local Python action file may replace an explicitly requested build/package/deploy action through run(params: dict) (section 20.5.2). Missing file means built-in behavior. Existing projects can build generated sources using their own tools. Never import local Python or execute CMake during generate, validate or configuration inspection.
 
 ### 3.5 Development version and release authorization
 
@@ -1547,6 +1551,43 @@ my-project/
 └── web/
 ```
 
+#### 6.1.1 Conventional implementation layout
+
+```text
+my-project/
+├── polyglue.yaml
+├── implementation/
+│   ├── project.cmake
+│   ├── build.py
+│   ├── package.py
+│   ├── deploy.py
+│   └── android/
+│       └── package.py
+└── modules/
+    └── repository/
+        ├── module.yaml
+        ├── idl/
+        │   └── user-repository.idl
+        └── implementation/
+            ├── module.cmake
+            ├── c/
+            ├── cpp/
+            ├── java/
+            ├── kotlin/
+            ├── objc/
+            ├── swift/
+            ├── python/
+            ├── dart/
+            ├── csharp/
+            ├── javascript/
+            └── platforms/
+                ├── android/
+                ├── ios/
+                └── linux/
+```
+
+All implementation directories and files are optional; no empty scaffolding. A module may contain only IDL. Use the actual declared target IDs for language folders and actual platform IDs for platform folders. Only modules in the selected dependency closure participate; only selected languages and platform variants contribute sources. Generation and clean never overwrite or delete handwritten code. Explicit implementation roots and extra source/dependency lists remain supported. Existing projects can opt out of conventional discovery with an explicit source plan. CMake integration and Python local actions are explained in sections 20.4.2 and 20.5.2.
+
 A module is the fundamental unit of logical compilation, dependency resolution and independent generation. It can be distributed independently or composed into a library with other modules. A project is a collection of modules, optional library definitions and shared defaults, not a mandatory monolithic input. A logical module name is not automatically a public language import name.
 
 ### 6.2 Independent dependencies
@@ -1952,6 +1993,7 @@ Defaults output contains all applicable presentation and integration settings, i
 | Output root | generated/<module-id>/<target-id> relative to module manifest for standalone generation; isolated library output under configured build root when necessary | Output paths, public/private dirs, header/source dirs |
 | Generation mode | sources | package integration metadata when selected |
 | Build root / artifact root | build/polyglue and dist relative to project config | Config-relative paths |
+| Implementation roots | implementation relative to project or module; discover_implementation true | Explicit build.implementation_root, build.discover_implementation, additional sources |
 | Build configuration | release for library build/package; explicit debug/sanitizer profiles supported | Configuration, toolchain, flags, parallelism, environment allowlist |
 | Library API exposure | unified, public selected modules plus required signature types | modular, export allowlist, aliases, entrypoint and public identities |
 | Public imports | Resolved automatically from defining manifests and selected library export graph | Include/import prefixes, module/package/namespace, supported import strategies |
@@ -1963,7 +2005,7 @@ Defaults output contains all applicable presentation and integration settings, i
 | Optional formatting tools | Off; built-in templates readable | Explicit supported formatter and settings |
 | Package versions | No invented release version/build number | Required explicit version and build number for release artifact |
 | Deployment | Off; local artifact only | Explicit destination, artifact identity and authorized invocation |
-| Tests | Full required contract coverage, real selected target evidence | Selection of local test scope, sanitizer/configuration, bounded resources; no release bypass |
+| Tests | 100% Python statement and branch coverage, full contract coverage, real selected target evidence | Selection of local test scope, sanitizer/configuration, bounded resources; no release bypass |
 
 Derived defaults are deterministic and schema-validated. Required business intent, target selection, public release coordinates, credentials, platform capability and safe executor choice are not guessed. Every applicable configurable property has a documented override path; options that cannot be implemented without changing the IDL contract or breaking security are not offered. A user may configure a safe policy, not disable required validation, reference checks, type precision, deterministic generation or platform restrictions. Preserve security defaults and explicit failure semantics from sections 12–15.
 
@@ -2020,6 +2062,14 @@ targets:
     build:
       android_namespace: com.app.repository
       consumer_rules: ../../android/consumer-rules.pro
+```
+
+Optional project and module configuration: build.implementation_root defaults to implementation relative to its own declaring project or module configuration. An optional build.discover_implementation boolean defaults to true; false selects only explicitly declared implementation inputs and applicable explicit CMake integration. Project root contains project.cmake and local Python actions; module root contains module.cmake and sources. The existing targets.<target>.build.implementation_sources extends the conventional list; deduplicate canonical paths. The same schema, resolver and plan expose these choices. Generation must not require any build-only settings or implementation directory. Never execute embedded Python in YAML.
+
+```yaml
+build:
+  implementation_root: implementation
+  discover_implementation: true
 ```
 
 Illustrative project-level libraries in polyglue.yaml (in addition to module paths and defaults from section 7.2). This unified-library example assumes source modules with derived package/namespace identities; it is an alternative to the explicit independent package/namespace layouts in sections 7.3–7.5. To use those exact independent module configurations, choose api.mode: modular or explicitly adapt their source package identities and export plans before using unified mode. Do not silently relocate prebuilt or explicitly scoped types:
@@ -5783,11 +5833,23 @@ Test actual contracts and credible failure modes. Every test must identify a pub
 
 Use the smallest set of meaningful fixtures that proves all supported types, directions and distinct behaviors. Share IDL, canonical expected values and parameterized tests across languages. Cover each type in each feasible ordered pair, then exercise nested values, callback, async, stream and ownership paths according to the distinct conversion and lifetime risks. Reuse a fixture or result where it proves multiple requirements. Do not multiply every scalar by every annotation, collection, OS, compiler, build mode and scheduler when those dimensions exercise the same code path. Do test each platform-specific adapter, ABI, loader and runtime lifecycle where it differs. Never omit a required type, direction or distinct failure mode to save time.
 
-Write a regression test for a real bug at the lowest useful boundary, and integration coverage when the bug crosses layers. Prefer deterministic barriers, injected failures, local fixtures and bounded property tests. Keep expensive stress/fuzz/sanitizer runs purposeful and time-bounded. Benchmark actual hot paths (native invocation, copying, buffer lifetime and async scheduling), not trivial operations. Add a performance threshold only after a meaningful baseline exists. Measure test and build duration before optimizing. Remove redundant work, not evidence. No arbitrary target for line coverage is a substitute for conformance.
+Write a regression test for a real bug at the lowest useful boundary, and integration coverage when the bug crosses layers. Prefer deterministic barriers, injected failures, local fixtures and bounded property tests. Keep expensive stress/fuzz/sanitizer runs purposeful and time-bounded. Benchmark actual hot paths (native invocation, copying, buffer lifetime and async scheduling), not trivial operations. Add a performance threshold only after a meaningful baseline exists. Measure test and build duration before optimizing. Remove redundant work, not evidence. Python generator code coverage is mandatory and independent of conformance; neither gate substitutes for the other.
 
 The required finite case inventory and actual execution evidence must reach 100% of supported contracts before approval. No finite suite proves every conceivable input, schedule or future defect. Record unsupported combinations with a concrete technical reason and record unavailable execution as blocked, not passed.
 
 One case catalog maps semantic requirements to actual distinct tests; one test may satisfy many chapters and checklist entries. Reuse common IDL, expected values, invalid inputs and race barriers across language pairs. Do not create a second test or evidence framework per backend, chapter, package mode or architecture. Test each distinct type/adapter/ABI, direction and host integration risk as required; avoid multiplying unrelated dimensions when the same executable path already has evidence. Actual compiler and runtime execution is still mandatory for every declared feasible contract. Consolidate repeated IDs by mapping requirements to existing cases, not by deleting distinct failure coverage. Negative tests cover the deliberately rejected grammar/configuration features and genuine host limits.
+
+#### 18.0.1 Mandatory 100% Python generator coverage
+
+All first-party Python production files under src/polyglue must reach 100% statement (line) coverage AND 100% measurable branch coverage. Include CLI, parser, config, schema, resolution, IR, mappings, naming, annotations, manifests, diagnostics, all backends, template selection/rendering, output transactions, resource loading and every not-yet-imported production module. As build/package/deploy code is implemented, the same standard applies to it. No omit patterns, pragma: no cover/no branch, exclusion of __main__, optional dependency or platform error branches, fake assertions or meaningless execution to meet the threshold. Remove unreachable code or make valid failures injectable. Third-party dependencies and generated consumer source are not part of Python generator coverage; test them through actual generated-code conformance.
+
+Use pytest, pytest-cov and coverage.py branch measurement. Run the complete Python suite in an independent generator CI job without native SDKs; inject tool/OS test doubles for generator planning and errors, not as evidence of native compatibility. Use subprocess coverage collection when needed and combine only fresh same-SHA data. Configure source discovery for the entire production tree, including unimported files. Fail on any missing executable line or branch, missing production file, failing suite or zero tests. Verify exact missing_lines and missing_branches counts and file inventory, not rounded percentages. Retain terminal, JSON and XML reports. Local and CI gates are identical.
+
+```bash
+uv run --locked pytest --cov=polyglue --cov-branch --cov-report=term-missing --cov-report=xml --cov-report=json --cov-fail-under=100
+```
+
+Every registered grammar/type/annotation/config/lowering path needs meaningful valid and invalid generation fixtures, output/semantic assertions and deterministic generation. Templates are covered by generation fixtures and compiled output, not counted as Python statements. Real generated consumer/provider compile/run evidence remains mandatory for all feasible declared targets. Coverage is not proof of absence of every defect.
 
 ### 18.1 Shared conformance suite
 
@@ -6215,9 +6277,24 @@ Compile installed consumers with exact section 8.11 call shapes for all targets,
 | packaging | Wheel/sdist install, resource availability, CLI from clean environment. Independent native and ecosystem package consumer matrix |
 | httpbin-live | External HTTP smoke with separate network failure reporting |
 
-Use workflow names/filenames consistently (e.g. .github/workflows/c.yml). Only add README badges for real workflows. Generate inputs from the current revision or reuse identical verified generation artifacts from the same run. Each job fails if its required tests did not execute. Do not replace real test jobs with echo commands, empty matrices or allow-failure.
+One independently runnable baseline GitHub Actions job per target: c, cpp, java, kotlin, objc, swift, python, dart, flutter, csharp, javascript, typescript and wasm, plus generator. Platform-specific variants are independent named matrix jobs, including Android, Apple device/simulator variants, desktop OSes, Web and XR. A single ci.yml or separate target workflow files may be used; preserve independently rerunnable named checks. Each baseline job generates its own selected bindings from the checked-out SHA and required source/private adapter closure, then compiles and executes its own tests. No needs: generator, centralized generation/build prerequisite or downloaded generated bindings. Only aggregate evidence checks may depend on baseline jobs. Use fail-fast false on matrices. No placeholder jobs, allowed failures or zero-test success. Add badges only for real workflows.
 
-Workflows can remain separate for useful diagnostic isolation, but use shared setup/build scripts and reuse exact verified artifacts when host architecture, flags, inputs and ABI match. Generate once for compatible consumers, compile JNI once for paired Java/Kotlin, share Apple native build inputs where valid, and reuse ESM/WASM for JS/TS/Dart Web. Do not share incompatible sanitizer, SDK, architecture, compiler or configuration outputs. Use actual evidence tied to artifact hashes; do not treat reuse of a build as proof that another host test ran. Avoid workflow-per-minor-feature proliferation.
+Share setup scripts, reusable workflow definitions, fixture inputs and safely keyed dependency/compiler caches, not a serial build prerequisite. Even paired Java/Kotlin, Apple, JS/TS and Dart/Flutter baseline jobs generate independently. A Flutter job may generate C/C++/Dart/Swift/Kotlin private dependencies within its own workspace, but never waits for their jobs. Compile the common core once per compatible slice within a job. Additional interop/package jobs may reuse verified same-run outputs but cannot replace baseline generation/execution. Parallelize subject to runner availability and avoid unnecessary duplicate tests within one job.
+
+#### 19.1.1 Isolated CI execution
+
+Every baseline job checks out the same SHA, installs locked Python dependencies with uv, sets up only its required native/managed SDK, runs uv run --locked polyglue generate with its explicit target/module/library selection into a clean isolated work directory, compiles generated code and independent provider/consumer fixtures, executes actual tests and uploads case IDs, generation manifest, toolchain identity and test logs. Missing expected tests fail; unavailable required SDKs are blocked, not passed. Python generated-bindings tests and the Python generator coverage job are distinct. Flutter runs real plugin integration; TypeScript runs strict tsc AND runtime JS tests. Before the convenience CLI is available, use native ecosystem compile/test commands directly. No release, cloud credentials or deployment in baseline CI.
+
+```text
+generator (100% Python statements + branches)
+c | cpp | java | kotlin | objc | swift | python
+dart | flutter | csharp | javascript | typescript | wasm
+independent platform matrix entries: Android, Apple, desktop, Web, XR
+additional: interop | sanitizers | docs | packaging | fuzz-stress
+aggregate acceptance: evidence only
+```
+
+A platform-specific check may be a matrix expansion rather than a duplicate workflow. For example each Flutter Android/iOS/Web matrix runner generates its own bindings. All implemented deterministic checks run on PR/main subject to the documented docs-only exception; expensive device/stress/packaging runs remain separately identified. No cached generated outputs or cached test verdicts.
 
 ### 19.2 CI rules
 
@@ -6227,7 +6304,7 @@ Collect JUnit/CTest reports, sanitizer output, coverage, copy counts, platform/t
 
 ### 19.3 Target coverage and evidence gates
 
-Each target-specific workflow owns its toolchain setup, generation command, build, actual test execution, and artifact publication. Shared reusable workflows may reduce duplication but must preserve distinct named checks for each language. A test report lists expected case IDs and observed results. Fail when an expected case was not executed. A missing SDK, simulator or runtime is blocked, not silently skipped.
+Each target-specific job owns its toolchain setup, fresh generation, build, actual execution and test artifact publication. Shared workflow code does not create upstream job dependencies. Compare expected case IDs to observed results; fail missing execution or unavailable required tooling explicitly.
 
 | Target | Primary test tools | Required output |
 | --- | --- | --- |
@@ -6254,7 +6331,7 @@ Apply the common acceptance contract in section 16.4 and the detailed language, 
 
 ### 19.5 Package-level CI gates
 
-Every language workflow must call the same Python orchestration commands used locally. Add independent artifact checks for CMake installation, AAR/JAR, XCFramework/SwiftPM, wheel, Dart/Flutter, NuGet and npm/WASM. Build requested release slices, inspect format and architecture, install into a separate consumer with no source-tree fallback and run representative conformance, async, ownership and sample scenarios. Run full conformance through the final packaged artifact where practical, avoiding a second identical run against source. Where source and binary integration exercise distinct behavior, add focused checks for each. Verify every advertised packaging path independently. Test both clean and incremental builds, corrupted/missing artifacts, unavailable SDKs, incorrect architecture, stale manifests, failed commands and sanitizer contamination. Verify debug-symbol matching and release optimization/stripping where applicable. Upload actual distributable and reports tied to commit SHA. Do not publish externally from ordinary CI. On main, preserve complete runs. PR cancellation may cancel superseded revisions but never mark them passing.
+Every baseline target job invokes the actual generator and compiles/runs its output independently. Secondary build/package convenience is tested in separate package jobs when implemented; incomplete packaging/deploy automation must not block P0 source generator and target tests. P1 formats are supported only after independent installed-consumer verification. Inspect each advertised CMake, AAR/JAR, XCFramework/SwiftPM, wheel, Dart/Flutter, NuGet and npm/WASM package, including actual ABI/slice metadata, no source fallback, debug symbol correspondence where applicable, and focused real consumer calls. Verify failure paths, incremental builds, stale/corrupt artifacts and clean isolation. Upload CI reports and test artifacts only; no external publication. All applicable package gates remain required for final project release.
 
 ### 19.6 Fast CI and cache policy
 
@@ -6270,9 +6347,9 @@ Use supported GitHub Actions and ecosystem caches rather than inventing a cache 
 | .NET | NuGet package cache keyed by SDK, platform and lockfile |
 | Node / Emscripten | npm download cache and supported Emscripten cache keyed by lockfile, SDK, OS and architecture |
 
-Do not cache secrets, signing materials, test verdicts or unverified final binaries. Never use a cached test result as evidence of execution on a new revision. Restore dependency downloads and compiler outputs only when their real input identity matches. Do not share release/debug/sanitizer artifacts or host/target binaries. Use immutable same-run artifacts for generated code, native libraries and test packages needed by several jobs, with SHA and manifest checks. Ordinary tests run after restoring caches. A cache miss must still work from a clean checkout. Use broad restore keys only for dependency downloads whose checksums and lockfile resolution are revalidated, never for ABI-sensitive binaries.
+Do not cache secrets, signing materials, test verdicts or unverified final binaries. Never use a cached test result as evidence of execution on a new revision. Restore dependency downloads and compiler outputs only when their real input identity matches. Do not share release/debug/sanitizer artifacts or host/target binaries. Use immutable same-run artifacts only for additional interop/packaging/evidence jobs, with SHA and manifest checks. Baseline target jobs always generate and compile locally. Ordinary tests run after restoring caches. A cache miss must still work from a clean checkout. Use broad restore keys only for dependency downloads whose checksums and lockfile resolution are revalidated, never for ABI-sensitive binaries.
 
-Keep workflows readable, use reusable setup only for actual repeated work, use parallel independent language jobs and avoid reinstalling SDKs/dependencies or rebuilding identical native slices multiple times. Avoid uncontrolled matrix multiplication and oversubscription. Set bounded timeouts, cancel superseded PR runs when appropriate, retain meaningful logs and artifact reports, and measure cold/warm CI duration and cache hits. Fix a measured bottleneck rather than adding speculative tooling. Do not skip tests based on a cache hit or use path filters that omit affected transitive consumers.
+Keep workflows readable, use reusable setup only for actual repeated work, use parallel independent language jobs and reuse SDK/dependency caches and avoid duplicate native slices within a job; intentional isolated baseline builds are required. Avoid uncontrolled matrix multiplication and oversubscription. Set bounded timeouts, cancel superseded PR runs when appropriate, retain meaningful logs and artifact reports, and measure cold/warm CI duration and cache hits. Fix a measured bottleneck rather than adding speculative tooling. Do not skip tests based on a cache hit or use path filters that omit affected transitive consumers.
 
 #### 19.6.1 CI trust boundaries
 
@@ -6297,6 +6374,8 @@ flowchart TD
 ```
 
 ## 20. Repository documentation and branding
+
+**Delivery reference and priority.** The conventional build/distribution approach is inspired by the owner's [Nativium](https://github.com/nativium/nativium), inspected at [1ab4230](https://github.com/nativium/nativium/tree/1ab4230c5df66035d50337aac2955391164d9be4). Its [module CMake inclusion](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/cmake/functions.cmake), [module target selection](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/modules/app-core/cmake/module.cmake), [Python action dispatch](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/commands/target.py), [AAR packaging](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/android/verbs/package.py), [Apple packaging](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/ios/verbs/package.py) and [S3 distribution](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/android/verbs/dist.py) establish the desired practical pattern. Adapt the pattern, not source code, global mutable CMake lists, dependencies or automatic tag-triggered publication. No dependency on Nativium, Conan, Djinni or pygemstones. P0 generation/conformance, P1 conventional builds/packages, P2 delivery/deploy are independently testable milestones.
 
 ### 20.1 Repository layout
 
@@ -6511,6 +6590,36 @@ target_link_libraries(app PRIVATE PolyGlue::runtime)
 
 The final implementation must provide relocatable config/version/target files, proper BUILD_INTERFACE and INSTALL_INTERFACE paths, runtime headers, correct transitive dependencies and generated module package exports when package mode is selected. Test an independent consumer from a relocated installation, not just a target inside the repository. Test both static/shared linkage, multiple generated modules, custom implementation sources and a consumer with its own build flags. Never overwrite an existing consumer CMakeLists.txt unless explicitly generating a new package into an owned directory.
 
+#### 20.4.2 Conventional module CMake integration
+
+The built-in generated top-level CMake entrypoint consumes the resolved library/module plan for a specific platform, SDK variant, architecture, configuration and linkage. The Python planner deterministically discovers recognized source extensions in selected language and platform folders, canonicalizes/deduplicates and emits explicit source lists. Do not scan unrelated modules, unselected languages or stale generated directories. Generated source manifests are authoritative. Handwritten source roots, public headers, target dependencies and extra explicit sources enter the same plan. Managed source goes to its ecosystem tooling, not CMake.
+
+Configure the actual native toolchain before project configuration. Create the runtime and selected module targets; include optional project implementation/project.cmake once before module integration for common dependencies, then each selected module's implementation/module.cmake once in deterministic dependency order, inside a module-scoped CMake function after creating its target. A local file can use normal target_sources, target_include_directories, target_compile_definitions, target_link_libraries, find_package and add_subdirectory, or explicitly include platform-specific fragments. No global build-system replacement. Missing optional include is normal; existing invalid script or missing explicit source/dependency fails. Never generate synthetic application implementations to mask unresolved symbols. Link the shared core exactly once per intended integration. Standard CMake installation/export and native output staging apply.
+
+| Context variable | Value |
+| --- | --- |
+| POLYGLUE_MODULE_ID / POLYGLUE_MODULE_TARGET | Logical ID and actual non-alias CMake target |
+| POLYGLUE_MODULE_DIR / POLYGLUE_IMPLEMENTATION_DIR / POLYGLUE_GENERATED_DIR | Resolved module, implementation and generated roots |
+| POLYGLUE_LIBRARY_ID | Selected library |
+| POLYGLUE_TARGETS | Resolved target list including required adapters |
+| POLYGLUE_PLATFORM / POLYGLUE_SDK_VARIANT | Actual platform and SDK variant |
+| POLYGLUE_ARCH / POLYGLUE_CONFIGURATION | Target architecture and build configuration |
+| POLYGLUE_LIBRARY_VERSION / POLYGLUE_LIBRARY_BUILD_NUMBER | Resolved release coordinates, absent for unversioned local build |
+
+The project include has library/slice context, not module-specific variables. Example modules/repository/implementation/module.cmake (normal sources already selected):
+
+```cmake
+if(POLYGLUE_PLATFORM STREQUAL "android")
+    find_library(android_log_library log REQUIRED)
+    target_link_libraries(${POLYGLUE_MODULE_TARGET} PRIVATE ${android_log_library})
+elseif(POLYGLUE_PLATFORM STREQUAL "ios" OR POLYGLUE_PLATFORM STREQUAL "macos")
+    find_library(foundation_framework Foundation REQUIRED)
+    target_link_libraries(${POLYGLUE_MODULE_TARGET} PRIVATE ${foundation_framework})
+endif()
+```
+
+The built-in plan fingerprints selected implementation files, local CMake scripts and declared transitive inputs, reconfigures on changed source list/script, and relies on normal CMake dependency tracking. If a local script introduces untracked dependencies, conservatively rebuild rather than claim stale-cache correctness. Keep parent project options intact. Test absent/present include, selected platform sources, module variable isolation, additional explicit sources/dependencies, incremental changes and an independent consumer. Preserve handwritten code on regeneration/clean.
+
 ### 20.5 Python build orchestration and artifact pipeline
 
 The Python CLI coordinates tools. It does not reimplement the compiler, linker, Gradle, Xcode or package manager. Use standard subprocess APIs with argument lists, explicit cwd and environment, checked exit codes and bounded timeouts. No shell-string concatenation or task-specific global mutable state. Log tool commands and versions with secrets redacted. SDK discovery runs only for commands that need the SDK.
@@ -6599,9 +6708,47 @@ The displayed version/build paths are release-coordinate paths. Unversioned loca
 
 A single plan/runner/verification implementation supports all package formats. The individual packaging adapter only invokes the ecosystem's real tools and verifies its actual artifact shape. Do not write a Gradle, SwiftPM, CMake, npm, dotnet, pub or Python package manager replacement. Reuse the same native build, canonical manifest, version/build values and content hashes. Share paired Java/Kotlin, Swift/Objective-C, Dart/Flutter and JS/TS artifacts when the actual ownership/format plan permits. Keep S3-compatible deploy isolated from generation and ordinary packaging; no new cloud provider abstraction or custom signing protocol.
 
+#### 20.5.2 Trusted project-local Python actions
+
+A Nativium-style function is the only dynamic delivery extension point. Discover implementation/build.py, implementation/package.py or implementation/deploy.py in the resolved project implementation root only when that action is explicitly invoked. A platform-specific implementation/<platform>/<action>.py takes precedence for one selected platform. For multi-platform assembly/deploy select the project-level action once with all slices. No module-level discovery or plugin framework. Missing file uses built-in action; an invalid existing file or action failure stops, without fallback or double execution.
+
+Call one function run(params: dict) -> dict with a fresh complete resolved non-secret context. Stable fields:
+
+| Key | Meaning |
+| --- | --- |
+| schema_version / action | Context revision and build/package/deploy |
+| project | Root, config path, project ID, effective non-secret settings |
+| library | ID, public API plan, module/target closure, artifact name, version/build or None for local |
+| modules | Ordered module dictionaries, config, dependencies, implementation/generated paths and selected sources |
+| targets | Selected public targets and private adapter closure |
+| platform / slices | Single platform or None, list of SDK variant/arch/config/toolchain/floor/staging data |
+| paths | Resolved project, implementation, generated, build, staging, dist and selected manifest paths |
+| config | Effective non-secret configuration, including selected deploy destination if applicable |
+| artifact | Expected outputs/format or exact selected package manifest and hashes |
+| tools / options | Resolved tool paths/versions, jobs and validated command options |
+
+The local action replaces only the selected delivery implementation; prerequisites and canonical generation/validation still use the built-in planner. Build/package returns {"artifacts": [actual staged paths]}; validate returned schema, required outputs, metadata, architecture, hashes and containment using common verification, and write canonical manifests from actual results. Custom deploy returns receipt data (manifest hash, selected destination, object keys/hashes and verification evidence). Validate against the selected artifact. Do not report user-defined delivery as verified built-in S3 unless actual required remote verification occurred. No success=True-only return, silent fallback or implicit version change. Custom package consumes the planned build/stage; custom deploy never rebuilds.
+
+```python
+from pathlib import Path
+import subprocess
+
+
+def run(params: dict) -> dict:
+    output = Path(params["paths"]["staging"]) / "AppBridge.aar"
+    subprocess.run(
+        ["python3", "tools/package-android.py", "--output", str(output)],
+        cwd=params["project"]["root"],
+        check=True,
+    )
+    return {"artifacts": [str(output)]}
+```
+
+This is illustrative consumer-owned code, not an extra PolyGlue dependency. Use one importlib loader, isolated deterministic module name, no global sys.path pollution. Exceptions, bad returns and missing outputs fail with context. Treat local Python and CMake as trusted executable project code, not sandboxed input. Never import from prebuilt/downloaded dependencies or IDL-controlled paths. Generate/validate/config/ordinary import never execute hooks. Dry-run prints selected hook and resolved non-secret input without loading Python or running commands/network; user-defined outputs are marked unknown if not predictable. No credentials in dict, logs or generated output; authorized script can use its actual environment. Fingerprint script and declared inputs; custom action is conservatively non-cacheable unless fully tracked. Test discovery, precedence, absence, exact context, failures, nonexecution on dry-run/generate, path validation and output verification. The loader is part of first-party 100% Python coverage.
+
 ### 20.6 Binary and package outputs by target
 
-All formats below are intended deliverables. A binary artifact is not considered supported until a separate consumer project installs/links and executes it.
+All formats below are intended P1 delivery conveniences. P0 real generated-code compilation/execution does not wait for packaging automation. A binary artifact is not considered supported until a separate consumer project installs/links and executes it.
 
 | Target | Required final artifact / integration | Producer |
 | --- | --- | --- |
@@ -6714,7 +6861,7 @@ AGENTS.md must cover architecture, code ownership, repository organization, Git 
 
 ### 20.10 Library deployment to S3-compatible object storage
 
-Support one optional S3-compatible deployment implementation for AWS S3, Cloudflare R2 and compatible services, using the already validated artifact plan and hashes. Users may deploy the same output through their own pipeline; no mandatory cloud dependency. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes belong to the consumer's project. They can consume the local package and artifact manifest using their own script or CI without modifying PolyGlue.
+Support one optional S3-compatible deployment implementation for AWS S3, Cloudflare R2 and compatible services, using the already validated artifact plan and hashes. Users may deploy the same output through their own pipeline; no mandatory cloud dependency. Do not build separate AWS and Cloudflare SDKs, a cloud provider plugin system, a registry, a release server, a CDN manager or a custom signing implementation. Other protocols or private deployment processes can use the project-local deploy.py action or consumer CI. Built-in S3/R2 remains a fully specified P2 deliverable; custom actions need not install boto3 unless they use it.
 
 Use the latest stable verified boto3/botocore versions through a Python optional dependency extra named deploy. Keep the compiler, native runtime, generation and ordinary packaging independent of the deployment dependency. An installed tool without the extra produces a clear instruction to install it when deploy is explicitly requested. No AWS CLI or cloud credentials required for local generation/build/package.
 
@@ -6841,14 +6988,14 @@ Use the detailed checklist in section 22 as the implementation backlog. Check an
 | 1 — minimum vertical slice | Minimal Python/uv CLI, grammar, canonical IR, typed C11 ABI prototype, C/C++ consumer/provider, one source module and real build | Independently authored C/C++ call, ownership, error and teardown; no placeholder scaffolding |
 | 2 — prove host boundaries | Actual Swift and Kotlin bidirectional slices, Objective-C importer and JNI proofs; early Dart isolate and WASM32 exact-type/callback probes; shared native ownership and async operation prototype | Native compilers and real execution, inline/delayed async, error, cancellation, owning results and cleanup; freeze physical ABI only after representative proofs |
 | 3 — complete shared runtime | Reusable ownership, callback, memory, cancellation, stream and registry/static machinery; canonical lowering, generic ownership and external adapter proof in C/C++ | Sanitizers, deterministic lifecycle races, typed static/instance calls and registry fixed/dynamic semantics, no duplicate core |
-| 4 — main host integrations | Complete JVM/Apple and Dart/Flutter, real C++ → platform → Dart provider selection, native package consumers; compiler config and naming features needed by these slices | Both directions, actual host teardown, shared artifact ownership and native APIs |
-| 5 — remaining targets and advanced mapping | Python, C#, JS/TS/WASM, Dart Web; complete all type/generic/external mappings, configuration/schema/template overrides and platform-specific packaging | All target contracts and actual package consumers, exact web values and common WASM core |
-| 6 — applications, distribution and docs | HTTP, camera/grayscale, login with shared fixtures, remaining packagers, optional S3-compatible deploy, documentation | Actual application/installed library evidence, no implicit publication |
+| 4 — main host integrations (P0) | Complete JVM/Apple and Dart/Flutter, C++ → platform → Dart provider selection, generator config and naming | Both directions, actual teardown, native APIs; independent target CI |
+| 5 — generator completion (P0) | Python, C#, JS/TS/WASM, Dart Web; all mappings, configuration/schema/templates and real target conformance | 100% Python statement AND branch coverage, all feasible target tests; exact web values and common core |
+| 6 — build/package (P1), distribution (P2) | Conventional implementation roots, native builds, all specified formats, local Python actions and S3-compatible deployment; complete guides | Independently installed artifact tests, 100% Python coverage of added helpers, explicit deployment only |
 | 7 — stabilization | Full finite conformance matrix, CI, sanitizer, fuzz, performance and review | All applicable required gates pass on exact candidate SHA; owner release approval remains separate |
 
-Every phase includes implementation, purposeful automated tests, review and fixes. Define the canonical semantics before implementation; build small executable vertical slices rather than completing every compiler customization before proving the ABI. Prove advanced types, external adapters, streams and registry in the common core before replicating host integrations. Develop tests together with each slice; do not postpone real target evidence.
+Every phase includes implementation, purposeful automated tests, review and fixes. P0 includes HTTP, camera/grayscale and login fixtures, actual native compile/run and independent per-target CI; no need to wait for the secondary artifact CLI. Establish the generator coverage gate from the first production Python code. P1/P2 work can begin independently when prerequisites exist but must not displace unfinished generator behavior. All supported targets and formats retain final acceptance gates. Define the canonical semantics before implementation; build small executable vertical slices rather than completing every compiler customization before proving the ABI. Prove advanced types, external adapters, streams and registry in the common core before replicating host integrations. Develop tests together with each slice; do not postpone real target evidence.
 
-During phase 2, use small actual cross-host vertical slices to test Swift mixed module import and actor-safe callback, JVM unsigned/boxed conversion and native-thread attach, Dart isolate delivery plus portable int64, and WASM32 layout and async host return. Reuse eventual adapter code/fixtures rather than separate throwaway architectures. Include one sync call, async completion/cancel, owning result and explicit teardown in each feasible proof. Freeze the physical ABI only after these representative constraints are checked; blocked toolchain evidence remains a gate, not permission to claim compatibility. Complete all backend coverage in later phases. Link each checklist requirement to existing case IDs or an independently defined gate in the implementation evidence; do not create a second task tracker. Each new backend implements the established contracts and library version/build propagation instead of deferring all advanced features to the final phase. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
+During phase 2, use small actual cross-host vertical slices to test Swift mixed module import and actor-safe callback, JVM unsigned/boxed conversion and native-thread attach, Dart isolate delivery plus portable int64, and WASM32 layout and async host return. Reuse eventual adapter code/fixtures rather than separate throwaway architectures. Include one sync call, async completion/cancel, owning result and explicit teardown in each feasible proof. Freeze the physical ABI only after these representative constraints are checked; blocked toolchain evidence remains a gate, not permission to claim compatibility. Complete all backend coverage in later phases. Link each checklist requirement to existing case IDs or an independently defined gate in the implementation evidence; do not create a second task tracker. Each new backend implements the established contracts and generated metadata; native package-specific version/build verification is P1, not a P0 dependency. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
 
 Explicit implementation gates to settle with proof-of-concept and tests: complete grammar against the specified constructs, concrete ABI declarations and numeric status codes, safe handle representation, exact unsigned/64-bit web conversions, actual executor capabilities, compiler-proven JVM/Apple ownership layouts, bounded stream implementation and concrete idiomatic lifecycle/registry/static facade signatures. Defaults and semantic policies are fixed by sections 4, 5, 7, 10, 12, 13, 14 and 15; changes require specification review, not convenient implementation fallbacks. These are engineering design gates, not permission to drop requirements.
 
@@ -6943,6 +7090,11 @@ Use the section 1.3 architecture budget as an acceptance gate. For each item ide
 
 ### 22.8 CMake, Python build tool and binary artifacts
 
+Secondary P1/P2 deliverables. The generator and actual target conformance are P0; use direct native build/test commands before these convenience actions exist. No final delivery claim until applicable P1/P2 gates pass.
+
+- [ ] Implement standard project/module implementation roots, deterministic source selection by target/platform, optional project.cmake/module.cmake, target-scoped context and safe incremental invalidation. Preserve handwritten files.
+- [ ] Implement the single trusted local Python run(params) action loader for build/package/deploy, full resolved non-secret context, precedence, dry-run nonexecution, exact output/receipt validation and failure behavior (section 20.5.2).
+
 - [ ] Create organized target-based CMake infrastructure with options, dependencies, warnings, sanitizer modes, installation/export rules and appropriate toolchain files. Keep parent projects unaffected.
 - [ ] Implement native dependency resolution using standard CMake and pinned FetchContent/find_package, with local and offline inputs where needed. No unnecessary dependency managers or native libraries in core.
 - [ ] Implement Python doctor/build/test/package/run/clean and inspectable build plans. Use real SDK commands, explicit arguments, expected artifacts, bounded parallelism and contextual failures.
@@ -6975,10 +7127,11 @@ Use the section 1.3 architecture budget as an acceptance gate. For each item ide
 
 ### 22.10 CI performance, documentation and final delivery
 
-- [ ] Create real independent GitHub Actions checks for all required languages and platforms, generator, interop, packaging, docs and native sanitizers. Use latest stable verified actions and least privilege.
-- [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse same-run verified generation/build artifacts, parallelize independent jobs and measure cold/warm duration. Never cache test verdicts.
+- [ ] Create independently runnable, parallel baseline GitHub Actions jobs for every target and applicable platform matrix entry; each checks out, installs locked generator, generates fresh selected output, compiles and runs actual tests without upstream job prerequisites. Separate generator coverage, interop, packaging, docs and sanitizer checks. Use verified actions and least privilege.
+- [ ] Enforce 100% first-party Python statement and branch coverage in the generator job and local tests; exact missing-count and source inventory checks, no exclusions, report XML/JSON; retain independently executed target conformance.
+- [ ] Implement safe ecosystem dependency caches and compiler caching where useful. Reuse verified same-run artifacts only for secondary jobs, always regenerate in independent baseline target jobs, parallelize and measure cold/warm duration. Never cache test verdicts.
 - [ ] Keep routine CI bounded and fast without reducing required coverage. Run long stress/fuzz/device validation deliberately when relevant and before authorized release. Inspect real logs, fix root causes and rerun affected checks.
-- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete language and platform scope, no temporary development-status labels and real badges when available. Track actual implementation and verification status in the technical documents. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts, including explicit cancellation tokens and runtime initialization. Keep the complete type and platform tables identical in PROJECT.md and AGENTS.md. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
+- [ ] Maintain the original SVG logo at extras/images/logo.svg and the concise owner-style README with a centered header, brief feature list, complete language and platform scope, no temporary development-status labels and real badges when available. Track actual implementation and verification status in the technical documents. Keep the PROJECT.md feature flowcharts consistent with all call/return, memory, type, service, compiler and distribution contracts, including explicit cancellation tokens and runtime initialization. Keep PROJECT.md the sole normative source of type/platform tables; AGENTS.md links to them rather than duplicating them. Maintain AGENTS.md with current architecture and verified commands, and user documentation for each implemented feature and target.
 - [ ] Document IDL, types/date/time, custom types, config/modules/naming/annotations/templates, runtime/ABI/ownership, async/registry, build/dependencies, packaging, library version/build configuration, S3-compatible deployment, all language guides and example execution.
 - [ ] Reconcile README.md, PROJECT.md, AGENTS.md and existing docs against actual source, command behavior, capabilities and CI. Validate links, anchors, code examples and installation steps. Remove outdated descriptions and broken references.
 - [ ] Perform a final deep review of actual affected code, generated APIs, ABI, memory, concurrency, security, build and documentation. Fix substantiated defects, rerun relevant checks and remove redundant tests/unused code.
@@ -6986,4 +7139,4 @@ Use the section 1.3 architecture budget as an acceptance gate. For each item ide
 - [ ] Verify every applicable checklist item has real test/documentation evidence and every required CI check passes on the candidate SHA. Report any blocker honestly instead of marking complete.
 - [ ] Keep development version 0.0.1 until the owner authorizes a change. Maintain the owner-approved MIT License and obtain separate approval for any tag, release, registry upload or actual cloud deployment from this repository. Never publish automatically.
 
-Completion means 100% of the defined, feasible acceptance cases are implemented, tested and documented. It does not mean an infinite input space has been exhaustively tested.
+Completion means 100% of the defined, feasible acceptance cases are implemented, tested and documented, plus exact 100% first-party Python statement and branch coverage. Generator readiness and optional delivery feature readiness are reported independently. It does not mean an infinite input space has been exhaustively tested.
