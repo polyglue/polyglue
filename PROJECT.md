@@ -22,6 +22,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Canonical equality, numeric conversion and legal value positions](#541-canonical-equality-numeric-conversion-and-legal-value-positions)
   - [One Dart API across native and web](#542-one-dart-api-across-native-and-web)
   - [Concrete lowering rules for every type family](#543-concrete-lowering-rules-for-every-type-family)
+  - [Compound values, equality and non-void host generics](#544-compound-values-equality-and-non-void-host-generics)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
   - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
@@ -56,14 +57,19 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Contexts, attachments and admission](#124-contexts-attachments-and-admission)
   - [Public lifecycle control and errors](#125-public-lifecycle-control-and-errors)
   - [Handle identity, contract fingerprints and start/completion invariants](#126-handle-identity-contract-fingerprints-and-startcompletion-invariants)
+  - [Physical ABI baseline and compatibility gates](#127-physical-abi-baseline-and-compatibility-gates)
+  - [Canonical recursive contract fingerprints](#128-canonical-recursive-contract-fingerprints)
 - [13. Memory and buffers](#13-memory-and-buffers)
   - [Reference and value ownership matrix](#1321-reference-and-value-ownership-matrix)
   - [Host-specific memory and execution rules](#1322-host-specific-memory-and-execution-rules)
   - [Proxy identity, root pressure and cycles](#1323-proxy-identity-root-pressure-and-cycles)
   - [Borrow scopes and aliasing](#135-borrow-scopes-and-aliasing)
   - [DataRef storage ownership and zero-copy](#136-dataref-storage-ownership-and-zero-copy)
+  - [Owner retirement and executable-code lifetime](#1361-owner-retirement-and-executable-code-lifetime)
   - [Memory domains and platform boundaries](#137-memory-domains-and-platform-boundaries)
+  - [Local JavaScript memory without WASM](#1371-local-javascript-memory-without-wasm)
   - [Configurable resource limits and diagnostics](#138-configurable-resource-limits-and-diagnostics)
+  - [Aggregate budgets and reservations](#1381-aggregate-budgets-and-reservations)
   - [Prior-art and official platform review](#139-prior-art-and-official-platform-review)
   - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
@@ -71,6 +77,10 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Listeners and subscription patterns](#146-listeners-and-subscription-patterns)
   - [Default delivery and callback scope](#1431-default-delivery-and-callback-scope)
   - [Stream acquisition, subscription and terminal state](#1432-stream-acquisition-subscription-and-terminal-state)
+  - [Capture, acceptance and publication](#1441-capture-acceptance-and-publication)
+  - [Cancellation authority and observer lifetime](#1442-cancellation-authority-and-observer-lifetime)
+  - [Scheduler rejection and shutdown accounting](#1443-scheduler-rejection-and-shutdown-accounting)
+  - [Stream and callback adapter lifecycle](#1444-stream-and-callback-adapter-lifecycle)
 - [15. Interfaces and service discovery](#15-interfaces-and-service-discovery)
   - [Direct references and service registry flows](#155-direct-references-and-service-registry-flows)
   - [Registry identity, contexts and public API](#156-registry-identity-contexts-and-public-api)
@@ -88,6 +98,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Cross-contract and ownership regression fixtures](#1810-cross-contract-and-ownership-regression-fixtures)
   - [Cross-boundary consistency checks](#1811-cross-boundary-consistency-checks)
   - [Type and ownership audit acceptance](#1812-type-and-ownership-audit-acceptance)
+  - [Consolidated semantic, ABI and lifecycle acceptance](#1813-consolidated-semantic-abi-and-lifecycle-acceptance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -756,7 +767,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | `std::vector<T>` | `List<T>` (boxed) | `List<T>` | NSArray of boxed/typed objects | [T] |
 | `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet of canonical keys | `Set<T>` or canonical-key wrapper |
 | `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary with canonical keys/boxed values | `Dictionary<K,V>` or canonical-key wrapper |
-| `array<T>` | std::vector / array wrapper | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
+| `array<T>` | std::vector / exact typed wrapper (bool uses wrapper) | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
 | `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
@@ -804,17 +815,17 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
 | `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
-| `async method / callback` | Awaitable / async def | Future | Future | Task | Promise | Promise |
-| `Stream<T>` | AsyncIterator | Stream | Stream | `IAsyncEnumerable<T>` | AsyncIterable | `AsyncIterable<T>` |
+| `async method / callback` | Awaitable (capture wrapper; async def provider) | Future | Future | Task | Promise | Promise |
+| `Stream<T>` | Owning async iterable / iterator adapter | Owning Stream adapter | Owning Stream adapter | Owning `IAsyncEnumerable<T>` adapter | Owning AsyncIterable adapter | Owning `AsyncIterable<T>` adapter |
 | `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
 | `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
 | `timestamp` | Exact wrapper + aware datetime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + DateTimeOffset conversion | bigint + Date conversion | bigint + Date conversion |
 | `duration` | Exact wrapper + timedelta conversion | Exact wrapper + Duration conversion | Exact wrapper + Duration conversion | Exact wrapper + TimeSpan conversion | bigint nanoseconds | bigint nanoseconds |
 | `uuid` | uuid.UUID | UUID wrapper | UUID wrapper | Guid | Canonical UUID string | Canonical UUID string |
-| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked linear-memory view | Checked linear-memory view |
+| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked host/linear-memory view | Checked host/linear-memory view |
 | `MutableDataView` | Checked write view | Checked write view | Checked write view | Scoped writable access | Checked writable memory view | Checked writable memory view |
-| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Linear-memory owner | Linear-memory owner |
+| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Host or linear-memory owner | Host or linear-memory owner |
 | `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
 
 Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through JavaScript Number. Use BigInt or an exact checked bit representation at the adapter boundary. A JS or WASM signed bit pattern is not the mathematical unsigned value until it has been decoded. Numeric arrays use exact contiguous representations only where available. Float32 uses the checked rounding rules in section 5.4.1. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
@@ -829,7 +840,7 @@ Before constructing a target collection, detect whether the host's native equali
 
 Integers use exact mathematical range checks before narrowing, including rejection of fractional Number, boolean-as-integer and unsafe 64-bit Number input. Float32 uses IEEE-754 round-to-nearest ties-to-even when converting a wider finite input. Preserve signed zero and allow representable subnormals; a finite input that overflows to infinity fails rather than silently becoming an explicit infinity. Explicit NaN and infinities are valid floating values; preserve classification, not NaN payload bits. Do not use floating equality to test signed zero or NaN. Use exact canonical integer/bit expectations in tests and document any explicit lossy application conversion outside the default boundary.
 
-Validate legal value positions recursively after generic and external-type expansion, not only the outer type name. DataView and MutableDataView are direct synchronous parameters only; an external borrowed representation is subject to the same rule. void is return-only except the payload-free Result success case. WeakRef<T> requires a concrete interface reference type, not a value, callback, stream, generic open type or dynamic registry proxy; weak acquisition returns an owning fixed reference or absence for an expired live-origin object. A wrong-origin or malformed weak token is an error, not absence. Stream<T> is an owning stream capability for a legal non-void owning item type; stream capabilities are return values (including async return), not record fields, keys or arbitrary nested collection elements in the initial contract. Explicitly model a factory interface when a reusable stream-producing object must be passed around. Callback values in direct parameters (including optional callback) default scoped; legal callback values returned or stored inside an owning record/collection use owning semantics and must have an explicit documented release path. A scoped or borrowed capability may never escape via a nested external adapter or generic alias. A CancellationToken is an owning cooperative control reference, not a boolean or an operation handle. These restrictions are identical across targets; a host's ability to store a pointer does not make an otherwise forbidden position valid.
+Validate legal value positions recursively after generic and external-type expansion, not only the outer type name. DataView and MutableDataView are direct synchronous parameters only; an external borrowed representation is subject to the same rule. void is return-only except the payload-free Result success case. WeakRef<T> requires a concrete interface reference type, not a value, callback, stream, generic open type or dynamic registry proxy; weak acquisition returns an owning fixed reference or absence for an expired live-origin object. A wrong-origin or malformed weak token is an error, not absence. Stream<T> is an owning stream capability for a legal non-void owning item type; stream capabilities are return values (including async return), not record fields, keys or arbitrary nested collection elements in the initial contract. Explicitly model a factory interface when a reusable stream-producing object must be passed around. Callback values in direct parameters (including optional callback) default scoped; legal callback values returned or stored inside an owning record/collection use owning semantics and must have an explicit documented release path. A scoped or borrowed capability may never escape via a nested external adapter or generic alias. A CancellationToken is an owning observation reference to cooperative cancellation state, not cancellation authority, a boolean or an operation handle; section 14.4.2 defines the source/control distinction. These restrictions are identical across targets; a host's ability to store a pointer does not make an otherwise forbidden position valid.
 
 #### 5.4.2 One Dart API across native and web
 
@@ -865,6 +876,33 @@ The tables describe semantic public types, not native object layouts. The type p
 **Python, Dart, .NET, JS/TS.** Python bool is not integer input; check int bounds and snapshot mutable bytes-like inputs. Python typing/TypeScript types do not replace boundary validation. Dart portable 64-bit values require BigInt, exact chunk conversion and compatible typed array wrappers. .NET bool, char, string and platform-dependent native long are not canonical C layouts; marshal explicit byte bool, fixed-width integer and length-delimited UTF-8. JS validates Number before narrowing, BigInt64Array/BigUint64Array capability and exact element values; reject detached buffers, holes, undefined and coercions. TypeScript uses identical runtime checks. A signed bit carrier is not the mathematical unsigned value until decoded. Snapshot/transfer mutable typed arrays only under the value contract.
 
 **Void, errors and lengths.** Successful no-payload calls map to C status, C++ void/Future<void>, Java void/CompletableFuture<Void>, Kotlin Unit, Swift Void/async throws, Python None, Dart void/Future<void>, .NET void/Task and JS/TS undefined/Promise<void>. Failure and cancellation remain distinct from optional absence and business Result. All lengths use checked fixed-width ABI values: canonical native descriptors use uint64 byte/element lengths, validate size_t/JS safe indexing/JNI jsize/host bounds before narrowing; WASM32 offsets are checked within the owning instance. Checked multiplication, range, stride, recursive depth, allocation and cumulative element budgets apply before allocation or access. See section 13 for memory rules. No host object layout, unchecked integer-to-pointer conversion or hidden lossy fallback.
+
+#### 5.4.4 Compound values, equality and non-void host generics
+
+An immutable generated record guarantees that its observable value fields do not change through aliases. Freeze or defensively copy mutable collections, arrays and bytes at construction and access; a final field, readonly property, frozen dataclass, Kotlin data class, C# record or TypeScript Readonly type alone is insufficient. Generated mutable-record profiles may expose explicit mutation but a call captures an independent snapshot, recursively through value leaves. Interface, retained callback, weak-reference, token and DataRef leaves preserve their capability identity and acquire only the appropriate independent owner; they are not deep-copied into providers or made immutable by a containing record. Releasing an owning value releases those leaves once. Host constructors/copy helpers must honor this rule too, including generated data-class copy and collection accessors. No implicit cloning of a provider. Direct immutable bytes may be returned as immutable storage; mutable public arrays are independent copies or checked readonly wrappers, never a writable alias into an immutable record.
+
+Define structural comparison for values with a fully comparable canonical shape. Records compare by same logical type and ordered fields, variants by same logical type, active tag and payload, optionals by independent presence tags, Result by active tag and payload, lists/arrays/bytes by ordered contents, sets by canonical membership and maps by canonical keys and corresponding values without iteration-order dependence. String equality is exact scalar sequence; time and UUID compare canonical values. A portable structural float comparison treats all NaNs as equivalent and distinguishes +0 from -0, after canonical width conversion. This is a value-equality policy, not a change to native arithmetic or a claim to preserve NaN bits. Generated equality/hash functions must agree where offered; use explicit canonical helpers when host native equals/Hashable cannot match. Structural equality and hashing are opt-in only for external types with a proven canonical value comparison. Do not derive structural equality/hash across arbitrary reference leaves, mutable records or resource capabilities; provide explicit identity comparison for fixed interface handles in the same context, with validation, and no equality based on pointer, proxy address or current dynamic-registry selection. Records containing capabilities may still expose host identity equality, documented as nonportable. Do not introduce these compound values as portable map/set keys. Hash output is process-local; stable fingerprints are a different mechanism. Detect actual cyclic host value graphs on the current conversion path before descending; shared acyclic subvalues may occur more than once and are snapshotted separately. Interface reference cycles are legal identity relationships, not recursive value conversion. Enforce depth and aggregate resource budgets even for acyclic graphs.
+
+Flags have a uint32 known-bit mask formed by declared distinct single-bit nonzero members. Zero is allowed as a named empty mask; a named combination may only OR declared single bits. Reject undeclared bits, negative values, duplicate names and duplicate numeric names unless a separately specified explicit alias syntax is supported; no implicit ordinal values or signed interpretation of bit 31. The complete mask may be zero. Closed enums remain explicit unique int32 values. Check static defaults, external conversions and dynamic input.
+
+`Result<void,E>` is a distinct payload-free success specialization, not an optional result or a null T. Its error tag owns exactly one legal E. Define real public factories/accessors and a tag on every target, even when the host uses a generic placeholder.
+
+| Target | Default public void-success form |
+| --- | --- |
+| C / WASM | Tagged value, success has no active payload; separate runtime status |
+| C++ | PolyGlue Result<void, E> specialization |
+| Java | Result<Void, E> with success() and no active payload; not a nullable success value |
+| Kotlin | PolyGlue Result<Unit, E> with Unit as host-only success marker |
+| Objective-C | Generated tagged object with success constructor and typed error |
+| Swift | Result<Void, E> only if E conforms to Error; generated tagged enum otherwise |
+| Python | Generated Result[None, E], tagged success without value |
+| Dart | Generated specialized VoidResult<E> with success constructor |
+| C# | Generated VoidResult<E>; never use void as generic argument |
+| JS / TS | Tagged success object with no value property; typed discriminated union for TS |
+
+Names for generated wrappers follow the configured target naming plan. Kotlin's standard Result has one type parameter and exception semantics; do not use it as an arbitrary two-parameter business Result. A host-only Unit/Void/None placeholder never becomes an active ABI payload. Nested success tags and optional absence remain distinct. Async wrappers contain this exact specialization (e.g. Task<VoidResult<E>>), not a bare Task which drops the business outcome.
+
+C++ list<bool> may use std::vector<bool> with element-wise conversion; array<bool> defaults to a typed owner with canonical 0/1 byte storage and checked boolean access, not a purported contiguous bool pointer from std::vector<bool>. C++ vector<bool> is not a contiguous bool array. Other vectors may use contiguous primitive optimizations only after proving actual element representation, layout, alignment, aliasing and lifetime. Java/Kotlin boolean arrays are not a promise of raw byte layout either. A canonical C boolean buffer is explicit uint8_t 0/1; validate every element before exposing it as boolean. Do not reinterpret managed object or packed bit storage as native array storage.
 
 ### 5.5 Per-type acceptance
 
@@ -1069,7 +1107,7 @@ object GeoPointAdapter {
 }
 ```
 
-The sample shares validation between both directions. Adapters must be callable on the declared executor. No implicit cross-thread access or blocking I/O. If conversion creates native resources, declare and enforce ownership, cleanup on partial failure, and required executor. DataRef conversions retain the owner without implicit copies. View conversions obey scoped lifetime. An adapter failure must not leak a partially converted collection or interface handle.
+The sample shares validation between both directions. Adapters are synchronous conversion routines on an allowed executor, not business operations. Do not perform irreversible business mutations or start asynchronous work during conversion. Hold an explicit transaction of temporary owners, commit only on success and unwind in reverse acquisition order on failure; host adapter-owned resources must use matching cleanup, without relying on the bridge to infer undo. If an adapter requires a different executor, perform the conversion on that executor through the normal async operation phases; never block a foreign event loop or bypass affinity to convert a synchronous operation. Adapters must be callable on the declared executor. No implicit cross-thread access or blocking I/O. If conversion creates native resources, declare and enforce ownership, cleanup on partial failure, and required executor. DataRef conversions retain the owner without implicit copies. View conversions obey scoped lifetime. An adapter failure must not leak a partially converted collection or interface handle.
 
 | Target | Adapter integration |
 | --- | --- |
@@ -2562,7 +2600,8 @@ Java/Kotlin examples illustrate alternative standalone API surfaces. If both are
 @import Foundation;
 @import AppDomain;
 
-NS_SWIFT_NAME(UserRepository)
+// Mixed framework: the imported bridge protocol must not occupy the native Swift name.
+NS_SWIFT_NAME(UserRepositoryBridgeContract)
 @protocol REPUserRepository
 - (void)findAllWithCompletion:
     (void (^)(NSArray<DOMUser *> * _Nullable,
@@ -2571,6 +2610,8 @@ NS_SWIFT_NAME(UserRepository)
 ```
 
 **Swift**
+
+The following native callable contract owns UserRepository in the mixed framework. The preceding Objective-C protocol keeps its Objective-C name and is imported under an implementation-oriented Swift name (or hidden/refined where supported). No consumer needs that bridge name in ordinary source. If the imported protocol alone is proven sufficient, generate it as UserRepository and omit this native declaration entirely.
 
 ```swift
 import AppDomain
@@ -2581,14 +2622,14 @@ public protocol UserRepository {
 }
 ```
 
-**Dart**
+**Dart (portable native/Web profile)**
 
 ```dart
 import 'package:app_domain/app_domain.dart';
 
 abstract interface class UserRepository {
   Future<List<User>> findAll();
-  Future<User?> findById(int id);
+  Future<User?> findById(BigInt id);
 }
 ```
 
@@ -2596,12 +2637,13 @@ abstract interface class UserRepository {
 
 ```python
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable
 from app_domain.user import User
 
 
 class UserRepository(ABC):
     @abstractmethod
-    async def find_all(self) -> list[User]: ...
+    def find_all(self) -> Awaitable[list[User]]: ...
 ```
 
 **C#**
@@ -3055,7 +3097,7 @@ typedef struct {
 } pg_http_client_vtable;
 ```
 
-The final ABI must define calling convention, status propagation, context validity, ownership of input/output, cancellation and completion lifetime before implementation. A table contains immutable function pointers and a separately owned context reference. A retained completion token remains valid for the provider's documented lifetime, including late completion after cancellation. Duplicate completions while the token is valid are rejected and any transferred payload is released exactly once according to ownership. Do not dereference a freed callback context to detect a duplicate. A call after the provider has relinquished its last valid token is an invalid use, not a supported callback pattern. This is a conceptual table, not a finalized header. The status, completion token and operation handle names stand for runtime-owned ABI types. The return status reports whether the start was accepted. An accepted operation publishes its final outcome through completion, including inline completion, and exposes a valid operation handle until the caller releases it. A rejected start leaves no operation or completion outstanding. The input descriptor is borrowed for the start call only. Retain or convert any values needed later before returning from start. Never store the descriptor pointer.
+The final ABI must define calling convention, status propagation, context validity, ownership of input/output, cancellation and completion lifetime before implementation. A table contains immutable function pointers and a separately owned context reference. A retained completion token remains valid for the provider's documented lifetime, including late completion after cancellation. Duplicate completions while the token is valid are rejected and any transferred payload is released exactly once according to ownership. Do not dereference a freed callback context to detect a duplicate. A call after the provider has relinquished its last valid token is an invalid use, not a supported callback pattern. This is a conceptual table, not a finalized header. The status, completion token and operation handle names stand for runtime-owned ABI types. The return status reports whether the start was accepted. An accepted operation publishes its final outcome through completion, including inline completion, and exposes a valid operation handle until the caller releases it. A rejected start leaves no operation or completion outstanding. The input descriptor is borrowed for the start call only. Retain or convert all values needed later before accepting/publishing the start or entering the provider, not merely before returning. Never store the descriptor pointer.
 
 A JNI adapter's context owns a global Java object reference. A Swift adapter owns an ARC-managed object. A Dart adapter owns an isolate-bound registration. The generated native adapter invokes the correct runtime's method. Direct references and registry lookups reuse the same mechanism.
 
@@ -3119,7 +3161,7 @@ sequenceDiagram
     participant R as Shared C ABI
     participant J as JNI adapter
     participant K as Kotlin consumer or provider
-    D->>F: findById(10)
+    D->>F: findById(BigInt.from(10))
     F->>R: Start typed async call
     R->>J: Invoke Kotlin provider
     J->>K: Execute lookup
@@ -3202,9 +3244,23 @@ Use a versioned canonical descriptor encoding and deterministic SHA-256 fingerpr
 
 Use opaque runtime-owned non-reused identity/generation checked tokens or an equivalent validated handle table. Public C pointer-looking handle examples are opaque illustrative spellings, not permission to dereference untrusted addresses or accept an address reused for a different generation. The final ABI chooses a representation that can actually distinguish stale and foreign handles on every supported word size. Do not wrap generation counters or refcounts into valid live identities. Exhaustion is a typed resource error. Validate origin, generation, kind and required descriptor and acquire a strong internal pin as one transaction. Weak acquisition and release races use the same mechanism; a valid expired weak token yields absence while invalid origin/kind is an error. A token is not an authorization mechanism against hostile native code. Never claim a C process is memory-safe merely because handle validation exists.
 
-For owning native values, document initialization, transfer on success, failure cleanup and the exact destroy operation per type. Out parameters must have an explicitly defined empty state on rejected start/failure; inactive tagged storage is not read. A rejected async start cannot also publish completion or expose an accepted operation handle. If a provider accepts and completes inline, its start return must still report acceptance and expose a valid caller-owned operation handle. The runtime holds independent start-call, execution and completion-token references so inline completion, caller cancellation or duplicate valid-token completion cannot free state still in use. A provider's return after cancellation is not proof that separately scheduled work finished; its execution lease ends only at the documented safe boundary. All completion payload ownership transfers are exactly once; after final token release, subsequent calls are invalid provider behavior, not a safe retry.
+For owning native values, document initialization, transfer on success, failure cleanup and the exact destroy operation per type. Out parameters must have an explicitly defined empty state on rejected start/failure; inactive tagged storage is not read. A rejected async start cannot also publish completion or expose an accepted operation handle. Capture and reserve resources before acceptance/publication as specified in section 14.4.1. If a provider accepts and completes inline, its start return must still report acceptance and expose a valid caller-owned operation handle. The runtime holds independent start-call, execution and completion-token references so inline completion, caller cancellation or duplicate valid-token completion cannot free state still in use. A provider's return after cancellation is not proof that separately scheduled work finished; its execution lease ends only at the documented safe boundary. All completion payload ownership transfers are exactly once; after final token release, subsequent calls are invalid provider behavior, not a safe retry.
 
 The same context can contain independent logical registries and distinct host attachments, but a context/control handle must not be passed into an unrelated core. Runtime code and cleanup metadata must remain loaded while any valid owning release or admitted execution can reference them. A successful cooperative close invalidates invocation and drains actual host-dependent release; outstanding inert wrappers can release their control metadata later without re-entering a closed host. Unload the native library only after those remaining references no longer need it. An application must not force unload a library with live callbacks, owning handles or code execution.
+
+### 12.7 Physical ABI baseline and compatibility gates
+
+The semantic descriptor is independent of physical memory layout. Use one versioned C11-compatible native ABI profile per actual architecture/calling convention and a separate versioned WASM32 profile. Native fields follow target C ABI natural alignment and byte order; no packed structs, compiler-sized enum, native bool, long, size_t, wchar_t, C++ reference, STL or managed-object layouts in the public ABI. Use uint8_t for canonical bool, explicit intN_t/uintN_t fields, IEEE binary32/64 (reject incompatible host profile), uint32_t for status and tags, uint64_t for lengths, explicit pointers only for trusted native payloads/function entries. Use uint32_t WASM offsets/table indices with checked bounds and uint64_t lengths; WASM memory is little endian. UUID canonical bytes remain network order on all targets. Raw buffer content is not endian-converted unless explicitly interpreted as typed values. Do not use native structs as a portable serialized wire format. Native endianness, pointer width, alignment, calling convention and layouts are part of ABI compatibility, not semantic identity. The baseline is local interop, not IPC.
+
+Use a common descriptor header with uint32_t abi_version and uint32_t struct_size, and generated layouts for each concrete value/function table. Define each field's width, alignment, offsetof, sizeof, calling convention, ownership and legal tag values in a versioned machine-readable ABI inventory emitted from the same lowering plan. Compile static assertions in actual C and C++, and verify offsets/sizes in each FFI implementation using real host tooling. No host infers padding or treats it as data. Optional uses uint32_t tags 0 absent/1 present; Result 0 success/1 business error; variant uses assigned uint32_t ordinal tags. Reject unknown tags; never access inactive payload. Initialize output descriptors to a documented safe empty storage state before call; status success is necessary before reading the declared active value. Empty storage for a required value is not automatically a valid semantic value. Destroy only initialized ownership, including partial failures; no memcpy of owning descriptors, no padding-based equality/fingerprint, no copying uninitialized bytes to consumers. A typed array descriptor specifies element count, representation, alignment and stride (canonical fixed-width primitive contiguous stride where valid); check length * stride and offsets. C function pointers use one declared export/call convention macro, including callbacks (cdecl on Windows unless another explicitly versioned profile is selected); managed FFI matches it. Exceptions never unwind across C.
+
+Opaque public handle representation must encode a core/context origin, kind, slot and generation without dereferencing caller-provided object addresses. Freeze an exact token encoding with the first C ABI implementation, including reserved bits, invalid zero, limits, 32/64-bit and WASM representation, before any adapter claims support. Use an explicit runtime-instance handshake and nonreused context/generation identities; independent loaded runtime copies must not accept each other's tokens. A foreign library cannot establish shared-core compatibility by comparing version strings alone. All validation precedes function table invocation. For trusted pointer descriptors validate null/length/range/alignment where possible; arbitrary native pointers cannot be proven safe from malicious native code. Never represent a host object address as a portable scalar identity. The phase-2 gate is a checked-in ABI header, concrete layout inventory, compiled C/C++ and at least one real foreign FFI round trip; all other targets consume the frozen profile or a separately versioned proven profile. Exact descriptor structs and numeric status assignment remain implementation deliverables, not guessed prose ABI.
+
+Runtime errors use an allocation-independent status code, including resource exhaustion. Error detail is optional owning data, absent on allocation failure or when the host cannot safely provide it. A status alone always suffices to distinguish failure from success/business error/cancellation. Reserve state necessary for accepted completion and required cleanup before acceptance; OOM while producing detail/log text must not strand a caller or suppress cleanup. Preserve the primary error, record cleanup failure separately where possible, and use bounded/nonallocating fallback diagnostics. No throwing destructor or allocation-dependent last-release path. Host fatal OOM or process termination is outside cooperative guarantees.
+
+### 12.8 Canonical recursive contract fingerprints
+
+Compute fingerprints over a canonical graph, not recursively nested hashes of neighbors. Build the complete reachable closure of concrete declared types, operations, generic specializations, external canonical mappings and contract-relevant semantics. Each node has a stable case-sensitive logical ID and kind. Encode nodes sorted by logical ID (UTF-8 byte ordering), references as length-delimited logical IDs, and declared ordered fields/arguments/variant alternatives in contract order. Include explicit normalized tags, widths, defaults, ownership, execution/cancellation semantics and relevant constraints. Sort unordered semantic sets by their canonical encoding; do not sort ordered declarations or include generated names, paths, comments, timestamps or filesystem order. Encode signed/unsigned numeric literals exactly and canonical string UTF-8, not host JSON float coercion. Use versioned length-delimited encoding with domain separators for semantic, ABI and public artifact hashes and SHA-256. Include the root logical ID and its reachable canonical node table in a root digest; cycles through reference types terminate because each logical node is visited once. A dependency's change changes every root digest whose closure actually reaches it. No iterative fixed-point hash or language-native hashCode. For ABI digests include the compatible semantic closure and physical lowering/profile/layout inventory; presentation-only changes must not alter those two digests. Public signature and artifact-content fingerprints remain separate where formatting changes bytes without changing API. Freeze encoding and golden digests independent of traversal order; test mutually recursive interfaces, nested concrete generics, renamed generated symbols and changed dependent field. Reject recursive expansion without finite concrete identity. Do not conflate a legal reference cycle with an illegal infinitely sized by-value layout.
 
 ## 13. Memory and buffers
 
@@ -3212,10 +3268,10 @@ The same context can contain independent logical registries and distinct host at
 
 | Type | Ownership | Copy policy | Allowed lifetime |
 | --- | --- | --- | --- |
-| bytes | Independent value | Explicit copy | Independent |
+| bytes | Independent value | Snapshot by default; exclusive transfer may avoid physical copy | Independent |
 | DataView | Borrowed read-only | No implicit copy | Scoped synchronous access |
 | MutableDataView | Exclusive borrowed write | No implicit copy | Scoped synchronous access |
-| DataRef | Shared owned buffer | No implicit copy | Until last owning reference is released |
+| DataRef | Shared owned buffer | No implicit copy | Until last owner and all active leases end, then required deleter completes |
 
 ```text
 interface ImageProcessor {
@@ -3227,7 +3283,7 @@ interface ImageProcessor {
 
 Borrowed views may not escape the validated synchronous scope. DataView and MutableDataView are permitted only as direct synchronous parameters, including synchronous callback parameters under the same scope rules. Reject borrowed returns, stored fields, collection elements, async parameters and escaping captures. Use DataRef for independent or asynchronous lifetimes. A DataRef does not grant exclusive write access merely because its reference count is one. Managed wrappers must provide checked scoped access. Unrestricted raw pointers are not part of the default safe API. Couple validation to actual access so concurrent close cannot invalidate memory between the check and its use. Mutable views require exclusive access.
 
-DataRef retains the true owner, including for subranges. Creating a reference to borrowed storage requires a retainable underlying owner and a legal independent lifetime. A borrowed view alone cannot be promoted to an owning buffer. An explicitly requested independent copy may create a new owner. A mutable view cannot become a shared reference to the same storage while its exclusive borrow is active. Last release executes the correct deleter once on an appropriate executor. Default shared access is read-only. Explicit conversion to bytes copies. Unsupported shared memory conversions must fail or request an explicit copy rather than silently copying.
+DataRef retains the true owner, including for subranges. Creating a reference to borrowed storage requires a retainable underlying owner and a legal independent lifetime. A borrowed view alone cannot be promoted to an owning buffer. An explicitly requested independent copy may create a new owner. A mutable view cannot become a shared reference to the same storage while its exclusive borrow is active. The last owner release revokes new acquisition; actual deleter execution waits for every admitted access lease and runs once on its appropriate executor. Default shared access is read-only. Explicit conversion to bytes copies. Unsupported shared memory conversions must fail or request an explicit copy rather than silently copying.
 
 ### 13.2 Target representation examples
 
@@ -3247,7 +3303,7 @@ A typed array in a JS heap is not automatically shared with WASM. Direct JVM buf
 
 #### 13.2.1 Reference and value ownership matrix
 
-The ABI must identify the owner of every allocation, reference, access lease and queued envelope. Inputs are borrowed for the immediate call unless their semantics acquire an owning reference. An accepted asynchronous operation snapshots value arguments and retains capability arguments before the initiating call returns. Successful output transfers exactly one owning result to the caller; rejected start/failure transfers no active payload. Conversions hold temporary owners and commit only after successful construction. Reference leaves inside records, variants, optionals, arrays, maps and external types are retained recursively, not copied into new provider objects. Releasing a container releases exactly the reference leaves it owns. Value copying and capability retention are distinct operations.
+The ABI must identify the owner of every allocation, reference, access lease and queued envelope. Inputs are borrowed for the immediate call unless their semantics acquire an owning reference. An accepted asynchronous operation snapshots values and retains capability arguments before publication or provider entry, not merely before the initiating call returns (section 14.4.1). Successful output transfers exactly one owning result to the caller; rejected start/failure transfers no active payload. Conversions hold temporary owners and commit only after successful construction. Reference leaves inside records, variants, optionals, arrays, maps and external types are retained recursively, not copied into new provider objects. Releasing a container releases exactly the reference leaves it owns. Value copying and capability retention are distinct operations.
 
 | Resource | Required owner and release |
 | --- | --- |
@@ -3337,9 +3393,9 @@ flowchart TD
     B --> C["Provider receives owning reference"]
     C --> D["Provider may keep or return it across async"]
     D --> E["Caller and provider release their references"]
-    E --> F{"Last owner released?"}
-    F -->|No| G["Memory remains valid"]
-    F -->|Yes| H["Run correct deleter once"]
+    E --> F{"Last owner AND last access lease ended?"}
+    F -->|No| G["Memory remains valid for existing owners/leases"]
+    F -->|Yes| H["Schedule correct deleter once; drain release"]
     C -->|Explicit conversion to bytes| I["Create independent copy"]
 ```
 
@@ -3369,6 +3425,12 @@ DataRef is a shared owning byte capability, read-only by default. Its control re
 
 Provide typed helpers for allocate(size), copyFrom(bytes), adoptOwned(storage, deleter, owner), slice(offset, length), retain, release/dispose, withReadAccess and withWriteAccess where supported. Target names are configurable. Adoption is trusted integration, not arbitrary integer-pointer ownership. A native vector/string move may transfer storage without copying only if its representation and allocator permit it (small-string optimization may prevent transfer). Native storage cannot reallocate while retained. Keep code and deleter host available through the last reference and lease. A host-backed buffer cannot promise access after forced host destruction: independently native-owned memory can survive if its deleter is independent; otherwise revoke access, report incomplete cleanup and never call a dead host. Define byte order explicitly for typed interpretation of raw byte buffers; DataRef itself is bytes, not typed numeric values.
 
+#### 13.6.1 Owner retirement and executable-code lifetime
+
+Use a monotonic storage/control lifecycle: Alive (new owning references/leases may be acquired subject to context admission), Retiring (last strong owner gone or admission revoked; no resurrection; existing leases protected), Releasing (one cleanup owner has claimed the deleter and its executable-code lease), Released (actual cleanup acknowledged). A live resource whose host is closing may retain public inert wrappers; revoke access immediately but retain actual owners as necessary until cleanup. A pending/rejected release remains Releasing with a retryable pending reason; externally destroyed host may make cleanup irrecoverable, explicitly report this distinct failure and keep safe native metadata. Never label abandoned host cleanup Released. Weak metadata survives until last weak/control reference; weak upgrade atomically pins an Alive resource with a live strong count, not a zero-count resource. A last owner release racing with access cannot free storage until the last admitted lease ends. A failed access acquisition has no lease. Retain the loaded library/module and its immutable function table, allocator, deleter, trampolines and release implementation through every reference or execution requiring them. Release the loader lease only after the last such dependency and pending cleanup ends; platforms with no unloading capability retain the code for host lifetime. No arbitrary dlclose/FreeLibrary while dependent code may execute. The runtime cannot prevent external forced unload; document it as unsupported misuse.
+
+Allocate(size) zero-initializes exposed bytes by default. copyFrom snapshots valid input. adoptOwned requires valid initialized contents and explicit provenance; the owner is transferred only at successful adoption (failure leaves caller ownership), except separately documented typed move conventions. No uninitialized allocation API in the initial safe surface. If a future explicit unsafe allocation profile is added it must prevent reads/export until all exposed bytes are initialized. MutableDataView writes are immediate and are not rolled back on provider failure, cancellation or exception; document partial mutation. A caller needing atomic update uses an independent copy and commits on success. Do not secretly copy a mutable view to simulate rollback. Default checked access does not expose escapable raw memory. Explicit unsafe native access, where supported, requires caller-guaranteed bounds, lifetime, alignment, no escaping pointer and no concurrent mutation; the runtime cannot revoke copied raw pointers. An unsafe API does not count as safe support or disable mandatory ownership checks. Use copy/owning alternatives for managed hosts where scoped raw access cannot be proven.
+
 ### 13.7 Memory domains and platform boundaries
 
 | Domain | Required behavior |
@@ -3383,9 +3445,29 @@ Provide typed helpers for allocate(size), copyFrom(bytes), adoptOwned(storage, d
 
 Zero-copy means zero payload-byte copies on a specified path, not zero allocation, wrappers or refcount operations. Instrument actual copies, verify owner destruction, slice identity and pointer equality only where address identity is meaningful. Unsupported explicit zero-copy is a typed capability failure. Ordinary bytes/list/array retain value semantics even if an internal optimization avoids redundant copies. No claim of cross-process or GPU zero-copy from a CPU buffer abstraction.
 
+#### 13.7.1 Local JavaScript memory without WASM
+
+A pure JS/TS provider may use a context-owned host buffer owner (ArrayBuffer/typed bytes with verified exclusive transfer or independent copy), range and checked view/access leases; it need not instantiate a WASM module just to represent DataRef. No JS memory address is exposed as C/WASM pointer. Reject detached/resized/externally mutable storage that violates ownership, and maintain scope/identity and explicit disposal for JS-only execution. A native/WASM bridge may share only storage actually accessible in that domain through a proven owner and lease; otherwise explicit copy or capability failure. The local JS and linear-memory owners have the same public capability semantics but different physical storage. No implicit cross-realm or process transport.
+
 ### 13.8 Configurable resource limits and diagnostics
 
 Provide typed context resource limits, with initial protective defaults: maximum value nesting 64, elements per container 1,048,576, individual string/bytes/array payload allocation 64 MiB, cumulative temporary conversion allocation 256 MiB per invocation, runtime-allocated/adopted owned buffer 256 MiB, stream pending envelopes 16 per subscription (section 14.3.1). Limits are configurable positive bounded values, not promises about platform capacity. DataRef slices retain an existing owner without allocating its entire byte range. Enforce checked length, resource budgets and actual host limits before allocation/reservation. Cumulative budget includes nested allocations and owner/descriptor overhead tracked by the runtime; it is not a total process-memory guarantee. Context may set explicit concurrent memory/operation/root budgets; by default host allocation limits and per-call/per-subscription limits apply, not an invented portable JVM or OS memory quota. Allocation/retain exhaustion returns typed failure and unwinds partial owners. No limit bypasses overflow checks or required lifecycle synchronization. Expose per-context/attachment diagnostic snapshots and optional debug provenance; do not log secrets, payloads or private addresses. No mandatory intrusive GC or extra worker pool.
+
+#### 13.8.1 Aggregate budgets and reservations
+
+Use a typed ResourceLimits context option with snake_case configuration keys (target public accessors follow naming profiles). Existing defaults are max_value_depth=64, max_container_elements=1048576, max_value_bytes=67108864, max_conversion_bytes=268435456, max_owned_buffer_bytes=268435456 and stream_capacity=16. Optional aggregate limits default to unset (host/platform limits still apply); no arbitrary universal device memory quota. All explicit limits are positive integers, validated against representable platform size; no magic zero/unlimited value. Document defaults in the single config schema and runtime helper. Changing live limits is not required; apply on context creation or subscription creation as appropriate.
+
+| Optional limit key | Scope and accounting |
+| --- | --- |
+| max_context_owned_bytes | Unique runtime-tracked owned allocation bytes, not every slice/reference |
+| max_context_temporary_bytes | Sum of outstanding conversion reservations across invocations |
+| max_subscription_queued_bytes | Pending/posted item envelopes and their logical payload byte charge per subscription |
+| max_attachment_queued_bytes | Sum of tracked pending/posted envelopes for the attachment |
+| max_context_operations | Accepted/reserved operations until actual execution and mandatory completion ownership drain |
+| max_attachment_roots | Actual strong and weak host root reservations, including pending release |
+| max_context_access_leases | Active borrow/pin/access reservations, including denied cleanup pending |
+
+Reserve atomically before allocating, retaining or posting; roll back on failure, transfer accounting to the real owner on commit and release only when resource use actually ends. A queued shared buffer may charge its logical byte length in each queue even though its storage is counted once against owned bytes; document this conservative policy. Avoid double-counting temporary-to-owned transfers within the same accounting category. Queue budget cannot bypass a context budget; exhaustion uses the typed resource error or explicit stream backpressure, never a hidden drop. Counters must be overflow checked and thread-safe. No claim to measure hidden VM heap, allocator fragmentation or third-party allocations. Expose separate active, retiring, cleanup-pending, released and irrecoverable-cleanup metrics; do not count a queued deleter as completed release.
 
 ### 13.9 Prior-art and official platform review
 
@@ -3481,7 +3563,7 @@ A returned stream handle supports one subscription by default, ordered lossless 
 
 Capacity and policy are typed runtime options; fixed item counts alone do not bound arbitrary payload bytes. Reserve capacity before posting, consume demand at admission and release reservations exactly once on delivery, rejection, enqueue failure or cancellation. A lossless producer waits asynchronously, never blocks a host event loop. No unbounded posted queue may bypass capacity. Cancellation revokes admission and releases queued unadmitted items. Actual producer and admitted delivery retain resources until safe. A consumer cancel completion acknowledges revocation and target-required cleanup at the supported boundary; self-cancel cannot await its own execution. Provide nonblocking revocation and a separate external drain barrier when necessary. Full attachment close always waits for actual work and mandatory releases. No terminal item after cancellation or duplicate terminal completion.
 
-A scoped callback has runtime-owned scope identity independent of the host callable's reference count. For a sync enclosing call, close admission when it returns; for an async enclosing operation, when actual provider execution ends, not when the caller cancels its Future. A previously admitted callback retains its own execution resources until finished. A stored wrapper or copied handle cannot extend scoped admission. Reject statically detectable escapes and reject stale scope invocation dynamically. One-shot means at most one admission; it is scoped by default, not an implicit forever-retained listener. A separately owning one-shot value needs explicit ownership transfer into a legal owning position and cleanup even if never invoked. Do not retry a failed admitted one-shot.
+A scoped callback has runtime-owned scope identity independent of the host callable's reference count. For a sync enclosing call, close admission when it returns; for an async enclosing operation, when actual provider execution ends, not when the caller cancels its Future. A previously admitted callback retains its own execution resources until finished. A stored wrapper or copied handle cannot extend scoped admission. Reject statically detectable escapes and reject stale scope invocation dynamically. One-shot means at most one admission; it is scoped by default, not an implicit forever-retained listener. An independently owning once-only callback uses an explicitly retained callable with a separate atomic once-only owner as specified in section 14.4.4; it is not a promoted scoped one-shot. Do not retry a failed admitted one-shot.
 
 #### 14.3.2 Stream acquisition, subscription and terminal state
 
@@ -3496,6 +3578,38 @@ A library-owned stream or runtime registration control handle may define last-ow
 Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Once the provider accepts the operation, its terminal outcome is delivered through the completion contract even if it happens inline before the start function returns. Initialize caller completion state and retain the start-call resources before invoking the provider. A completion that runs inline must not free state still needed by the start call. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
 Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation and drains actual execution. Then remove registrations, invalidate handles and release runtime-owned references. Drain the releases these actions schedule while the owning runtimes and executors are still available. Detach only after cleanup finishes. Host-owned references that still require the runtime must be closed or keep it alive until safe release. Cleanup must remain available while new business calls are blocked. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
+
+#### 14.4.1 Capture, acceptance and publication
+
+Define separate phases: public invocation/capture, prepared state, accepted start, dispatch admission, actual provider execution, caller terminal outcome, execution end and cleanup. Capture values and retain capability leaves, select and pin the provider, reserve required execution/completion/cleanup resources and validate participating attachment generations before publishing work. No foreign provider entry or scheduler visibility before the operation is fully prepared. Admission and dynamic provider selection occur atomically at accepted start (section 12.4); an earlier capture does not freeze a dynamic registry provider before actual start. Preacceptance failure rolls back prepared owners, returns rejection and produces no completion. After acceptance, scheduler rejection is a terminal failure, not a rejected start. Inline completion remains valid and cannot destroy the start-call state. Do not hold core locks across conversion, host entry or enqueue. Capture can fail before admission without exposing a partial operation. For an async value argument, no mutable source alias may remain after capture; a shared capability remains a reference, not a value snapshot.
+
+Default eager-call profiles (C/C++ future facade, Java, Objective-C, Dart, C#, JS/TS) capture arguments during the public call before returning its operation/future; C++ coroutine implementations must use an eager wrapper or by-value captured coroutine parameters, never store references to ephemeral arguments in a lazy frame. Python public consumer wrappers are ordinary def functions returning an owning Awaitable, capture at call time and either schedule using the selected live loop or hold a prepared cold operation until first await. Document the chosen default: cold prepared awaitable for Python, starts at first await or explicit scheduling; dropping/explicitly closing an unstarted awaitable releases captured owners, with best-effort finalization only as fallback. Provider implementations may be async def. Do not promise eager provider execution from merely constructing a coroutine. Native Swift async and Kotlin suspend methods capture when their async method body is entered (before suspension/foreign publication); creating a Task/coroutine that later calls the method does not call it now. A generated explicit eager prepare helper is optional for a caller needing a snapshot before scheduling; immutable records avoid unintended mutations, but mutable inputs require documented synchronization during capture. Never silently convert a lazy native primitive into a blocking start. The common guarantee is snapshot at the defined actual public invocation boundary before publication, not identical scheduling behavior across languages. Reject use of a closed/unstarted-canceled prepared operation and release exactly once; repeated awaits may observe the same terminal result only if the host adapter supports that without duplicating ownership or executing twice. Document one-shot awaitable behavior otherwise.
+
+#### 14.4.2 Cancellation authority and observer lifetime
+
+CancellationSource owns the authority to request a sticky, one-way cancellation state. CancellationToken is an owning read/observe capability; it can be copied/retained but cannot cancel the shared source. A source helper is not an IDL value type. Its dispose releases control ownership, does not request cancellation by default; existing tokens keep observation state alive. A cancel-on-dispose behavior, if desired, is an explicit application helper, not implicit token semantics. Operation cancellation requests only that operation unless the explicit source owner cancels shared state. Source/token/observer identities belong to the validated context; never grant cancel authority by adapting .NET CancellationToken or JS AbortSignal (use separate CancellationTokenSource/AbortController). Atomic observer registration plus current-state check prevents lost cancellation. Removal revokes new observer entry and drains admitted observer work; never execute callback under the token lock. Reuse operation cancellation/dispatch machinery. Already-canceled tokens prevent business execution and produce the documented canceled outcome. Dispose/cancel races, duplicate cancellation, cancellation after completion and token sharing must not leak or affect unrelated operations. A cancellation request does not imply successful side-effect rollback, execution end or release of provider-owned values.
+
+#### 14.4.3 Scheduler rejection and shutdown accounting
+
+Shutdown is a two-stage revoke/drain operation: revoke new business admission and discovery/delivery atomically for affected identities, signal cooperative cancellation and reject unadmitted queued work; then drain actual execution, required host releases, completion envelopes and code/storage leases while executors remain alive. Context/attachment owner authority is separate from an ordinary reference. Use an explicit synchronization order in the implementation and no lock-held foreign calls. A pending dispatch reservation transitions exactly once to admitted execution, denial or rejected enqueue. Do not rely on a scheduler's enqueue return alone if it can run inline; retain the posting state and use an atomic claim to reconcile inline execution and return. A supported scheduler must specify accepted/rejected ownership transfer, notification of abandoned work, executor identity and shutdown contract. Rejection must not strand an accepted caller; if its host cannot receive a result, revoke its completion delivery and record incomplete host cleanup rather than enter dead host code. Completion publication and host delivery are separate from actual execution; a canceled caller-visible outcome does not retire provider execution.
+
+Thread-affine cleanup is pre-reserved or represented by intrusive/preallocated release records so last release is not dependent on successful fresh allocation. If enqueue of a deleter is rejected, retain its storage, host-root metadata and executable-code lease, mark release pending and expose typed drain failure. Only the owning live executor (or a platform-proven equivalent cleanup domain) may resume that exact pending release; no arbitrary thread fallback, double execution or implicit business retry. If external destruction makes mandatory cleanup impossible, distinguish irrecoverable cleanup from completed cleanup; revoke access and reclaim independently safe native resources, preserve required metadata and report failure. Forced host loss cannot guarantee leak-free execution of host-owned releases. A timed-out cooperative drain stays Closing, with explicit owner resume; no automatic reopen. An owner cannot synchronously await a drain depending on its current execution, callback, borrow or release. Affected attachments cannot close until their actual mandatory releases finish; unrelated attachments survive. Successful context close never means the loader can unload while inert wrappers still require release code. Document the host shutdown order and actual supported failure mode.
+
+#### 14.4.4 Stream and callback adapter lifecycle
+
+Every public stream adapter is an owning, explicitly disposable source capability with a separate subscription/iterator control. Native Flow, AsyncSequence, AsyncIterator, Stream, Publisher, IAsyncEnumerable and AsyncIterable alone are not evidence of ownership. Add an idiomatic close/dispose/cancel facility or typed wrapper where the host interface lacks one. The acquired-but-never-subscribed source releases on explicit close (with safe finalizer only as backup); close prevents new subscriptions. A successful subscription consumes the single-use admission right by default. An active subscription retains its own source, so releasing the caller's source wrapper alone does not cancel that subscription; a source-control close explicitly revokes its subscriptions where defined. Distinguish wrapper release from source authority. Cancellation of an outer acquisition disposes an unclaimed source without inventing a business call. A provider ending before subscription preserves a terminal state for the eventual valid first subscriber; no queue of unbounded pre-subscription items. Normal end waits for demanded accepted items; failure discards unadmitted items and orders its terminal notification after admitted deliveries; consumer cancellation suppresses future notifications. Provider removal alone does not stop a fixed source with a live attachment.
+
+| Host | Required explicit cleanup path |
+| --- | --- |
+| C/C++ | Owning source and subscription release/RAII, explicit cancellation and drain |
+| Java/Kotlin | Publisher subscription cancel / coroutine collection cancellation with finally; close uncollected source |
+| Objective-C/Swift | Explicit source and subscription/iterator cancel or close; do not assume breaking for await automatically closes every sequence |
+| Python | Owning async iterable/iterator with aclose/async context management; breaking async for alone is not guaranteed deterministic cleanup |
+| Dart/Flutter | StreamSubscription.cancel and source-owner dispose even before listen; no abandoned isolate callbacks |
+| C# | DisposeAsync for iterator, explicit source disposal before enumeration |
+| JS/TS | Async iterator return() where invoked, explicit owner dispose for never-started or manually abandoned iterator |
+
+Adapters must document what language constructs actually invoke cleanup, and tests use explicit finally/context-management when the host cannot promise deterministic early exit. GC abandonment is best effort, not a timely teardown guarantee. Source terminal state and subscription cleanup are distinct. A one-shot direct callback is scoped to its enclosing operation and admits at most one call; retaining its wrapper cannot extend that scope. An explicitly retained callback remains reusable unless an application/provider creates an independently owned once-only wrapper with its own atomic one-admission rule and explicit disposal; no hidden promotion of a scoped one-shot to retained ownership. Callback conversion/publish acquires a root before posting and revokes it only after actual execution and safe release; root count is not admission authority. Validate reentrant cancel/dispose and callback-after-scope across each host.
 
 ### 14.5 Async, callbacks, cancellation and streams in motion
 
@@ -3542,7 +3656,7 @@ In the Downloader example, the progress callback may be implemented by Dart whil
 
 #### Explicit cancellation token
 
-A CancellationToken lets the application request that work stop. It is different from the operation's own terminal status. A token may be shared by several operations if the application chooses. Cancelling one operation does not automatically cancel every other operation using the same token.
+A CancellationToken lets an operation observe a request to stop; the source/control owner requests cancellation. It is different from the operation's own terminal status. A token may be shared by several operations if the application chooses. Cancelling one operation does not automatically cancel every other operation using the same token.
 
 ```mermaid
 flowchart TD
@@ -3559,7 +3673,7 @@ flowchart TD
     J --> K["Remove observer and release token and execution owners"]
 ```
 
-A cancellation source is a runtime helper, not an additional IDL type. Subscribe and check cancellation as one atomic operation so a request between registration and start is not lost. If work was accepted before cancellation, retain execution resources until work actually ends. Removing an observer must not race with destroying its context. Reuse the existing async cancellation machinery. Do not add a second cancellation scheduler.
+A cancellation source is a runtime helper, not an additional IDL type; only the source/control owner has cancellation authority (section 14.4.2). Subscribe and check cancellation as one atomic operation so a request between registration and start is not lost. If work was accepted before cancellation, retain execution resources until work actually ends. Removing an observer must not race with destroying its context. Reuse the existing async cancellation machinery. Do not add a second cancellation scheduler.
 
 #### Cancellation and actual execution lifetime
 
@@ -4230,14 +4344,14 @@ Register the implementation in the shared Android runtime during plugin initiali
 val registration = ServiceRegistry.global.register(KotlinUserRepository.TYPE, AndroidUserRepository(store))
 ```
 
-Dart consumes the same contract and the imported domain model:
+Dart consumes the same contract and the imported domain model. This example uses the portable integer profile so the public signatures also work on Web with a compatible provider:
 
 ```dart
 final repository = ServiceRegistry.global.get(UserRepositoryType);
 final users = await repository.findAll();
-final user = await repository.findById(10);
+final user = await repository.findById(BigInt.from(10));
 final count = await repository.count();
-final exists = await repository.exists(10);
+final exists = await repository.exists(BigInt.from(10));
 
 for (final item in users) {
   print(item.name);
@@ -4361,7 +4475,7 @@ id<REPUserRepository> repo = [registry userRepository];
 
 **Artifacts and configuration:** .swift contracts, models or re-exports, proxies and adapters, Package.swift or source integration, module/target, visibility, prefix/case, imports and availability. Enforce independent Swift public names and argument labels from section 8.7, and an actual unified Swift module when selected by section 10.5. Swift module names are not directory names. When using imported Objective-C models, provide one canonical model type. When generating native Swift models, use explicit conversion or separate modules and avoid ambiguous unqualified imports.
 
-**Types and memory:** Swift value types where appropriate, protocols and generated proxies, optional, enum/OptionSet, tagged variants and Result when Error constraints are satisfied. Exact numeric/time mappings. Controlled UnsafeRawBufferPointer access for DataView, owned DataRef reference and explicit Data copying. ARC and Unmanaged bridge ownership must be balanced. Never label arbitrary object types Sendable or use unchecked Sendable without a documented proof and tests.
+**Types and memory:** Swift value types where appropriate, protocols and generated proxies, optional, enum/OptionSet, tagged variants and Result when Error constraints are satisfied. Exact numeric/time mappings. Checked DataView operations by default, raw UnsafeRawBufferPointer only via explicit unsafe scoped native access under section 13.5; owned DataRef and explicit Data copying. ARC and Unmanaged bridge ownership must be balanced. Never label arbitrary object types Sendable or use unchecked Sendable without a documented proof and tests.
 
 **Provider and consumer:** async throws, checked continuation adapter with exactly-once resume and cancellation propagation, typed closures, AsyncSequence stream, explicit executor/actor policy. MainActor is enforced for UI APIs. Swift implementations register or pass protocol references and may be called from Kotlin/C++/Dart where valid. Do not block an actor waiting for a callback scheduled on that actor.
 
@@ -4429,7 +4543,7 @@ app_repository_plugin/
 
 **Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods and Async suffix by default; I interface prefix is opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
 
-**Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Span/ReadOnlySpan scoped borrowed access. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
+**Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Checked borrowed access by default; explicit scoped unsafe Span/ReadOnlySpan interop only when the lease cannot escape its valid access scope. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
 
 **Provider and consumer:** `Task<T>`/Task for async, typed delegates, IAsyncEnumerable and CancellationToken adapter. Use completion sources with asynchronous continuation scheduling where needed. Exactly-once completion. Map cancellation without prematurely releasing active native resources. Use stable unmanaged entrypoints or rooted delegates. Exceptions never cross native ABI. Managed provider registration works from C++/Dart where the .NET host is available. Do not assume arbitrary embedding. Specify supported .NET hosting and NativeAOT modes separately.
 
@@ -4445,7 +4559,7 @@ var users = await repo.FindAllAsync();
 
 **Artifacts and configuration:** ESM runtime .js modules, loader, package.json exports, public entry point and generated proxies/providers. Configurable module/package, relative/public import policy, names, layout and file extension. Browser and Node runtime integration are separate capabilities. No reliance on TypeScript compiler at application runtime when JS is selected.
 
-**Types and memory:** checked Number for small integers, BigInt for exact 64-bit, string UTF-16 validation, Uint8Array for copied bytes, Map/Set, tagged result and variants, runtime value validation because JS is dynamic. WeakRef/FinalizationRegistry cannot guarantee timely cleanup. Use explicit dispose. DataRef and views refer to compatible native/WASM memory only. Arbitrary JS heap cannot be assumed shareable.
+**Types and memory:** checked Number for small integers, BigInt for exact 64-bit, string UTF-16 validation, Uint8Array for copied bytes, Map/Set, tagged result and variants, runtime value validation because JS is dynamic. WeakRef/FinalizationRegistry cannot guarantee timely cleanup. Use explicit dispose. DataRef and views can own or borrow compatible local JS storage under section 13.7, or native/WASM memory through proven adapters. Arbitrary JS heap cannot be assumed addressable from WASM/native code.
 
 **Provider and consumer:** Promise, typed callable shape at runtime, AsyncIterable, AbortSignal adapter and generated provider registration. Maintain rooted JS references while native handles are alive. Prevent calls after module teardown. Handle synchronous reentrancy and asynchronous microtask completion. Use worker/message dispatch only with explicit transfer/sharing contract. No cross-worker raw pointers.
 
@@ -4930,7 +5044,7 @@ Add focused regressions for the remaining cross-contract risks, reusing existing
 | value.float32-boundary | Round ties, preserve signed zero/subnormals, explicit NaN/infinity and reject finite overflow |
 | value.nested-legality | Reject forbidden borrowed/void/weak/stream positions through generic and external expansion |
 | dart.portable-api | One actual installed API for native and Web; BigInt signed/unsigned limits across nested fields and arrays; reject incompatible prebuilt Dart profile |
-| apple.module-default | Distinct derived Clang/Swift module names and actual unified import, both standalone and paired |
+| apple.module-default | Unsuffixed actual mixed public module in both languages; standalone uses derived name; separate modules only by explicit layout |
 | config.yaml-strict | Duplicate keys, unsafe tags and cyclic/unbounded alias input fail with source diagnostics |
 | output.incremental-integrity | Detect edited owned file, missing file, incompatible target filter and incomplete manifest; explicit owned regeneration only |
 | abi.identity-fingerprint | Naming-only change preserves canonical ABI; field/order/ownership/signature changes reject incompatible adapters; same identity with mismatched descriptor fails |
@@ -4965,6 +5079,35 @@ Maintain an independent concrete lowering inventory for every built-in and legal
 | apple.mixed-public-module | Installed Swift import Ubook and Obj-C @import Ubook; no required technical suffix; explicit separate layout validated |
 
 Test argument, result, nested ownership, failure, cancellation and detach on actual supported runtime pairs using independent values, root/owner counters, sanitizers and lifecycle evidence. Keep cases planned until actual execution; blocked evidence does not pass. Review relevant Djinni support source and official SDK rules during adapter implementation without claiming documentation alone proves correctness.
+
+### 18.13 Consolidated semantic, ABI and lifecycle acceptance
+
+Extend the existing finite case inventory with these distinct risk paths. Existing cases that cover the same invariant may share fixtures and evidence, not contradict it. All cases remain planned until actual execution. Require independent expected semantic values, layout facts, allocation/lease counters and host teardown evidence.
+
+| Case ID | Required observation |
+| --- | --- |
+| types.compound-equality | Deep immutable snapshots; ordered/unordered structural comparison, NaN/signed-zero, reference leaves and no forbidden keys |
+| types.recursive-value | Cyclic host value rejected; repeated acyclic subvalue legal; depth and cumulative budget enforced |
+| types.void-result | Real compiler-valid no-payload business Result in every target, including async and nested optional |
+| types.boolean-array | No vector<bool> raw buffer; exact 0/1 canonical byte conversion and packed-host arrays |
+| types.flags-mask | Named single bits, legal combination, bit31, zero and rejected unknown/duplicate masks |
+| types.external-rollback | Partial adapter conversion unwinds acquired owners on correct host, preserves primary failure |
+| abi.layout-validation | Real offsets, sizes, alignment, endian/call profile, tags, empty outputs and function table compatibility |
+| abi.recursive-contract | Mutually recursive interfaces produce stable digest independent of traversal; dependency change detected |
+| memory.oom-error | No allocation needed for failure status; accepted completion and cleanup survive detail/log allocation failure |
+| memory.release-rejected | Rejected cleanup preserves resources, pending drain failure, owner resume once or explicit irrecoverable host loss |
+| memory.uninitialized | Allocate exposes zeros; invalid adoption leaves caller owner; no residual bytes or uninitialized export |
+| memory.partial-write | Failed mutable borrow preserves actual prior writes, no hidden rollback; explicit copy path independent |
+| memory.code-lifetime | Last public owner vs active lease; library/deleter/function table retained through required cleanup |
+| memory.aggregate-budget | Concurrent reservations, queued shared-buffer charges, root and operation budgets roll back/transfer exactly |
+| memory.js-local-owner | Pure JS DataRef usable without WASM; cross-domain sharing rejected or explicit copy |
+| async.capture-boundary | Eager wrapper capture before publication; Python prepared cold capture/disposal; suspend entry and inline completion |
+| async.enqueue-race | Inline execution vs enqueue return/rejection, canceled posted work, exactly one claim and cleanup |
+| stream.abandoned-iterator | Explicit early exit closes subscription per host; never-consumed source and unclaimed acquisition released |
+| cancel.authority | Observer token cannot cancel siblings; source dispose distinct from cancel; atomic observation/removal |
+| apple.public-contract-owner | Mixed Swift/Obj-C import has one actual short Swift contract; bridge name not required in public consumer |
+
+Before phase-2 adapter work, freeze the ABI header, handle encoding, numeric status assignments, canonical encoding golden digests and layout inventory with independent C/C++ and foreign FFI proof. No platform may claim compatibility from source emission alone. Execute the existing per-target and cross-language conformance matrix on the actual supported runtime and verify release counters after cooperative drain; record externally destroyed host limitations as such. Avoid redundant test suites, arbitrary sleeps and unsupported synthetic platforms.
 
 ## 19. GitHub Actions
 
@@ -5142,7 +5285,7 @@ Use GitHub-renderable Mermaid diagrams throughout PROJECT.md for every major fea
 
 AGENTS.md directs contributors to PROJECT.md, requires original source, English code/docs, small dependencies, test-driven development, deep reviews and honest reporting of capability status. No bypassing the generated adapters or disabling tests to pass CI. Provide repeatable development commands and update documentation with behavior changes.
 
-Documentation files cover getting started, IDL grammar and type system, modules/configuration, naming, annotations, layout/imports, external types, runtime/ABI, memory/ownership, async/callbacks/streams, optional registry, all language/platform integrations, application examples, test matrix, contribution, troubleshooting and releases. Validate snippets and links against actual implementation.
+Documentation files cover getting started, IDL grammar and type system, modules/configuration, naming, annotations, layout/imports, external types, runtime/ABI, memory/ownership, async/callbacks/streams, optional registry, all language/platform integrations, application examples, test matrix, contribution, troubleshooting and releases. Provide dedicated docs/type-mapping.md, docs/memory-management.md, docs/ownership.md, docs/data-buffers.md, docs/threading.md, docs/runtime-lifecycle.md, docs/callbacks.md, docs/streams.md and docs/troubleshooting.md (consolidate overlapping material by cross-link, not duplicate contracts). For each API explain value versus reference, owner, transfer point, mutation, explicit close, permitted executor, partial failure and forced host loss, including native and managed examples verified by the existing conformance suite. Validate snippets and links against actual implementation; do not claim guides are delivered before code exists.
 
 ### 20.4 Native build system and CMake organization
 
@@ -5676,9 +5819,9 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Define and implement the versioned C ABI, fixed-width layout, typed function tables, opaque generation-checked handles, logical IDs and distinct semantic/ABI/public artifact fingerprints from section 12.6. Reject incompatible artifacts, with no compatibility translation.
 - [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters, explicit static contract bindings and typed context/attachment lifecycle controls with reentrant drain protection. Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
-- [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics. Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
-- [ ] Implement async terminal state, inline and deferred completion, error/cancel propagation and callback rooting. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
-- [ ] Implement distinct owning stream acquisition and subscription, default single-subscription semantics, bounded streams, default capacity, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
+- [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics, retirement states, code-loader leases, zero initialization, partial-write behavior and aggregate reservations (sections 13.5–13.8). Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
+- [ ] Implement async capture/preparation/acceptance, inline and deferred completion, error/cancel propagation, source authority, scheduler-rejection cleanup and callback rooting under section 14.4. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
+- [ ] Implement distinct owning stream acquisition and subscription, default single-subscription semantics, explicit host source/iterator disposal, bounded streams, default capacity, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
 - [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, context-bound registries, Reject/Replace/ScopedOverride, unique tokens, missing-service errors, atomic removal/restoration, retained providers and explicit delegation. Replace clears the full stack; scoped removal restores only still-live registrations. No implicit alternate-provider retry.
 - [ ] Implement per-attachment registration ownership, generation-checked admission, partial detach and safe invalidation of fixed references to closing runtimes. Verify independent registries/engines, registration-owner versus actual provider attachment, atomic admission and dispatch gating, owner-specific active/hidden removal, in-flight execution, safe release outside locks and hot restart without stale tokens affecting newer registrations. Prove the deterministic lifecycle fixtures in section 18.8.
 - [ ] Support application-defined single-listener and multi-listener subscription patterns using existing typed callbacks/interfaces and streams. Verify scoped/retained/one-shot callback lifetimes, replace/clear, independent cancellation, no new admissions after removal, unclaimed subscription cleanup, reentrancy, bounded delivery and error propagation, async stream acquisition, explicit stream rebinding and owner-specific cleanup without a new global event bus.

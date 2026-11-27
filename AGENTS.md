@@ -54,6 +54,10 @@ Modules are the unit of logical generation. Libraries aggregate modules for unif
 
 The following tables mirror the planned contract in PROJECT.md section 5.4. Keep the two copies identical when modifying a mapping. These are required target mappings, not evidence of implemented support. A backend must not invent a different representation merely to pass its tests.
 
+### Cross-runtime semantic and memory gates
+
+Apply PROJECT.md sections 5.4.4, 12.7–12.8, 13.6–13.8 and 14.4.1–14.4.4. Immutable value models must not expose mutable aliased value leaves; preserve reference capabilities and explicit ownership. Use canonical structural equality only where defined, distinguish payload-free business Result from optional absence and avoid vector<bool> raw-buffer assumptions. Detect recursive value graphs and compute fingerprints from a finite canonical descriptor graph. Freeze actual C/WASM ABI profiles, layouts, handle encoding and status values before claiming adapter compatibility. Allocation-independent status and pre-reserved cleanup are required; do not run a rejected thread-affine deleter on an arbitrary thread. Retire storage only after last owner and access lease, and retain executable code through pending cleanup. Safe allocations expose initialized bytes, mutable borrowed writes are not rolled back, aggregate budgets reserve before use. Capture async arguments before acceptance/publication, respecting explicit native lazy invocation semantics. Cancellation observation is not source authority; disposal is not cancellation. Own and explicitly dispose stream acquisition and subscription separately. Mixed Apple public imports use one unsuffixed module and one visible Swift contract, without conflicting imported/native protocols. Verify actual host-specific lifecycle evidence and document user ownership/cleanup per feature. Never mark a planned test passed.
+
 ### Canonical type mapping
 
 These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
@@ -128,7 +132,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | `std::vector<T>` | `List<T>` (boxed) | `List<T>` | NSArray of boxed/typed objects | [T] |
 | `set<T>` | std::set / hash set | `Set<T>` | `Set<T>` | NSSet of canonical keys | `Set<T>` or canonical-key wrapper |
 | `map<K,V>` | std::map / hash map | `Map<K,V>` | `Map<K,V>` | NSDictionary with canonical keys/boxed values | `Dictionary<K,V>` or canonical-key wrapper |
-| `array<T>` | std::vector / array wrapper | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
+| `array<T>` | std::vector / exact typed wrapper (bool uses wrapper) | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
 | `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
 | `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
@@ -176,17 +180,17 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
 | `callback` | Callable | Typed function | Typed function | Delegate | Function | Typed function |
-| `async method / callback` | Awaitable / async def | Future | Future | Task | Promise | Promise |
-| `Stream<T>` | AsyncIterator | Stream | Stream | `IAsyncEnumerable<T>` | AsyncIterable | `AsyncIterable<T>` |
+| `async method / callback` | Awaitable (capture wrapper; async def provider) | Future | Future | Task | Promise | Promise |
+| `Stream<T>` | Owning async iterable / iterator adapter | Owning Stream adapter | Owning Stream adapter | Owning `IAsyncEnumerable<T>` adapter | Owning AsyncIterable adapter | Owning `AsyncIterable<T>` adapter |
 | `WeakRef<T>` | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper | Weak handle wrapper |
 | `CancellationToken` | Token wrapper | Token wrapper | Token wrapper | CancellationToken adapter | AbortSignal adapter | AbortSignal adapter |
 | `date` | datetime.date | Calendar date wrapper | Calendar date wrapper | DateOnly | Calendar date wrapper | Calendar date wrapper |
 | `timestamp` | Exact wrapper + aware datetime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + UTC DateTime conversion | Exact wrapper + DateTimeOffset conversion | bigint + Date conversion | bigint + Date conversion |
 | `duration` | Exact wrapper + timedelta conversion | Exact wrapper + Duration conversion | Exact wrapper + Duration conversion | Exact wrapper + TimeSpan conversion | bigint nanoseconds | bigint nanoseconds |
 | `uuid` | uuid.UUID | UUID wrapper | UUID wrapper | Guid | Canonical UUID string | Canonical UUID string |
-| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked linear-memory view | Checked linear-memory view |
+| `DataView` | Checked read view | Checked read view | Checked read view | Scoped read-only access | Checked host/linear-memory view | Checked host/linear-memory view |
 | `MutableDataView` | Checked write view | Checked write view | Checked write view | Scoped writable access | Checked writable memory view | Checked writable memory view |
-| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Linear-memory owner | Linear-memory owner |
+| `DataRef` | Retained buffer owner | FFI buffer owner | Web buffer owner | SafeHandle / owner | Host or linear-memory owner | Host or linear-memory owner |
 | `external` | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter | Declared type / adapter |
 
 Java unsigned values use checked wider types. Kotlin uses exact unsigned types with checked JNI bit conversions. Python integers and JavaScript Number inputs are checked, including rejection of Python bool as an integer. JavaScript and Dart Web must not convert exact 64-bit values through JavaScript Number. Use BigInt or an exact checked bit representation at the adapter boundary. A JS or WASM signed bit pattern is not the mathematical unsigned value until it has been decoded. Numeric arrays use exact contiguous representations only where available. Float32 uses the checked rounding rules in PROJECT.md section 5.4.1. Strings use validated UTF-8 with explicit lengths, including embedded NUL. Invalid UTF-8 or unpaired surrogates fail. C bool accepts only 0/1. Record and collection values do not share mutable object identity. Interface and DataRef references retain ownership explicitly.
