@@ -23,6 +23,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [One Dart API across native and web](#542-one-dart-api-across-native-and-web)
   - [Concrete lowering rules for every type family](#543-concrete-lowering-rules-for-every-type-family)
   - [Compound values, equality and non-void host generics](#544-compound-values-equality-and-non-void-host-generics)
+  - [Initialization, destruction and execution-domain properties of types](#545-initialization-destruction-and-execution-domain-properties-of-types)
   - [Built-in date and time types](#56-built-in-date-and-time-types)
   - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
   - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
@@ -59,6 +60,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Handle identity, contract fingerprints and start/completion invariants](#126-handle-identity-contract-fingerprints-and-startcompletion-invariants)
   - [Physical ABI baseline and compatibility gates](#127-physical-abi-baseline-and-compatibility-gates)
   - [Canonical recursive contract fingerprints](#128-canonical-recursive-contract-fingerprints)
+  - [Explicit initialization, construction and teardown](#129-explicit-initialization-construction-and-teardown)
 - [13. Memory and buffers](#13-memory-and-buffers)
   - [Reference and value ownership matrix](#1321-reference-and-value-ownership-matrix)
   - [Host-specific memory and execution rules](#1322-host-specific-memory-and-execution-rules)
@@ -81,6 +83,8 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Cancellation authority and observer lifetime](#1442-cancellation-authority-and-observer-lifetime)
   - [Scheduler rejection and shutdown accounting](#1443-scheduler-rejection-and-shutdown-accounting)
   - [Stream and callback adapter lifecycle](#1444-stream-and-callback-adapter-lifecycle)
+  - [Threads, executors, event loops and asynchronous I/O](#147-threads-executors-event-loops-and-asynchronous-io)
+  - [Language and platform execution profiles](#1474-language-and-platform-execution-profiles)
 - [15. Interfaces and service discovery](#15-interfaces-and-service-discovery)
   - [Direct references and service registry flows](#155-direct-references-and-service-registry-flows)
   - [Registry identity, contexts and public API](#156-registry-identity-contexts-and-public-api)
@@ -90,6 +94,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
 - [16. Language-specific integration](#16-language-specific-integration)
   - [Host attachment and disposal integration](#1620-host-attachment-and-disposal-integration)
 - [17. Example applications](#17-example-applications)
+  - [HTTP execution, ownership and cancellation across all targets](#1721-http-execution-ownership-and-cancellation-across-all-targets)
 - [18. Test specification](#18-test-specification)
   - [Coverage and test design policy](#180-coverage-and-test-design-policy)
   - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
@@ -99,6 +104,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Cross-boundary consistency checks](#1811-cross-boundary-consistency-checks)
   - [Type and ownership audit acceptance](#1812-type-and-ownership-audit-acceptance)
   - [Consolidated semantic, ABI and lifecycle acceptance](#1813-consolidated-semantic-abi-and-lifecycle-acceptance)
+  - [Execution-domain, initialization and HTTP conformance](#1814-execution-domain-initialization-and-http-conformance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
@@ -732,7 +738,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `async method / callback` | Operation with asynchronous completion | Completion + operation handle | Operation handle + completion |
 | `Stream<T>` | Owning stream; separate subscription | Stream handle + subscription handle | Stream handle + subscription handle |
 | `WeakRef<T>` | Reference that does not retain the object | Weak handle | Context-local weak handle |
-| `CancellationToken` | Cooperative stop signal | Token handle | Token handle |
+| `CancellationToken` | Owning cancellation observation; no source authority | Token handle | Token handle |
 | `date` | Calendar date, without a time | int64_t epoch days | i64 epoch days |
 | `timestamp` | UTC instant, exact microseconds | int64_t UTC microseconds | i64 UTC microseconds |
 | `duration` | Signed elapsed nanoseconds | int64_t nanoseconds | i64 nanoseconds |
@@ -903,6 +909,28 @@ Flags have a uint32 known-bit mask formed by declared distinct single-bit nonzer
 Names for generated wrappers follow the configured target naming plan. Kotlin's standard Result has one type parameter and exception semantics; do not use it as an arbitrary two-parameter business Result. A host-only Unit/Void/None placeholder never becomes an active ABI payload. Nested success tags and optional absence remain distinct. Async wrappers contain this exact specialization (e.g. Task<VoidResult<E>>), not a bare Task which drops the business outcome.
 
 C++ list<bool> may use std::vector<bool> with element-wise conversion; array<bool> defaults to a typed owner with canonical 0/1 byte storage and checked boolean access, not a purported contiguous bool pointer from std::vector<bool>. C++ vector<bool> is not a contiguous bool array. Other vectors may use contiguous primitive optimizations only after proving actual element representation, layout, alignment, aliasing and lifetime. Java/Kotlin boolean arrays are not a promise of raw byte layout either. A canonical C boolean buffer is explicit uint8_t 0/1; validate every element before exposing it as boolean. Do not reinterpret managed object or packed bit storage as native array storage.
+
+#### 5.4.5 Initialization, destruction and execution-domain properties of types
+
+Every concrete lowering has an explicit construction/destruction plan in addition to its conversion plan. Classify a type independently by value versus capability semantics, initialization state, resource ownership, mutability, thread/host affinity, permitted transfer, and required cleanup. Being an immutable value or an owning reference does not by itself imply thread safety or Swift Sendable. A capability's descriptor can be carried as an owning reference across supported attachments in one context; actual use, retain/release and host conversion must obey the underlying owner's execution domain. Never pass a foreign host object, thread-local state, task, coroutine, future, OS thread or native pointer as an untyped IDL value.
+
+| Type category | Initialization and destruction | Thread/async contract |
+| --- | --- | --- |
+| Scalar, enum, flags, date, timestamp, duration, UUID | Validate exact width, range and assigned values; no owned payload | Snapshot value; no host pointer identity |
+| string / bytes | Fully validated initialized content, explicit length; destroy matching owned storage | Independent snapshot; immutable storage optimization only with proven lifetime |
+| record / list / array / map / set | Construct children transactionally; publish only after success; destroy only initialized active children | Recursively snapshot value leaves and retain capability leaves; container mutability is not thread safe |
+| optional / Result / variant | Initialize storage, then active branch, then publish valid tag; destroy only owned active payload | Transfer the tag and active child, not inactive union memory |
+| interface / retained callback | Validate provider descriptor, own host root and code lease before publication | Handle transport does not permit invocation on arbitrary executor; use owner admission |
+| WeakRef | Initialize a validated nonowning identity; release weak metadata; never retain object implicitly | Atomic strong acquisition only while origin and provider are live |
+| CancellationToken | Retain observation state, not source authority | Atomic sticky signal/observer bookkeeping; no implicit cancel on destruction |
+| DataRef | Fully initialized owner, range, deleter and access policy | Owning handle may cross async; actual data access requires storage-specific lease; not automatically immutable data |
+| DataView / MutableDataView | Valid scoped borrow with initialized range; release access lease | Synchronous direct argument only; no dispatch/queue/escaping capture |
+| Stream | Initialize owning source capability; subscription is separate | Async acquisition/result and separate bounded delivery ownership; no implicit producer thread |
+| External type | Use canonical expanded type plan and explicit adapter ownership | No automatic cross-host transfer of its native representation; convert on permitted domain |
+
+For an owning C aggregate, distinguish raw storage, initialized-empty storage, fully constructed value, moved-from initialized-empty storage and destroyed storage. Only the initialized-empty state may be passed as an out slot; generated init/destroy/clone/move helpers enforce the documented convention. The final ABI must provide an independent initialization-state mechanism where a zero tag also denotes a real owning variant or Result branch: zeroed memory is not a promise that an arbitrary required value is valid. Do not read a tag from uninitialized storage, free a stale pointer or destroy a moved-from child twice. On failed construction leave the out slot initialized-empty, with no active payload; track initialized children locally until commit. An initialized-empty required value cannot be consumed as a valid record/result. No default constructor that fabricates a required provider, callback, token, enum, date or reference; generate required-argument constructors and checked factories. Optional absence, empty string/bytes/collection, zero numeric and payload-free success remain valid distinct semantic values. Language-native finalizers/destructors are backup or RAII where supported, not a replacement for thread-affine drain. The same contract applies to constants/defaults, callbacks, future results, stream items and external types. Do not claim host mutable inputs can be read atomically while another thread mutates them: the caller must synchronize, use immutable snapshots or transfer exclusive ownership during capture.
+
+Validate temporal and numeric operations as well as boundary representation: conversion of signed epoch microseconds/nanoseconds must avoid intermediate overflow at both int64 extremes (including negating INT64_MIN or multiplying truncated seconds); use checked arithmetic or a proven wider intermediate. C++ chrono conversions and Swift Duration, JVM Instant/Duration, .NET ticks and Dart/Python conversions may not use unchecked casts or silently overflow. Native convenience operations on public wrappers must reject unrepresentable results; pure host arithmetic is outside the generated contract. A date value validates Gregorian components and the defined 0001–9999 range before constructing a native date object. A null/empty native descriptor is not automatically a valid UUID/date/reference. Test default construction, partial init, move/clone, nested capability ownership, concurrent mutation contract and exact boundary arithmetic.
 
 ### 5.5 Per-type acceptance
 
@@ -1845,7 +1873,7 @@ Keep presentation/build options, context creation options and declaration semant
 | Logging | info; diagnostics on stderr; debug/quiet configurable |
 | Diagnostics | human-readable; JSON on request |
 | Visibility | IDL declarations public unless private; generated marshalling helpers internal |
-| Dispatch | existing owning executor; no per-call threads; explicit affinity where required |
+| Dispatch | existing owning executor; no per-call threads or automatic worker pool; explicit affinity and bounded dispatch under section 14.7 |
 | Registry | Reject; no implicit context creation |
 | Direct callback | scoped |
 | Stream | ordered bounded lossless demand (section 14.3.1) |
@@ -2404,7 +2432,7 @@ interface Camera {
 }
 ```
 
-Universal annotations carry defined semantic meaning. For callback parameters, @ownership accepts the scoped, retained and one-shot lifetime values defined in section 14.2, including optional callback parameters. It is validated on the parameter and does not change the callback's synchronous/asynchronous signature. An executor/thread annotation must affect dispatch, not just comments. Readonly semantics must be enforced by generated APIs and runtime where required. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
+Universal annotations carry defined semantic meaning. The allowed thread/executor annotation vocabulary, inheritance and runtime enforcement are defined in section 14.7.2. For callback parameters, @ownership accepts the scoped, retained and one-shot lifetime values defined in section 14.2, including optional callback parameters. It is validated on the parameter and does not change the callback's synchronous/asynchronous signature. An executor/thread annotation must affect dispatch, not just comments. Readonly semantics must be enforced by generated APIs and runtime where required. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
 
 ### 9.2 Language-specific annotations
 
@@ -3184,7 +3212,7 @@ Both directions use the same declared types. A runtime error or cancellation com
 
 ### 12.4 Contexts, attachments and admission
 
-The C ABI must distinguish the lifetime of the native context, the lifetime of each host attachment and the lifetime of an individual handle. An attachment represents one independently closable execution domain and its scheduler, not a programming language. A JVM attachment may serve both Java and Kotlin; an Apple attachment may serve Swift and Objective-C; two Dart isolates require distinct attachment identities. An application-owned native attachment can outlive a Flutter engine. A browser context is tied to the intended WASM runtime instance and its host adapters.
+The C ABI must distinguish the lifetime of the native context, the lifetime of each host attachment and the lifetime of an individual handle. An attachment represents one independently closable host execution/lifetime domain with its bound executor(s), not a programming language or necessarily one OS thread. Every bound executor has an explicit identity, capability and lifetime under section 14.7. A JVM attachment may serve both Java and Kotlin; an Apple attachment may serve Swift and Objective-C; two Dart isolates require distinct attachment identities. An application-owned native attachment can outlive a Flutter engine. A browser context is tied to the intended WASM runtime instance and its host adapters.
 
 | Resource | Identity and owner | Closing rule |
 | --- | --- | --- |
@@ -3197,7 +3225,7 @@ The C ABI must distinguish the lifetime of the native context, the lifetime of e
 
 The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, explicit static binding/acquisition, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
 
-Contexts and attachments have Opening, Open, Closing and Closed states. Opening admits no business work. Closing is irreversible for that generation: reject new work, allow idempotent cleanup, drain admitted execution and required releases; Closed retains only the validation/control metadata necessary for safe late release. A failed or timed-out drain remains Closing and can be inspected or resumed by the owner; it must not reopen or be reported as closed. A successful replacement/restart attaches a new generation. A host object wrapper may outlive its target attachment, but it cannot resurrect its adapter.
+Contexts and attachments have Opening, Open, Closing and Closed states. Opening admits no business work. Initialization failure with mandatory cleanup pending transitions to Closing, not Closed, and preserves an owner-controlled rollback/drain result (section 12.9). Closing is irreversible for that generation: reject new work, allow idempotent cleanup, drain admitted execution and required releases; Closed retains only the validation/control metadata necessary for safe late release. A failed or timed-out drain remains Closing and can be inspected or resumed by the owner; it must not reopen or be reported as closed. A successful replacement/restart attaches a new generation. A host object wrapper may outlive its target attachment, but it cannot resurrect its adapter.
 
 Define invocation admission as the atomic validation and acquisition of the necessary runtime-owned execution references while the caller and target attachments are Open. A dynamic registry lookup and acquisition of the selected provider for a call are one admission transaction. After ordinary registration removal, an already admitted operation can complete. Closing a participating attachment additionally requests cancellation and prevents any not-yet-started host execution from entering a closing executor. Check the attachment generation and lifecycle again at the host dispatch gate, without resolving the registry again. If dispatch is denied after the operation was accepted, complete the still-live consumer with the appropriate cancellation or lifetime status and release the owning envelope exactly once. A close request racing with dispatch must either prevent entry or account for that execution in the drain. No check-then-call gap may permit untracked execution.
 
@@ -3207,7 +3235,8 @@ Pin internal control blocks and reference state under the appropriate synchroniz
 stateDiagram-v2
     [*] --> Opening
     Opening --> Open: Initialization succeeds
-    Opening --> Closed: Roll back initialization
+    Opening --> Closing: Initialization failed; revoke and drain rollback
+    Opening --> Closed: Rollback complete without pending cleanup
     Open --> Closing: Close admission
     Closing --> Closing: Drain incomplete
     Closing --> Closed: Execution and releases drained
@@ -3225,7 +3254,7 @@ Expose equivalent typed lifecycle operations on every target. Context-control au
 | Operation (semantic name) | Contract |
 | --- | --- |
 | createContext(options) | Explicit new isolated context, returns owning control |
-| attach(context, executor) | Attach current host domain to a compatible Open context |
+| attach(context, executor) | Attach current host domain to a compatible Open context with explicitly bound executor(s) |
 | defaultRegistry(attachment) | Obtain default registry for explicitly selected attachment |
 | createRegistry(attachment) | Create independent registry and close authority |
 | bindStatic(attachment, descriptor, implementation) | Explicit binding per section 4.6 |
@@ -3261,6 +3290,45 @@ Runtime errors use an allocation-independent status code, including resource exh
 ### 12.8 Canonical recursive contract fingerprints
 
 Compute fingerprints over a canonical graph, not recursively nested hashes of neighbors. Build the complete reachable closure of concrete declared types, operations, generic specializations, external canonical mappings and contract-relevant semantics. Each node has a stable case-sensitive logical ID and kind. Encode nodes sorted by logical ID (UTF-8 byte ordering), references as length-delimited logical IDs, and declared ordered fields/arguments/variant alternatives in contract order. Include explicit normalized tags, widths, defaults, ownership, execution/cancellation semantics and relevant constraints. Sort unordered semantic sets by their canonical encoding; do not sort ordered declarations or include generated names, paths, comments, timestamps or filesystem order. Encode signed/unsigned numeric literals exactly and canonical string UTF-8, not host JSON float coercion. Use versioned length-delimited encoding with domain separators for semantic, ABI and public artifact hashes and SHA-256. Include the root logical ID and its reachable canonical node table in a root digest; cycles through reference types terminate because each logical node is visited once. A dependency's change changes every root digest whose closure actually reaches it. No iterative fixed-point hash or language-native hashCode. For ABI digests include the compatible semantic closure and physical lowering/profile/layout inventory; presentation-only changes must not alter those two digests. Public signature and artifact-content fingerprints remain separate where formatting changes bytes without changing API. Freeze encoding and golden digests independent of traversal order; test mutually recursive interfaces, nested concrete generics, renamed generated symbols and changed dependent field. Reject recursive expansion without finite concrete identity. Do not conflate a legal reference cycle with an illegal infinitely sized by-value layout.
+
+### 12.9 Explicit initialization, construction and teardown
+
+Do not conflate loading generated code, creating a core, attaching a host, binding an executor, constructing a provider, registering a service, starting an operation and starting an application-defined service. Each step has an independent owner and outcome. Importing a package or loading a dynamic library may initialize language metadata and static constants; it must not create a context, launch workers, register providers, open sockets or infer the caller's UI executor. A native library may provide an explicit initialization entrypoint for its resources. Do not run application teardown from DLL loader callbacks, static destruction order, interpreter finalization or an arbitrary GC finalizer.
+
+| Resource | Creation and publication | Close/destroy responsibility |
+| --- | --- | --- |
+| Runtime core/context | Explicit owner creates and validates ABI/profile and resource options | Context control revokes all affected work, drains, then releases core resources; ordinary references have no shutdown authority |
+| Executor binding | Host supplies valid scheduler, affinity test, enqueue/abandon/cleanup contract and ownership | Borrowed executor stays host-owned; transferred/owned executor stops only after dependent work and releases drain |
+| Host attachment | Reserve identity, acquire roots and executor/loader leases, bind dispatch and publish Open atomically | Attachment control closes this domain only; unrelated live attachments remain |
+| Provider object / static facade | Construct actual provider, validate and root adapter before exposing reference | Release provider ownership on allowed domain; business close/stop is not inferred from its name |
+| Registry / registration | Explicit registry and token; validate all required provider/owner roots before publication | Registry close removes discovery; token release removes only its generation; fixed references can survive |
+| Operation / cancellation source | Prepare captured arguments and reserves; publish accepted operation once; source independently owns observation state | Operation cancel revokes its own delivery; source dispose is not cancellation; actual execution drains |
+| Stream / subscription / listener | Acquire source, then distinct delivery identity and owners | Explicit consumer disposal/cancel; source-close authority distinct; drain admitted deliveries |
+| Value / buffer / external resource | Transactional init and matching allocator/owner; no partially built value escapes | Destroy only active initialized ownership; last owner and leases end before deleter/code release |
+
+Use a preparation transaction for context/attachment initialization. Verify the core descriptor and host capability, resolve the selected executors, acquire loader and host leases, allocate the control record and release bookkeeping, install callbacks and publish the generation as Open only when all are ready. Reserve parent-context admission before starting attachment setup; if the context closes concurrently, either attachment publication wins and the context includes it in drain or publication is denied and the parent tracks rollback. No untracked Opening attachment may acquire roots after the parent considers itself drained. Roll back in reverse acquisition/dependency order on failure; never close a borrowed application scheduler or existing core as a side effect. If rollback needs a pending host release, expose a failed initialization outcome and an owning cleanup/drain control to the embedding owner (or retain it in the parent with visible failed-init diagnostics), not a usable attachment or a falsely closed record. Initialization retries are explicit new identities, only after safe disposition of prior resources; no reuse of failed generation or callback address. A failed core initialization similarly retains necessary cleanup control until drain. Distinguish recoverable configuration failure from host termination or incomplete cleanup.
+
+Construction of user-defined objects is through explicit generated value constructors or IDL factories (section 4.6); do not infer cross-language construction from a host class name. For an async factory, owning result is published only after fully constructed; caller cancellation/failed conversion releases an unclaimed owner through the provider's documented cleanup. Application services that open files, sockets, sensors or worker pools should expose explicit async lifecycle methods as appropriate and implement their own business states, e.g. Created, Starting, Running, Stopping, Stopped/Failed. Their stop/close must coordinate with their provider's actual operations and resources; the runtime does not automatically invoke a method named start, stop, close or dispose on an ordinary interface. Document which application owner calls it before detaching and what happens to failed/partially started services. The generated control close/release operation remains distinct. For a restart, use a new application/provider generation or an explicitly documented restartable business contract; runtime attachment generations never reopen.
+
+Cooperative teardown sequence: stop application intake and request service-specific stop where required; revoke affected runtime admission and discovery; cancel operations/subscriptions; let actual execution and host-affine cleanup drain; close adapter callback entry points; release attachment and owned executor/loader resources when no dependency remains; finally destroy the embedding host or shared core if the application owns it and all peers are drained. Avoid circular ownership (a scheduler holding a context that waits for that scheduler to stop). Keep control authority with an external owner not itself dependent on the drain. A user may await asynchronous close from another live execution domain; synchronous destruction cannot block an executor needed by its own cleanup. A native thread may join owned workers only from a safe external domain, never itself or the UI thread. Distinguish cooperative success, timeout/pending cleanup, and irrecoverable external destruction. On forced process exit no language runtime can guarantee all destructor callbacks will run; do not advertise that guarantee.
+
+```mermaid
+flowchart TD
+    A["Load generated metadata"] --> B["Explicitly create or acquire context"]
+    B --> C["Bind host executor and prepare attachment"]
+    C --> D{"All resources valid and parent Open?"}
+    D -->|No| E["Rollback acquired resources; retain cleanup control if pending"]
+    D -->|Yes| F["Publish Open attachment"]
+    F --> G["Create provider and optionally register"]
+    G --> H["Invoke operations"]
+    H --> I["Stop application intake and request service stop"]
+    I --> J["Revoke attachment admission and cancel affected work"]
+    J --> K{"Execution and mandatory releases drained?"}
+    K -->|No| L["Closing; report pending or irrecoverable cleanup"]
+    L -->|Resume on live owner| K
+    K -->|Yes| M["Close callback entrypoints and release attachment"]
+    M --> N["Stop owned executors and unload only when all dependencies end"]
+```
 
 ## 13. Memory and buffers
 
@@ -3492,7 +3560,7 @@ interface HttpClient {
 }
 ```
 
-Async declares a potentially pending operation. Future/Task/Promise represent its result in a target runtime. Await waits without inherently creating a thread. No mandatory Future syntax in IDL.
+Async declares a potentially pending operation. Future/Task/Promise represent its result in a target runtime. Await suspends where supported without inherently creating a thread; section 14.7 defines real execution domains, affinity and scheduling. No mandatory Future syntax in IDL.
 
 ```cpp
 auto response = co_await client->request(request);
@@ -3503,7 +3571,7 @@ val response = client.request(request)
 ```
 
 ```swift
-let response = try await client.request(request)
+let response = try await client.request(input: request)
 ```
 
 ```dart
@@ -3577,7 +3645,7 @@ A library-owned stream or runtime registration control handle may define last-ow
 
 Each operation has one caller-visible terminal transition: success, failure or cancellation. Synchronous runtime failures are reported through each target's documented error mechanism and do not unwind across the C ABI. An operation that cannot start fails immediately and must not also deliver a completion. Once the provider accepts the operation, its terminal outcome is delivered through the completion contract even if it happens inline before the start function returns. Initialize caller completion state and retain the start-call resources before invoking the provider. A completion that runs inline must not free state still needed by the start call. Separately track actual provider execution lifetime. Cancellation cannot release resources still used by running code. Safely consume late or duplicate completions and release their owning payloads without calling the consumer again. Handle inline completion before the initiating call returns, completion races, cancellation after completion, late/duplicate responses, errors and teardown. Retain arguments and provider until no execution can use them. Cancellation is cooperative and does not imply a running foreign operation has stopped.
 
-Use existing target executors/event loops. No per-call thread. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation and drains actual execution. Then remove registrations, invalidate handles and release runtime-owned references. Drain the releases these actions schedule while the owning runtimes and executors are still available. Detach only after cleanup finishes. Host-owned references that still require the runtime must be closed or keep it alive until safe release. Cleanup must remain available while new business calls are blocked. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
+Use existing target executors/event loops under section 14.7. No per-call thread or implicit worker pool. JNI attaches correctly, Swift respects actors, Python respects interpreter/GIL and event loop, .NET roots delegates, Dart dispatches to the correct isolate, JS/WASM respects event-loop and memory constraints. Reject unsafe synchronous crossings. Verify callbacks after detach, reentrant calls, no deadlocks, no stranded futures, no leaked references and stable stream termination. Shutdown stops new operations and registrations, requests cancellation and drains actual execution. Then remove registrations, invalidate handles and release runtime-owned references. Drain the releases these actions schedule while the owning runtimes and executors are still available. Detach only after cleanup finishes. Host-owned references that still require the runtime must be closed or keep it alive until safe release. Cleanup must remain available while new business calls are blocked. Never unload a runtime with active callbacks or required releases pending. Report a shutdown failure and retain required resources until safe cleanup is possible.
 
 #### 14.4.1 Capture, acceptance and publication
 
@@ -3873,6 +3941,84 @@ flowchart TD
 
 The conformance suite must exercise actual callbacks in both directions, not merely a simulated event bus. Use the same retained callback and async operation mechanisms already required by the runtime. Do not introduce a separate global listener registry, automatic multicast of service methods or another subscription framework.
 
+### 14.7 Threads, executors, event loops and asynchronous I/O
+
+Threading is an execution contract, not an extra IDL value type or a promise to spawn one OS thread per invocation. Async indicates that the caller can receive a pending result without waiting synchronously for the provider to finish. It does not imply parallelism, a background thread, automatic CPU offload, a specific scheduler, automatic cancellation of I/O or completion on the caller's original OS thread. A Future, Task, coroutine or Promise can complete inline. A synchronous operation executes before return and is legal only on a supported nonblocking-to-dispatch path. A provider may perform quick synchronous setup on its required UI/actor executor and use actual asynchronous transport; long blocking work must not occupy that executor. The bridge is not a network library, task framework or general-purpose thread pool.
+
+#### 14.7.1 Execution domains and scheduler ownership
+
+Distinguish the calling host attachment, provider attachment, selected provider executor, underlying I/O or CPU execution mechanism, completion delivery executor, caller's language-level continuation context and cleanup executor. An attachment may bind several logical executors; an executor can be an OS-thread-affine loop, serial queue, actor, coroutine dispatcher or concurrent pool. A serial executor is not necessarily a fixed OS thread; an actor or coroutine may suspend and resume elsewhere, and serialized segments do not imply an entire async operation is non-reentrant. A single-thread event loop can interleave suspended operations. Thread IDs, TLS, current language and last-created runtime are not authoritative identities. Capture explicit attachment and executor identity in every owning dispatch envelope and carry logical operation identity through nested calls.
+
+Require a small typed host scheduler adapter, integrated with the existing runtime admission and dispatch machinery, with semantic capabilities: stable identity/generation; a validated current-execution predicate; nonblocking submit with accepted/rejected ownership outcome; notification/reclamation of abandoned accepted envelopes; support for allowed synchronous inline invocation; serial/concurrent/affinity declaration; host-affine cleanup submission and cooperative drain. It must reconcile inline execution and submit return via the atomic claim in section 14.4.3. Do not use a host scheduler that can silently discard owning work. A scheduler that cannot report abandonment must be kept alive and drained before destruction or treated as a forced-loss integration with documented incomplete cleanup. Do not execute host code under native bookkeeping locks. A host may supply its existing main loop, worker executor or pool; no required third-party scheduler dependency. Generated code may provide a small native adapter for an explicitly owned bounded worker pool, not one thread per request or one pool per proxy, module or language. Default creates no workers. The owner declares borrowed versus owned executor lifecycle and maintains it until all dependent execution/cleanup leases end. Retaining a scheduler handle does not acquire authority to stop a shared scheduler.
+
+Concurrent providers explicitly opt into parallel execution and prove thread safety of actual provider state and host API. Default provider admission uses its bound owner executor; the provider integration declares whether that executor admits concurrent entries. For a newly supplied generic native provider executor, default serial admission unless explicitly configured concurrent. Serial admission orders entry of ready work and prevents concurrent synchronous execution on that serial executor; it does not hold a lock or strand all other work across await. A provider needing whole-operation serialization implements an async queue/mutex with a documented reentrancy policy; it cannot wait on a nested operation that needs its own exclusive slot. No implicit global serialization across all providers. Preserve stream/listener ordering independently of provider execution policy.
+
+#### 14.7.2 Affinity, annotation and configuration
+
+Use the existing universal @thread annotation, not a second competing annotation system. Allowed strings: "owner" (default, selected provider's bound execution domain), "main" (that provider host's explicitly bound UI/main executor), or "executor:<id>" (explicit named binding in that attachment). A callback declaration may specify the executor required by its actual implementing host; a method annotation does not change where a foreign callback runs. Interface-level annotation is the default for its own operations, explicit operation metadata overrides it; inherited operations cannot weaken their declaring contract. Target attributes such as @swift.main_actor must be compatible with the universal requirement and selected provider; incompatible metadata fails generation/registration rather than dispatching on a wrong thread. No magic "background" that guesses a global queue. Headless hosts with no meaningful main executor reject a required main binding; explicitly named executors enable server/worker integrations without changing the public API. An annotation applies to provider entry, host-dependent conversions and continuations requiring that affinity, not the entire duration of an OS network request or to all unrelated consumer continuations. A provider must remain within its real host affinity rules after suspension. Static bindings follow the same rule. A sync annotation never turns a synchronous IDL method into dispatch-and-block.
+
+```text
+interface ImageService {
+    @thread("main")
+    async show(image: DataRef): void;
+
+    @thread("executor:cpu")
+    async grayscale(image: DataRef): DataRef;
+}
+```
+
+The names main/cpu are logical bindings resolved per provider attachment. The host can bind cpu to its actual supported execution mechanism; an isolate-bound Dart or JS object cannot be moved into another isolate/realm merely by naming a worker. A separate worker attachment with a provider there, or explicit host-supported message/compute adapter, is required. An owner affinity does not guarantee arbitrary CPU offload. A host whose provider only supports main must not register an implementation that cannot satisfy a required cpu binding. At generation validate metadata and required binding IDs; at attachment/registration validate actual capabilities; at each dynamic call validate selected provider and entry generation. Caller continuation uses the host's documented await/continuation mechanism or an explicit supplied delivery executor; no universal promise to resume on the initiating thread. Host conversion and callbacks run only on their required domain. Cleanup uses the original resource owner's executor, not necessarily the provider invocation executor.
+
+```yaml
+defaults:
+  runtime:
+    executor:
+      max_pending_dispatch: 64
+```
+
+This is a generator-provided runtime initialization default, not a new hidden runtime configuration file. Define defaults.runtime.executor.max_pending_dispatch as a positive integer, default 64 pending business dispatch envelopes per bound executor, configurable through the typed context/attachment options. An explicitly supplied live context/attachment retains its own policy. Bind actual scheduler objects, main/named executor mappings, ownership (borrowed/owned) and declared serial/concurrent capabilities through the embedding API; they are not inferred from YAML strings. No auto-created background pool, no automatic host main-loop discovery across unsupported targets. An explicit owned native pool has a positive configured worker count (no default pool); queues remain bounded. Queue limits are independent of stream item/aggregate byte limits: a posted stream delivery must satisfy both and transfer its reservations correctly. Reserve before posting and release only at denied/admitted/finished handoff as appropriate. Ordinary call overload is a typed resource/dispatch error, not unbounded growth; lossless producers use documented async demand/backpressure. Required completion and cleanup have reserved bookkeeping/control paths outside the bounded ordinary business queue, never silently dropped or starved by saturation. Count these paths separately; pre-reserve before accepting work, and respect host delivery capacity and pending release accounting. Do not promise an unbounded priority executor or unbounded finalizer queue.
+
+#### 14.7.3 Sync, async, reentrancy and memory visibility
+
+| Invocation | Required behavior |
+| --- | --- |
+| Synchronous, current domain satisfies owner and method affinity | Validate and pin, invoke inline on supported host path, return typed result before release |
+| Synchronous, foreign thread with explicitly supported direct entry | Allow only when the host and concrete provider declare thread-safe direct synchronous entry and all constraints hold (e.g. native C/C++ or correctly attached JVM worker); no queue-and-wait |
+| Synchronous, incompatible actor/isolate/loop/thread | Fail with unsupported synchronous invocation before entering provider; use async IDL instead |
+| Async, current allowed domain | Prepare before acceptance, may execute inline or suspend according to host and documented API; never run long blocking work inline on a protected loop |
+| Async, different domain | Retain owning envelope, nonblocking dispatch, revalidate attachment and executor on entry, deliver result on allowed consumer domain |
+| Callback in either direction | Independently validate callback owner's affinity, scope, arguments and actual execution; caller's executor is not automatically callback executor |
+| Release / shutdown | Use original resource owner's release domain, asynchronous drain; reject self-wait and preserve pending cleanup |
+
+Define a happens-before relationship between publishing an initialized owning envelope and consuming it; use suitable C11/C++20 atomics/locks and host message publication guarantees, never unsynchronized mutable fields or a volatile flag as a memory barrier. The runtime lock hierarchy must be documented alongside implementation; avoid nested locks when possible and avoid calling arbitrary code, conversion, callbacks, JNI, scheduling, destructors or waiting/awaiting while holding them. Use atomic reservation/claim and pin then unlock. A host reference count protects lifetime, not concurrent data access. An owning DataRef can cross async; actual access still obeys storage leases, synchronization and thread-affine owner. Do not hold borrowed pointers, pinned movable storage or a thread-affine mutex across suspension except a separately proven owning access protocol; default borrowed IDL views never enter async work. No automatic transfer of thread-local storage, JNI env, Python GIL state, Swift actor isolation, Dart objects or UI context. Preserve only documented logical metadata, not ambient user/security credentials. Use actual host continuation context; do not run application completion inline on a random network thread unless host and declared callback explicitly permit it.
+
+Nested A -> B -> A calls are supported only with safe synchronous inline reentrancy or genuine async dispatch. Do not use sync-over-async, blocking Future.get/join, runBlocking, dispatch_sync to the same queue, semaphore waits, Thread.Join, spin waiting or Atomics.wait on protected UI/event loops to force a synchronous cross-host return. Prevent known cycles in runtime-owned waits (self-drain, serial listener recursive publish-and-await, owned worker self-join); for arbitrary business-level async dependency cycles the provider is responsible for its own logic, and cancellation/deadlines are not proof of deadlock freedom. Do not implement a speculative global deadlock detector. Protect the runtime's own locks and admission transactions; test reentrancy with deterministic barriers. A caller using an explicit blocking wait on a safe external native worker may do so only if that worker is not needed by the selected work, callback, completion or drain; no such blocking facade is required for managed targets or browsers. A thread that starts a call is not automatically a valid thread for completion.
+
+#### 14.7.4 Language and platform execution profiles
+
+| Host | Native execution / async mechanism | Required provider and completion integration |
+| --- | --- | --- |
+| C11 | Explicit OS/platform executor or C-compatible host scheduler; callback + operation handle | Use native nonblocking transport or bounded owned workers for blocking work; completion may arrive on worker, dispatch to declared consumer; no universal C11 threads availability assumption |
+| C++20 | std::thread/jthread where supported, host executor/pool, coroutine/PolyGlue awaitable | Coroutines do not create threads; use explicit executor; cooperative stop and join from external owner; no std::async launch-policy assumptions or per-call thread |
+| Java/JNI | Executor/ExecutorService, CompletableFuture, JVM-managed threads | Attach native threads to correct JVM, acquire JNIEnv per thread; use explicit executor for affine continuations; non-async CompletionStage callbacks may run inline on completing thread |
+| Kotlin/JVM/Android | suspend, structured CoroutineScope, injected CoroutineDispatcher | Main for UI, IO only for blocking I/O, Default for CPU where appropriate; native async APIs need no redundant IO thread; cancel owned Job and await actual native work separately |
+| Objective-C | GCD queues, NSOperationQueue, completion blocks | UI on main queue, use async NSURLSession, preserve block roots; completion queue explicit; no dispatch_sync to same serial queue |
+| Swift | Task, actor/MainActor, async throws, structured concurrency | Use actual actor isolation and checked Sendable; async alone does not move CPU work off MainActor; no semaphore bridge, Task.detached only with deliberate safe ownership |
+| Python | asyncio loop per attachment, thread-safe scheduling, optional bounded executor | call_soon_threadsafe/run_coroutine_threadsafe from foreign threads; never block loop via result(); to_thread/executor for blocking I/O when appropriate, keep actual worker lease after Future cancellation; respect interpreter and GIL |
+| Dart native | Isolate event loop, Future/Completer, isolate-bound callable | NativeCallable.listener posts owning async envelope from native worker; isolateLocal only on permitted isolate thread; close after drain; CPU isolates explicit message/ownership transfer, not sharing arbitrary Dart objects |
+| Flutter | Dart isolate plus independent Android/iOS/native host bindings | UI state on owning isolate, platform UI on its main executor, transport on provider's actual mechanism; engine/isolate detach independent of shared core |
+| C# | Task, async/await, ThreadPool, SynchronizationContext/TaskScheduler | True async I/O without Task.Run; Task.Run for deliberate CPU/blocking work; asynchronous continuations where needed, explicit UI dispatch and cancellation, rooted unmanaged callback |
+| JavaScript / TypeScript | Event loop, Promise/microtask, Web Worker or Node worker_threads when available | Fetch/host async I/O without worker; no synchronous promise waits; explicit realm ownership and transfer, no assumption JS object identity crosses worker |
+| WebAssembly | Baseline single-threaded WASM plus JS host event loop; optional proven threaded build | Promise/completion adapter; do not block browser main thread on pthread_join/condition wait; threaded/shared-memory build requires supported environment, worker pool and browser cross-origin isolation where applicable |
+
+The C and C++ baseline does not assume all C11 threads or native threading are supported on every SDK; platform toolchains and configured execution profiles decide. Native worker helpers must be optional and use existing platform/compiler facilities, never a dependency just for async. Kotlin cancellation of a coroutine is not proof that blocking I/O running in an injected dispatcher ended. Java CompletableFuture.cancel does not universally interrupt actual transport; connect provider-specific cancellation explicitly. Swift Task cancellation is cooperative; child tasks and external transport must be accounted for separately. For Python, the GIL is not a replacement for synchronization of native shared state; CPU-bound pure Python may not parallelize on a standard GIL build, and process workers are not local shared-core interop. For Dart, calling an async Dart method does not make blocking FFI safe on the UI isolate; choose a nonblocking native start and explicit callback. Browser and Node capabilities are separate; no auto-enabling shared memory/threads on unsupported web deployment. Do not claim unsupported host embeddings or worker transfer from the table alone.
+
+References for actual adapter review:
+- [Java HttpClient](https://docs.oracle.com/en/java/javase/26/docs/api/java.net.http/java/net/http/HttpClient.html), [Java HTTP package execution rules](https://docs.oracle.com/en/java/javase/26/docs/api/java.net.http/java/net/http/package-summary.html), [Android coroutine dispatchers](https://developer.android.com/kotlin/coroutines/coroutines-adv), [JNI tips](https://developer.android.com/ndk/guides/jni-tips).
+- [Apple Swift concurrency](https://developer.apple.com/videos/play/wwdc2025/268/), [Apple app responsiveness](https://developer.apple.com/documentation/xcode/improving-app-responsiveness).
+- [Python asyncio tasks](https://docs.python.org/3/library/asyncio-task.html), [Dart NativeCallable.listener](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.listener.html), [Dart isolateLocal](https://api.dart.dev/dart-ffi/NativeCallable/NativeCallable.isolateLocal.html).
+- [.NET async scenarios](https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-scenarios), [Emscripten pthreads](https://emscripten.org/docs/porting/pthreads.html).
+
 ## 15. Interfaces and service discovery
 
 ### 15.1 Ordinary object references come first
@@ -3914,7 +4060,7 @@ Swift:
 
 ```swift
 let client = try ServiceRegistry.global.get(HttpClient.self)
-let response = try await client.request(request)
+let response = try await client.request(input: request)
 ```
 
 C++:
@@ -4749,6 +4895,60 @@ interface HttpClient {
 
 Send a real HTTPS request to https://httpbin.org/get or /post using a provider in a different runtime. Display status, headers and body. Headers are a list rather than a map so repeated fields such as Set-Cookie are not overwritten. HTTP header name matching is case-insensitive in the HTTP implementation, not a change to IDL string equality. Check repeated response headers with the existing local fixture on providers whose HTTP API exposes them. Browser Fetch may hide or combine headers, and never exposes Set-Cookie to frontend code. The browser provider returns only the headers actually available from Fetch and must obey CORS and other browser restrictions. Do not invent hidden headers, split combined values heuristically, or require the browser to return headers forbidden by the platform. Test permitted response headers and the native repeated-header contract separately. Serve the routine browser fixture from the same origin or with deliberate CORS configuration. The direct HTTPBin browser smoke is conditional on that service permitting the requested browser call. See [Fetch forbidden response headers](https://developer.mozilla.org/en-US/docs/Web/API/Headers/getSetCookie). A non-success HTTP status is a response, not an ABI failure. A transport failure or unavailable browser response is an invocation error. Test error, timeout, cancellation and async completion. Deterministic CI uses a local HTTP fixture with the same contract. A separate live smoke checks the actual public service. Do not make deterministic tests rely on public network availability.
 
+#### 17.2.1 HTTP execution, ownership and cancellation across all targets
+
+The shared HttpClient.request is always async at the PolyGlue boundary. The underlying network client may use nonblocking I/O (preferred) or an explicitly configured bounded blocking-worker executor. A dedicated thread per request is not required and is not the default. Do not add a general HTTP implementation to the core; the example application supplies the provider, transport and connection/session lifetime. Reuse the same typed contract and the same generated adapters for C++, platform, Dart, Python and Web providers. A provider registered under a different executor must not change the caller's public signature.
+
+Illustrative consumer expressions, in their proper async context, using the default naming and the IDL parameter name input (C spelling is conceptual until ABI freeze):
+
+| Consumer | Invocation / result |
+| --- | --- |
+| C | Typed async start with HttpRequest, completion token and owning operation handle; no blocking wait in UI loop |
+| C++ | co_await client->request(request) |
+| Java | client.request(request) -> CompletableFuture<HttpResponse>; continuation on explicit executor when required |
+| Kotlin | val response = client.request(request) in coroutine |
+| Objective-C | [client requestWithInput:request completion:completion] (selector finalized by actual naming plan) |
+| Swift | let response = try await client.request(input: request) |
+| Python | response = await client.request(request) |
+| Dart / Flutter | final response = await client.request(request); |
+| C# | var response = await client.RequestAsync(request); |
+| JS / TS | const response = await client.request(request); |
+| WASM | Typed async C/C++ start or JS facade Promise; no blocking JS import waiting for result |
+
+Provider examples must use real transport APIs selected for the platform, not synchronous HTTP wrapped in a fake completed future. Java desktop may use java.net.http.HttpClient.sendAsync; do not assume that Java SE API exists on Android. Android Java/Kotlin use a supported async HTTP client or blocking client on an injected IO executor. Kotlin suspend alone does not move blocking I/O. Apple Objective-C uses NSURLSession data-task completion; Swift uses URLSession async APIs, with actor-safe completion and explicit availability checks or supported adapter for the configured floor. Python uses an actual async HTTP client or an explicitly bounded executor for blocking I/O; worker cancellation may not stop the blocking call, so track real completion. Dart native can use dart:io HttpClient with futures; Flutter Web uses browser-compatible transport without dart:io. .NET uses HttpClient.SendAsync and a linked operation cancellation adapter as appropriate; no Task.Run for already async I/O. JS/TS use Fetch/AbortController where supported, and WASM uses the host asynchronous transport or proven native-compatible async integration. C/C++ providers use a selected async transport/event loop or bounded native worker executor around blocking HTTP; transport dependency belongs to the sample, not mandatory runtime. For each provider own/reuse the session/client according to its platform API; close only a session owned by that provider, not a shared application's transport.
+
+Request headers are a validated ordered value snapshot; preserve repeats subject to actual HTTP API/browser rules. The body is optional<DataRef>: absence differs from a present zero-length body. A retained reference does not freeze mutable storage. To send a stable request body, retain immutable/exclusively transferred storage for the actual upload, or explicitly snapshot mutable input before transport starts. Do not keep a scoped DataView, mutable borrowed pointer or movable heap pin across network suspension. Any HTTP API that requires a byte copy performs it explicitly at the provider boundary; do not advertise guaranteed end-to-end zero-copy. Response body is a fully initialized owning DataRef, including empty responses; release partial bytes and response/transport resources on failure. If the chosen provider streams network chunks internally, accumulate within its configured response budget before returning HttpResponse, or expose a separately declared Stream<DataRef> API with explicit demand and ownership. Do not silently change HttpResponse's return type. Apply checked length arithmetic and resource limits before reading/allocating; do not trust Content-Length alone. HTTP status including 4xx/5xx remains a normal response. DNS, TLS, connection/transport failures and timeout are typed invocation failures with safe details; no fabricated status zero and no credentials/body logging. Preserve browser CORS and header visibility constraints.
+
+Canceling the PolyGlue operation requests provider-specific transport cancellation through its supported API (URLSession task cancellation, HTTP client's cancellation mechanism, AbortController, etc.). If the API has no reliable interruption, keep provider/client/body and code leases until actual I/O completes or is safely aborted. A canceled response is discarded/released once, not delivered as success. An explicit cancellation-source token can also be an IDL parameter in a separate application contract; do not inject an undeclared parameter into HttpClient.request. Use the existing operation cancellation integration and source/token semantics. Set an explicit configurable provider request timeout in the sample (default 30 seconds, positive duration; no universal runtime timeout), based on elapsed monotonic time, not wall-clock timestamp. Specify that the deadline covers queued accepted request time, connect, send and full body acquisition; provider must enforce it through transport and timer or equivalent, with cancellation request on expiry. It does not guarantee physical I/O stops at the deadline. A caller-side await timeout is separate from provider deadline and actual cleanup. Distinguish timeout from explicit consumer cancellation; competing terminal events use one atomic winner. Do not automatically retry requests (especially non-idempotent methods) after error or timeout. The application may choose an explicit retry policy with its own idempotency rules.
+
+```mermaid
+sequenceDiagram
+    participant C as Consumer executor
+    participant R as PolyGlue context
+    participant P as Provider executor
+    participant IO as HTTP transport
+    C->>R: Capture request and owning body
+    R->>R: Reserve and accept selected provider
+    R->>P: Dispatch owning envelope
+    P->>IO: Start async I/O or explicit bounded worker
+    Note over C,IO: Consumer remains responsive; no mandatory per-call thread
+    alt Normal response
+        IO-->>P: HTTP status, headers and body
+        P->>R: Complete with owned response
+        R-->>C: Deliver on allowed consumer domain
+    else Cancellation or deadline
+        C->>R: Cancel request (or provider deadline expires)
+        R->>P: Request transport stop
+        P->>IO: Cooperative cancellation
+        R-->>C: One terminal cancellation or timeout
+        IO-->>P: Actual completion/abort
+        P->>R: Release execution and any late result
+    end
+    R->>R: Drain actual execution and required releases
+```
+
+Test the same request fixture with native caller -> managed provider, managed caller -> native provider, platform provider -> Dart provider and JS/WASM bidirectional paths where supported. Use a local controllable server that delays response, sends partial chunks, repeated headers, empty body and non-success status, disconnects on command and allows cancellation/timeout at known barriers. Demonstrate an independent UI/event-loop heartbeat or queued probe runs while a request is pending; assert executor identity at provider entry, completion and cleanup, not arbitrary physical thread equality. Force blocking-worker saturation and cancellation during a running worker, detach during network I/O, late response and duplicate completion. Check no stale callback, no unbounded threads/queues, stable body ownership, and no deadlock or retained owner after cooperative drain. Real public HTTPBin remains a separate network smoke, not deterministic evidence. Do not add arbitrary sleeps or require public network access for routine conformance.
+
 ### 17.3 Camera and grayscale
 
 ```text
@@ -5108,6 +5308,30 @@ Extend the existing finite case inventory with these distinct risk paths. Existi
 | apple.public-contract-owner | Mixed Swift/Obj-C import has one actual short Swift contract; bridge name not required in public consumer |
 
 Before phase-2 adapter work, freeze the ABI header, handle encoding, numeric status assignments, canonical encoding golden digests and layout inventory with independent C/C++ and foreign FFI proof. No platform may claim compatibility from source emission alone. Execute the existing per-target and cross-language conformance matrix on the actual supported runtime and verify release counters after cooperative drain; record externally destroyed host limitations as such. Avoid redundant test suites, arbitrary sleeps and unsupported synthetic platforms.
+
+### 18.14 Execution-domain, initialization and HTTP conformance
+
+These cases extend the existing inventory; combine fixtures with prior cases where they exercise the same requirement. All remain planned. Every selected backend must prove applicable paths through actual runtime/toolchain execution, not just emit an async signature.
+
+| Case ID | Required observation |
+| --- | --- |
+| types.initialization-state | Empty/active/moved/destroyed ownership states; required constructors and transactional nested value cleanup |
+| types.temporal-overflow | Signed extrema and checked intermediate date/time/UUID conversion on actual hosts |
+| runtime.init-rollback | Fail each meaningful context/attachment setup step; no partially Open state; retain visible pending rollback control |
+| runtime.attach-close-race | Parent close races Opening attachment; no untracked roots, generation publication or successful drain |
+| runtime.service-lifecycle | Explicit service start/stop/factory failure; ordinary interface release does not invent business calls |
+| executor.affinity | owner/main/named bindings resolve correctly; reject missing or incompatible metadata/actual host |
+| executor.sync-admission | Inline/direct supported sync succeeds; wrong-domain sync fails without blocking, callback affinity independently validated |
+| executor.continuation | Provider entry, transport, consumer continuation and cleanup use permitted domains; inline completion safe |
+| executor.queue-budget | Bounded per-executor queue and aggregate reservations; saturation no stranded completion or mandatory release |
+| executor.reentrancy | Nested async callbacks, safe synchronous reentry, self-drain/join rejection, no lock held across suspension |
+| executor.borrowed-owner | Borrowed executor not stopped by attachment close; owned executor drained before stop; enqueue rejection and external loss |
+| http.async-responsiveness | Local delayed network response with independently progressing UI/event loop; no required per-request thread |
+| http.transport-cancel | Cancellation/deadline/partial response races, one terminal outcome, actual worker/transport lease retained until safe |
+| http.body-ownership | Optional absent vs empty body, stable mutable-input snapshot, bounded response, late result cleanup |
+| http.provider-switch | Same request API across selected provider languages/executors; detach during I/O, unrelated live provider remains usable |
+
+Use real platform executor probes, deterministic synchronization barriers, independent thread/queue/root/byte counters, local server fixtures and existing sanitizers. Test both successful cooperative teardown and explicitly supported forced-loss paths; blocked platform or transport capabilities remain blocked. Include evidence for single-thread WASM and separately selected threaded profile, native and portable Dart, Apple mixed framework, JVM desktop/Android and available platform UI loops. Do not infer that Java and Kotlin or Swift and Obj-C share the same callback executor merely because they share one attachment. No test may pass by blocking the UI to make an async method appear synchronous.
 
 ## 19. GitHub Actions
 
@@ -5807,7 +6031,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.5 Built-in types and extension mechanism
 
 - [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Enforce the concrete lowering inventory of section 5.4.3, including host boxing, arrays, limits and nested ownership. Enforce canonical map/set equality, checked rounding and portable Dart integer profiles from sections 5.4.1–5.4.2. Verify boundaries, invalid encodings, null and empty distinctions.
-- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and array types (contiguous primitive representations only where proven). Enforce deep value immutability, canonical structural comparison where legal, cycle detection, payload-free Result specialization and boolean-array wrappers from section 5.4.4. Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct nested optional states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
+- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and array types (contiguous primitive representations only where proven). Enforce deep value immutability, canonical structural comparison where legal, cycle detection, payload-free Result specialization, boolean-array wrappers and concrete initialization/destruction/execution-domain plans (sections 5.4.4–5.4.5). Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct nested optional states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
 - [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. All instants cross as UTC epoch microseconds. Preserve calendar dates without timezone shifts, signed exact units, canonical UUID order and checked native conversions, including different host timezone settings.
 - [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope, storage identity, checked access leases, aliasing, allocator/deleter provenance and host memory domain rules under sections 13.5–13.8. Do not silently copy when a zero-copy contract is requested.
 - [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
@@ -5817,12 +6041,12 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.6 Native ABI, ownership and runtime
 
 - [ ] Define and implement the versioned C/WASM ABI, fixed-width layout, typed function tables, opaque generation-checked handles, logical IDs and distinct semantic/ABI/public artifact fingerprints from sections 12.6–12.8. Freeze and verify concrete headers, status codes, layout inventory and recursive descriptor encoding before porting adapters. Reject incompatible artifacts, with no compatibility translation.
-- [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters, explicit static contract bindings and typed context/attachment lifecycle controls with reentrant drain protection. Never expose STL or managed pointers as ABI values.
+- [ ] Implement C/C++ consumers and providers, direct typed calls, generated proxies/adapters, explicit static contract bindings, transactional context/attachment startup and rollback, executor bindings and typed lifecycle controls with reentrant drain protection (sections 12.9 and 14.7). Never expose STL or managed pointers as ABI values.
 - [ ] Define argument/return ownership, allocator pairing, retained slices, explicit release and safe finalization. Test invalid/stale handles, overflow, partial conversion failures and thread-affine cleanup.
 - [ ] Implement scoped immutable/mutable borrows and owned DataRef with exact lifetime and copy semantics, retirement states, code-loader leases, zero initialization, partial-write behavior and aggregate reservations (sections 13.5–13.8). Test aliasing, exclusivity, owner destruction, async retention, zero-copy identity where supported and release exactly once.
 - [ ] Implement async capture/preparation/acceptance, inline and deferred completion, error/cancel propagation, source authority, scheduler-rejection cleanup and callback rooting under section 14.4. Distinguish synchronous callbacks (including void) from explicit async callbacks. Verify safe scheduling, inline start ownership and rejection of borrowed async arguments. Test an explicit cancellation token already cancelled before invocation and cancellation racing with observer registration. Keep active provider/argument references until execution cannot access them, even after caller cancellation. Verify shutdown drains releases both from actual execution and from removing registrations and invalidating handles before runtime detach.
-- [ ] Implement distinct owning stream acquisition and subscription, default single-subscription semantics, explicit host source/iterator disposal, bounded streams, default capacity, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls.
-- [ ] Implement direct interface injection, factories and optional typed registry with fixed snapshots, dynamic lookup, context-bound registries, Reject/Replace/ScopedOverride, unique tokens, missing-service errors, atomic removal/restoration, retained providers and explicit delegation. Replace clears the full stack; scoped removal restores only still-live registrations. No implicit alternate-provider retry.
+- [ ] Implement distinct owning stream acquisition and subscription, default single-subscription semantics, explicit host source/iterator disposal, bounded streams, default capacity, ordering, backpressure, cancellation and terminal cleanup with appropriate host schedulers. Test empty stream termination, cancellation before the first item, ordered normal drain, and explicit preview drop ownership. Never block event loops or dispatch unsafe synchronous cross-thread calls. Implement owner/main/named executor binding, bounded queue, memory publication, continuation and cleanup contracts in section 14.7; prove actual host paths.
+- [ ] Implement direct interface injection, explicit transactional factories and optional typed registry with fixed snapshots, dynamic lookup, context-bound registries, Reject/Replace/ScopedOverride, unique tokens, missing-service errors, atomic removal/restoration, retained providers and explicit delegation. Replace clears the full stack; scoped removal restores only still-live registrations. No implicit alternate-provider retry.
 - [ ] Implement per-attachment registration ownership, generation-checked admission, partial detach and safe invalidation of fixed references to closing runtimes. Verify independent registries/engines, registration-owner versus actual provider attachment, atomic admission and dispatch gating, owner-specific active/hidden removal, in-flight execution, safe release outside locks and hot restart without stale tokens affecting newer registrations. Prove the deterministic lifecycle fixtures in section 18.8.
 - [ ] Support application-defined single-listener and multi-listener subscription patterns using existing typed callbacks/interfaces and streams. Verify scoped/retained/one-shot callback lifetimes, replace/clear, independent cancellation, no new admissions after removal, unclaimed subscription cleanup, reentrancy, bounded delivery and error propagation, async stream acquisition, explicit stream rebinding and owner-specific cleanup without a new global event bus.
 - [ ] Prove native memory safety and concurrency with actual reachable use-after-free, double-free, leak, overflow, race, deadlock, reentrancy, shutdown and cancellation scenarios and supported sanitizers.
@@ -5868,7 +6092,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 
 - [ ] Create shared example modules for domain, repository, auth, network and media, generating all bridges from IDL and using small real handwritten providers.
 - [ ] Prove the three-layer service registration/restoration flow and listener/subscription patterns in Android C++/Kotlin/Dart, Apple C++/Swift/Dart and browser C++ WASM/JS/Dart Web examples, with the cases in section 18.7 and independently verified provider results.
-- [ ] Build real HTTPBin requests with typed status/headers/body, cancellation and error behavior across a language boundary. Use deterministic local HTTP fixtures for routine CI and a separate deliberate live smoke.
+- [ ] Build real HTTPBin requests with typed status/headers/body, cancellation, monotonic provider deadline, stable request-body ownership, actual nonblocking or bounded-worker transport, executor probes and error behavior across a language boundary (section 17.2.1). Use deterministic local HTTP fixtures for routine CI and a separate deliberate live smoke.
 - [ ] Implement camera capture where supported and grayscale processing in another language, with checked pixel format/stride/dimensions and buffer ownership. Test deterministic image fixtures and distinguish hardware evidence.
 - [ ] Implement a fake login form or CLI invoking a foreign provider, returning populated User and typed invalid-credential errors. Never log credentials.
 - [ ] Implement repository methods returning records, lists, optionals, integers, bool and void asynchronously across modules and runtimes.
