@@ -146,6 +146,8 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
   - [Trusted project-local Python actions](#2052-trusted-project-local-python-actions)
   - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
+  - [Per-platform build recipes and consumer integration](#2065-per-platform-build-recipes-and-consumer-integration)
+  - [Generated build and test projects](#2066-generated-build-and-test-projects)
   - [Library deployment to S3-compatible object storage](#2010-library-deployment-to-s3-compatible-object-storage)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
 - [22. Implementation and acceptance checklist](#22-implementation-and-acceptance-checklist)
@@ -2037,7 +2039,7 @@ Keep presentation/build options, context creation options and declaration semant
 | Stream | ordered bounded lossless demand (section 14.3.1) |
 | Deployment | disabled until explicitly selected |
 
-Define generation.incremental, build.incremental, build.jobs, diagnostics.format, diagnostics.log_level and target build.linkage in the schema. Use --jobs, --clean, --diagnostics and --log-level for command-local overrides of applicable operational settings. They do not override canonical semantics or security invariants. Config --format json is distinct from build/package artifact --format. Unavailable CPU count resolves to one job. Positive resource limits must be enforced; job count alone does not guarantee bounded memory.
+Define generation.incremental, build.incremental, build.jobs, build.cmake and build.native_dependencies as specified in 7.7.3, diagnostics.format, diagnostics.log_level and target build.linkage in the schema. Use --jobs, --clean, --diagnostics and --log-level for command-local overrides of applicable operational settings. They do not override canonical semantics or security invariants. Config --format json is distinct from build/package artifact --format. Unavailable CPU count resolves to one job. Positive resource limits must be enforced; job count alone does not guarantee bounded memory.
 
 Diagnostics have stable symbolic codes, severity, message, source path, line/column/span where applicable, related locations, module/target/library context and actionable guidance. Examples: CONFIG_UNKNOWN_KEY, IDL_UNRESOLVED_SYMBOL, NAME_COLLISION, ABI_INCOMPATIBLE, OUTPUT_UNOWNED and TOOLCHAIN_MISSING. Sort diagnostics deterministically by location and code. JSON emits structured records rather than scraped terminal text; ordinary result output stays separate. Exit 0 for success, 2 for invalid input/configuration, 1 for operation/build/test failure and host-conventional interruption status. Keep one typed code registry. Redact secrets and sensitive arguments; generated files remain free of machine-specific paths. Local diagnostic paths are allowed. Never downgrade errors to hide a missing toolchain or target failure.
 
@@ -6983,6 +6985,152 @@ Stage CMake install output: include/, lib/, bin/ where applicable, CMake package
 - C#: dotnet pack emits .nupkg with managed assemblies and native assets under runtimes/<rid>/native plus appropriate dependency metadata. Validate RID and ABI resolution, package dependencies, managed assembly/native version pairing, and install from a local NuGet feed into a new project. Test native callback and ownership across the packaged ABI.
 - JS/TS/WASM: package exports and types resolve from a clean consumer. Include .wasm and required JS/worker assets, correct loader URL handling and relative asset paths. Verify npm pack contents, browser and Node execution, memory growth, BigInt mapping and TypeScript declaration compatibility. Do not claim a .d.ts-only package is an implementation.
 
+#### 20.6.5 Per-platform build recipes and consumer integration
+
+The following standard recipes use the same YAML, generated source manifest, implementation roots, CMake source directory, selected dependency provider and native slice plan from sections 7.7.3 and 20.4. The user should be able to produce each final library without authoring repetitive build scripts. No separate compiler, runtime or build framework per language. All commands are planned interfaces, not implemented features. package alone generates and builds missing or stale prerequisites and produces the final requested artifact under dist; running build first is optional. Build stages and verifies the native/managed output of the selected plan; package assembles the final consumer artifact. Test with an explicit format uses the exact packaged artifact. Deploy consumes it without implicitly building or packaging. Native P0 conformance does not wait for P1 package automation.
+
+| Target / platform | Format | Native compilation and final tool |
+| --- | --- | --- |
+| C/C++ desktop and supported mobile | cmake | CMake configure/build/install, archive |
+| Java/Kotlin desktop JVM | jar | Native JNI CMake per host ABI, Gradle JAR |
+| Java/Kotlin Android and XR | aar | Android NDK CMake per ABI, Gradle AAR |
+| Objective-C/Swift Apple platforms | xcframework, swiftpm | CMake/Xcode slices, xcodebuild, SwiftPM |
+| Python desktop CPython | wheel | Native extension CMake, Python wheel backend |
+| Dart native | dart | CMake FFI library, pub package integration |
+| Flutter Android, Apple, desktop, Web | flutter | Same native slices, generated Flutter plugin |
+| C#/.NET | nuget | CMake native RID slices, dotnet pack |
+| JavaScript/TypeScript browser/Node | npm | Emscripten CMake, ESM and types, npm pack |
+| WASM Web/Node | wasm | Emscripten CMake, binary/loader/assets |
+
+The format identifiers in this table are the canonical identifiers for the listed convenience packagers; use the existing artifact.formats selection and --format, not aliases per language. Additional existing explicitly documented source/binary formats retain their contract. A format is not a platform. A platform build never claims slices it did not produce. The full platform/capability matrix in section 2 remains authoritative.
+
+##### C and C++: native desktop and mobile libraries
+
+Generate C headers and typed ABI adapter, C++ API, shared support and build integration. Select native CMake root and requested library linkage, architecture, compiler/toolchain and SDK from the resolved YAML. Linux uses compatible GCC/Clang or an explicit cross-toolchain/sysroot; Windows uses supported MSVC or another verified toolchain with correct CRT and generator architecture; macOS uses Apple SDK, architecture and deployment floor. Configure/build/install per slice using the common plan. Stage actual .a/.so, .lib/.dll or .a/.dylib, headers, import libraries, declared native dependency closure and relocatable CMake package. Static library assembly must include actual objects or publish required transitive archives. Inspect ABI, exports, runtime dependencies and install paths. Test separate C11 and C++20 consumers with find_package from a relocated install root. For Android use NDK ABI/API settings below; for iOS/iPadOS, tvOS, watchOS, visionOS and Catalyst use proper Apple variants. Native archives are valid only for the slice actually produced, never interchangeable device/simulator outputs. If the user selects an Apple container or Android library format, use that format's packaging recipe instead of duplicating compilation.
+
+```bash
+polyglue package --library desktop --platform linux --format cmake
+```
+
+##### Java and Kotlin: desktop JVM
+
+Generate Java and/or Kotlin native public callable APIs and one shared JNI adapter, preserving the paired package/model ownership of section 10.6. Compile the native JNI shared library through CMake per OS/architecture; select actual target-compatible JDK headers, native runtime and dependency provider. Generate the Gradle library project/source sets and native resource layout, or integrate with an explicit consumer-owned project that follows the same plan. Gradle compiles Java and Kotlin as selected and produces the JAR plus required dependency metadata. Include native resources organized by actual platform/architecture, or explicit compatible native companion libraries; a loader must use the exact verified native library and never fall back to another host's binary. A multi-OS JAR is assembled from validated slices from actual supported build hosts. Test independent Java and Kotlin consumers in a fresh JVM including CompletableFuture, suspend, JNI roots and native calls. Android AAR is a separate output, not a desktop JAR.
+
+```bash
+polyglue package --library jvm --platform linux --format jar
+```
+
+##### Android and Android XR: AAR
+
+Select SDK/JDK/NDK and AGP/Gradle versions compatible with the declared min_sdk, compile SDK and requested ABIs. Generate actual Java/Kotlin classes, JNI adapter and native CMake integration. For each configured ABI, use the official NDK toolchain or its correct Conan composition. Example system/CPM configure (the actual plan supplies all slice parameters):
+
+```bash
+cmake -S /project/native/android -B /stage/arm64-v8a/cmake -DCMAKE_TOOLCHAIN_FILE=/sdk/ndk/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DPOLYGLUE_INTEGRATION_FILE=/stage/integration/polyglue-integration.cmake
+cmake --build /stage/arm64-v8a/cmake --config Release
+```
+
+Conan mode passes the single composed toolchain, not a second independent NDK toolchain. Verify dependency API floors, actual architecture and consistent C++ runtime. Generate Gradle library settings, namespace, manifest, source sets, dependency metadata, optional consumer shrinker rules and native staging paths. Stage native slices and declared shared dependencies in jniLibs/<abi>; AGP packages them into jni/<abi> inside the AAR. Default packager stages verified precompiled slices and invokes the generated/selected Gradle wrapper's :library:assembleRelease or actual requested variant. Do not also build the same native library via externalNativeBuild. If an explicit existing project delegates native compilation to AGP, use its one validated path with the same source/toolchain inputs; no duplicate binaries. Resolve exact output via task metadata and verify AAR contents rather than copying any AAR found in build directories. Include POM/dependency metadata where needed; a raw AAR alone does not carry all transitive Maven dependencies. Native C++ consumers can use Prefab only when explicitly selected and verified; Java/Kotlin callers need not configure Prefab. Android XR follows the same Android build/AAR format with actual XR SDK/device capabilities, not an invented new binary format. Test an independent app using the resulting AAR, including release R8 behavior, real native loading, ABI and alignment requirements.
+
+```bash
+polyglue package --library mobile --platform android --format aar
+```
+
+References: [NDK CMake](https://developer.android.com/ndk/guides/cmake), [Android library packaging](https://developer.android.com/studio/projects/android-library), [native dependencies / Prefab](https://developer.android.com/build/native-dependencies).
+
+##### Apple: Objective-C and Swift XCFramework / SwiftPM
+
+Generate native Swift and Objective-C API under the actual planned public module, native C/C++ support, headers/module map and required framework integration. Select each SDK variant and architecture independently. CMake compiles native code and either the generated framework target or native objects consumed by a generated Xcode framework project. Select one proven integration path per framework; do not duplicate native compilation or generate competing public Swift modules. Use appropriate Swift module interfaces/library evolution for binary distribution, not mandatory for source-only compilation.
+
+| Platform / variant | SDK selection and slice |
+| --- | --- |
+| iOS/iPadOS device | iphoneos, requested supported device arch |
+| iOS/iPadOS simulator | iphonesimulator, supported simulator arch |
+| macOS | macosx, configured supported arm64/x86_64 |
+| tvOS | appletvos and appletvsimulator separately |
+| watchOS | watchos and watchsimulator separately |
+| visionOS | xros and xrsimulator separately |
+| Mac Catalyst | Explicit macabi target/destination, not ordinary macOS |
+
+iPadOS shares the iOS SDK/variant; do not duplicate the slice. Verify installed Xcode SDK names, actual target triples, SDK availability, deployment floor, architecture support and native dependency linkage. Use CMake sysroot, architecture, deployment settings and correct generator/toolchain. Catalyst requires actual compatible target/compiler flags and destination, not just a macOS flag. For an Xcode archive-based framework build use the real scheme, generic destination, SKIP_INSTALL=NO and BUILD_LIBRARY_FOR_DISTRIBUTION=YES where appropriate. Merge architectures only within the same platform variant and compatible settings; keep device/simulator separate. Stage complete framework bundles or native static libraries plus headers. Assemble actual XCFramework with official Xcode tooling:
+
+```bash
+xcodebuild -create-xcframework -framework /stage/ios-device/Example.framework -framework /stage/ios-simulator/Example.framework -framework /stage/macos/Example.framework -output /stage/Example.xcframework
+```
+
+The actual configured slices and optional matching debug symbols replace the example paths; use -library and -headers for a static-library slice, not -framework. Validate Info.plist, Mach-O platform, architecture, public Swift/Clang modules, metadata and debug symbols per 20.6.2. Generate a local SwiftPM binary target with path; for explicit remote distribution archive once, run swift package compute-checksum and generate a URL-based binaryTarget using the actual configured URL. Preserve same public library identity, correct native dependencies, Apple code signing requirements and no mandatory signing for unsigned simulator artifacts. Test separate Objective-C and Swift consumers, including device/simulator evidence when available.
+
+```bash
+polyglue package --library apple --format xcframework
+polyglue package --library apple --format swiftpm
+```
+
+The Apple library selects its declared compatible platform set; --platform can restrict an unambiguous requested slice set according to the plan. A SwiftPM package reuses the exact verified XCFramework artifact. References: [Apple XCFrameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle), [binary Swift packages](https://developer.apple.com/documentation/xcode/distributing-binary-frameworks-as-swift-packages).
+
+##### Python: native bindings wheel
+
+Keep the pure Python generator wheel separate from generated consumer/provider bindings. Generate Python API, CPython native adapter, CMake integration and package pyproject.toml. Choose one verified PEP 517 backend with CMake integration (e.g. scikit-build-core, subject to actual stable dependency review). A backend may execute the common CMake configure/build/install with the resolved root/toolchain/definitions, or package an already built verified extension when supported. Never compile two competing native extensions. Use the correct target CPython headers and ABI. Produce platform/interpreter/ABI-specific wheel through uv build --wheel or standard backend frontend; no universal or abi3 claim unless proven. Repair/audit shared dependencies through ecosystem-supported tooling as needed, including Linux compatibility tags, Windows DLL and macOS dylib paths. A source distribution is supported only when it contains necessary generated sources/resources and builds in the declared environment, not a stub that fails at import. Install wheel outside source tree in a clean venv and run real generated calls, native callbacks, lifetime and asyncio tests.
+
+```bash
+polyglue package --library python-api --platform linux --format wheel
+```
+
+References: [Python binary extensions](https://packaging.python.org/en/latest/guides/packaging-binary-extensions/), [wheel tags](https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/).
+
+##### Dart and Flutter: packages and plugins
+
+Generate one public Dart model and callable API, native FFI and Web conditional adapters. Standalone Dart requires no Flutter SDK. Native CMake compiles the shared library with the required typed exported C ABI. Generate the SDK-supported native asset/loader configuration and pubspec; use one verified integration mechanism, not multiple equivalent runtime loaders. A binary package includes the actual compatible native library; a source package explicitly contains required native sources/build hook and dependencies. Do not claim an unbuilt source artifact is a binary library.
+
+| Flutter platform | Build and package integration |
+| --- | --- |
+| Android | Reuse Android AAR or verified JNI/native slices in generated plugin Gradle module; native Java/Kotlin registration when needed. |
+| iOS/iPadOS | Reuse selected XCFramework or explicitly supported source integration, actual plugin Swift/Obj-C, correct static/dynamic link/embed. |
+| macOS | Native macOS framework/library and plugin integration, own deployment floor and architecture. |
+| Linux | Generated CMake plugin, actual .so/native dependency closure. |
+| Windows | Generated CMake plugin, DLL/import library and required native dependencies. |
+| Web | Emscripten WASM and JS assets, conditional Dart Web adapter; no dart:ffi. |
+
+Use the current verified Flutter SDK plugin integration (native assets, SwiftPM or CocoaPods as appropriate) without duplicate native library owners. Flutter visionOS and other targets require actual upstream capability as in section 2. Generate pubspec.yaml, public lib entrypoint, platform integration files/registrants when needed and real packaged assets. No developer-machine symlinks in output. Use Dart/Flutter pub tools to resolve and validate; create a local package artifact, never publish to pub.dev implicitly. A multi-platform plugin assembles explicitly selected compatible native stages; one public Dart API does not imply every requested platform binary was built. Test a clean independent Flutter app using the actual package on each required platform, including initialization and teardown, not only dart analyze.
+
+```bash
+polyglue package --library dart-api --platform linux --format dart
+polyglue package --library flutter-api --platform android --format flutter
+```
+
+Reference: [Flutter package/plugin integration](https://docs.flutter.dev/packages-and-plugins/developing-packages).
+
+##### C#/.NET: NuGet
+
+Generate managed types and API, native interop declarations, CMake integration and .csproj. Compile the actual native dependencies for each requested OS/architecture, derive validated .NET runtime identifiers (RID) from real mapping, not guesses. Stage .dll/.so/.dylib and native dependency closure under runtimes/<rid>/native and managed assemblies under proper target-framework paths. Use dotnet build and dotnet pack with exact resolved library version and build metadata. Keep the canonical native loader identity, SafeHandle/delegate ownership and genuinely async Task/Async APIs. Multi-RID packages require actual compatible native slices; do not claim unbuilt RIDs. Mobile/AOT linkage and loader support must be proven on the selected SDK separately from ordinary desktop P/Invoke. Test from a clean local NuGet feed, with managed-to-native and reverse callback execution.
+
+```bash
+polyglue package --library dotnet-api --platform linux --format nuget
+```
+
+References: [NuGet native files](https://learn.microsoft.com/nuget/create-packages/native-files-in-net-packages), [.NET RID catalog](https://learn.microsoft.com/dotnet/core/rid-catalog).
+
+##### JavaScript, TypeScript and WebAssembly
+
+Generate one ESM implementation, TypeScript declarations and typed WASM bridge, with common C/C++ core compiled by Emscripten. System/CPM uses emcmake cmake -S ... -B ... or one explicit official Emscripten toolchain; Conan composes that toolchain in its verified host configuration. Baseline wasm32, additional threads/worker assets only on explicitly supported configurations. Build a library/module without fake main, with required exports, imports, .wasm and real ESM loader. Use actual browser/Node-compatible asset paths, worker files and memory configuration. A standalone WASM artifact contains the real loader and required assets/metadata, not an undocumented binary. Generate package.json exports/types/files, verify strict tsc, then npm pack the actual ESM implementation, declaration and WASM assets. TypeScript does not require a second runtime. JS-only providers use the same selected WASM core for interop capabilities (13.7). Test a clean npm consumer and actual Node/browser WASM calls, BigInt, memory growth, cancellation and supported workers.
+
+```bash
+polyglue package --library web-api --platform web --format npm
+polyglue package --library web-api --platform web --format wasm
+```
+
+References: [Emscripten CMake](https://emscripten.org/docs/compiling/Building-Projects.html), [npm pack](https://docs.npmjs.com/cli/commands/npm-pack/).
+
+##### Multi-host artifact assembly
+
+One host can package the selected platform without installing all other SDKs. A genuinely multi-platform JAR, NuGet or Flutter artifact may assemble validated stages from separate actual build hosts via the existing manifest infrastructure. Match source revision, generator/runtime version, canonical/ABI/public signatures, library coordinates, dependency inputs, architecture/SDK and configuration. Reject missing/incompatible slices, no silent omission or unsupported cross-compilation claim. A secondary assembly job may consume exact trusted immutable inputs; baseline CI target jobs still generate independently. No remote build service, general package manager or mandatory all-platform aggregate archive.
+
+#### 20.6.6 Generated build and test projects
+
+The generator must emit the real integration needed to build/test a project that follows the standard layout. Existing mode: sources emits bindings and applicable source integration; existing mode: package emits generated CMakeLists.txt, polyglue-integration.cmake, native/source/install plan, ecosystem project files, metadata templates and loader configuration. These are ordinary deterministic template outputs with the same ownership/override rules; no new compiler backend. generate never executes CMake, SDKs, dependency managers or local Python. Build/package can request the required integration output automatically, in an owned staging directory, without changing the logical API or overwriting user files. A configured user-owned CMake root is consumed, not rewritten. Other ecosystem files can be extended using the existing template overrides/local Python action rather than implementing parallel project generators.
+
+For the repository's own tests, use shared IDL and independently handwritten provider/consumer fixtures in the same conventional layout expected from consumers. Generate build/test projects with PolyGlue itself: CMake/CTest, JVM Gradle/JUnit, Apple Swift/XCTest/native app, pytest package, Dart tests, Flutter example app, .NET test project, Node/browser/TypeScript harness as applicable. Instantiate test-project skeletons using the same normal template rendering and source-plan infrastructure, not a public test DSL or production business-code generator. Generated files wire independent fixtures to actual generated adapters; self-calling generated stubs are not evidence. Compile real native libraries/executables and execute them. P0 tests can run ecosystem tools directly from generated integration before the P1 convenience CLI is complete; P1 tests exercise the full CLI build/package and installed consumer. Share assertions and fixtures instead of duplicating identical suites.
+
+Mandatory distinct delivery cases: conventional module with no optional CMake file, real handwritten implementation, generated root, explicit project root from YAML, platform-specific override, custom native target, system/CPM/Conan and explicit custom provider, static/shared install, Android ABIs, Apple device/simulator slice assembly, desktop/Web, Python/local action failure, dependency/source/IDL change invalidation, missing CMakeLists failure before cleanup, independent installed consumer, version/build propagation, actual final artifacts in dist, S3/R2 dry-run. Use actual toolchains for real integration evidence and meaningful injected failures for Python planner tests. No unnecessary Cartesian matrix; retain complete semantic and native target conformance. All first-party Python planner, provider, template and package verification code remains subject to exact 100% line/branch coverage.
+
 ### 20.7 Artifact provenance and release validation
 
 A successful package command emits an artifact manifest only after structural inspection, including architecture, ABI, expected files and metadata. Structural validity is not test approval. The test command runs applicable installed-consumer checks against the exact artifact, recording the artifact manifest hash and the actual payload hashes in its separate test report. Do not mutate the artifact manifest after testing. A successful report for other bytes, even with the same library version and build number, cannot approve this artifact. A compile-only result must not be reported as a runtime test. Deploy checks applicable required library test evidence before uploading, without rerunning tests or rebuilding. Derive the required package case inventory independently from the artifact's declared targets, platform/slice plan and documented verification policy; a report cannot approve itself by omitting failing or missing cases. Match case IDs, manifest and payload hashes, selected configuration, toolchain/runtime identity and actual tested platform evidence. Reject skipped or blocked required cases. Local reports are evidence from the configured test execution, not cryptographic attestation of arbitrary third-party files; never accept an untrusted self-declared pass as proof. The package may be structurally valid without being deployable. Missing required evidence blocks deployment. This is the consumer library's declared verification scope, not the full release checklist for PolyGlue itself. Local packaging remains usable before tests are complete. Define a non-recursive integrity layout: artifact-manifest.json lists final distributable payloads, their relative paths, byte sizes and SHA-256 hashes, but not itself or the checksum file. checksums.sha256 covers those payloads and the completed artifact-manifest.json, never itself. The deployment manifest separately records the verified hashes of the payloads, artifact manifest and checksum file. It does not hash itself. A checksum file must agree with the artifact manifest, not authorize additional payloads. Record library ID, library version, library build number, generator/runtime version, requested and actual platforms/architectures, format, module/type/ABI fingerprints, toolchain versions, source revision, dependency hashes, templates, build flags, configuration, sanitizer, file hashes, exported symbol summary, debug symbol identifiers and verification results. Use portable paths relative to the artifact root. Record test evidence separately from build provenance.
@@ -7239,6 +7387,7 @@ Use the section 1.3 architecture budget as an acceptance gate. For each item ide
 Secondary P1/P2 deliverables. The generator and actual target conformance are P0; use direct native build/test commands before these convenience actions exist. No final delivery claim until applicable P1/P2 gates pass.
 
 - [ ] Implement conventional implementation roots, deterministic selected sources, optional project.cmake/module.cmake, project-owned CMakeLists.txt selected by per-platform YAML or generated root, one common generated include and safe incremental invalidation. Preserve handwritten files.
+- [ ] Generate real build and test projects with the ordinary template pipeline; execute generated and project-owned CMake roots, all platform recipes and independent installed consumers under sections 20.6.5–20.6.6.
 - [ ] Implement the single trusted local Python run(params) action loader for build/package/deploy, full resolved non-secret context, precedence, dry-run nonexecution, exact output/receipt validation and failure behavior (section 20.5.2).
 
 - [ ] Create organized target-based CMake infrastructure with options, dependencies, warnings, sanitizer modes, installation/export rules and appropriate toolchain files. Keep parent projects unaffected.
