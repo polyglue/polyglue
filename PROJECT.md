@@ -4103,7 +4103,7 @@ func requestOnWorker(
         let message: String
         do {
             let response = try client.requestBlocking(input: request)
-            message = "HTTP status: \\(response.status)"
+            message = "HTTP status: \(response.status)"
         } catch {
             message = String(describing: error)
         }
