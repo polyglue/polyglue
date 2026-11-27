@@ -6,6 +6,8 @@
 
 ## Project
 
+> PolyGlue is currently a design specification. The compiler, runtime and bindings described below are planned features, not available implementations. See [PROJECT.md](PROJECT.md) for the complete architecture and acceptance criteria.
+
 PolyGlue is a code generator that allows different programming languages to call each other's methods and exchange data within the same application.
 
 Define your data types and interfaces once in a common definition language (IDL). PolyGlue generates the native bindings for each selected language, removing the need to write and maintain the connecting code by hand.
