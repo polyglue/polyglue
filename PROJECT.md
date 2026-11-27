@@ -42,7 +42,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Operational defaults and diagnostics](#763-operational-defaults-and-diagnostics)
   - [Library and build configuration](#77-library-and-build-configuration)
   - [Library version and build number](#78-library-version-and-build-number)
-  - [Single configuration and runtime options inventory](#79-single-configuration-and-runtime-options-inventory)
+  - [Single configuration and runtime options inventory](#710-single-configuration-and-runtime-options-inventory)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
   - [Complete public naming defaults](#85-complete-public-naming-defaults)
   - [Formatting and customization profiles](#86-formatting-and-customization-profiles)
@@ -207,7 +207,7 @@ For a first project, start with a record and one interface method. Generate bind
 
 ### 1.1 Required outcomes
 
-**Convention over configuration, without sacrificing configurability.** Every supported configurable aspect of generation, public API design, source layout, formatting, integration and packaging must have a documented deterministic default when it can safely be inferred. A minimal project must work without copying a large configuration template. The consumer may override every applicable presentation or integration default at the appropriate scope. An explicit override replaces that setting only. Do not require a setting merely to enable customary language behavior.
+**Convention over configuration.** Public API naming, actual module/package/namespace, output and build integration, public presentation and template overrides have deterministic documented defaults and granular overrides where meaningful. Internal symbol names, temporary variables, private storage, marshalling strategies and core algorithms are generator responsibilities, not configuration categories. A minimal module works without copying a large template. Do not expose a choice unless its user-visible benefit or distinct integration requirement is documented.
 
 **Language-native public APIs.** Generate independently planned public APIs for every selected language, not literal transliterations of C ABI names or another language's syntax. Swift must not expose generated Objective-C prefixes by default (explicit overrides are supported), Kotlin must not inherit JNI names, and Dart must not expose C handles as ordinary application types. Public calls use native types, error and async conventions whenever they preserve the canonical contract. The application selects the implementation language independently of the public language. No compromise to ownership, type precision, ABI compatibility or executor safety is permitted to make a signature appear idiomatic.
 
@@ -246,6 +246,8 @@ Implement only the new final contract. Remove replaced implementations, obsolete
 
 Follow the owner rules in AGENTS.md. Review actual impact, fix substantiated problems and do not perform unrelated speculative refactors. Preserve user data, unrelated work, security and release authorization.
 
+**Architecture budget.** Organize the implementation around five responsibilities: IDL/configuration; one canonical compiler and semantic IR; language-native backend planning/rendering; one shared interoperability core and host-family adapters; and a thin build/package/deploy orchestrator. A responsibility does not mandate a class, package or framework. Prefer plain typed data, small functions and composition over abstract factories, dynamic plugins or extra registries. Before adding a mechanism, identify its distinct semantics and why an existing one cannot implement it. Reuse safe machinery without merging different public contracts. Measure before introducing caches, pooling, reflection or specialized fast paths; no speculative alternate implementation. Do not introduce an application framework, network RPC, event bus, scheduler framework, package manager or separate runtime per language.
+
 ## 2. Supported languages and platforms
 
 ### 2.1 Language targets
@@ -267,7 +269,19 @@ Every language must be able to act as a consumer and as an implementation provid
 | JavaScript | WebAssembly / JS adapter | Promise |
 | TypeScript | JS implementation plus type declarations | Promise |
 
-Flutter is an integration target, not a separate language. JavaScript and TypeScript share implementation artifacts by default in a jointly declared package, as defined in section 10.6. Java and Kotlin share JVM models by default when jointly declared in a shared package as defined in section 10.6; independent ownership remains configurable. Swift and Objective-C can share imported types or use distinct namespaced wrappers. Never generate conflicting definitions.
+Flutter is an integration target, not a separate language. JavaScript and TypeScript share implementation artifacts by default in a jointly declared package, as defined in section 10.6. Java and Kotlin share JVM models by default when jointly declared in a paired JVM library as defined in section 10.6; independent ownership remains configurable. Swift and Objective-C can share imported types or use distinct namespaced wrappers. Never generate conflicting definitions.
+
+| Host family | Shared implementation boundary |
+| --- | --- |
+| C/C++ | One native core, one typed C ABI, C++ RAII facade |
+| Java/Kotlin | One JNI support layer, handle/root management and shared model conversion; native public async shapes differ |
+| Objective-C/Swift | One Apple host integration, native C ABI and shared ARC/ownership support where legal; independent public callable surfaces |
+| Python | One CPython integration |
+| Dart/Flutter | One Dart API and native FFI adapter; Flutter supplies integration only |
+| C# | One .NET interop integration |
+| JS/TS and Dart Web | One JS host bridge to the same C/C++ core compiled to WASM; TS declarations and Dart facade reuse it |
+
+An adapter is not a second runtime. Backend-specific code is limited to representation, actual host lifecycle, scheduling, typed invocation and ecosystem packaging. All declared targets remain required; sharing must be proven by tests, not inferred from similar syntax.
 
 ### 2.2 Platform matrix
 
@@ -388,6 +402,8 @@ uv run --locked polyglue run --target flutter --platform android
 
 Use explicit module/target selection for standalone generation and explicit library selection for library source assembly and binary artifacts. Deploy consumes a previously validated artifact manifest and never implicitly builds, bumps a version, publishes to a package registry or uploads as a side effect of generate/build/package/test. Resolve missing or ambiguous library/format/SDK combinations before modifying outputs. Build/test/package may require native SDKs. Generate/validate must remain offline Python-only. Use verified incremental reuse by default with input fingerprint validation, support an explicit clean build, a dry-run build plan, bounded parallelism, nonzero exit on failure/signal, and a machine-readable result option. Never report success just because an external command returned zero: verify expected artifacts and test results.
 
+All CLI entry points use the same project/config resolver and immutable generation/build plan. generate and validate remain SDK-free. build calls generation when required, package consumes the corresponding staged build, test consumes the exact selected output, and deploy consumes the verified existing package. No parallel implementations of dependency discovery, toolchain selection, version propagation, artifact hashing or command execution. The commands are thin entry points, not separate orchestration engines. Reuse native ecosystem tooling and explicit user source/build integration rather than reimplementing it.
+
 ### 3.5 Development version and release authorization
 
 The current project version is **0.0.1**, an unreleased development version. Use a single canonical package version in pyproject.toml once the Python package is bootstrapped. Derive the CLI version, runtime distribution version, generated metadata and artifact manifests from the same source. Keep the ABI version and user module versions independent. A 1.0.0 value in an application-module or library example is illustrative, not the PolyGlue version. Do not claim 1.0.0 support. Library versions and build numbers are independently configured by their owners under section 7.8. They must not change the tool version or ABI identity.
@@ -489,7 +505,7 @@ This is a core acceptance fixture. The user status belongs to the User record, s
 | --- | --- |
 | module | Logical namespace, shared by multiple IDL files |
 | import | Compile-time symbol reference, independent of physical output |
-| record | Value semantics. Immutable by default, configurable where safe |
+| record | Independent value semantics; one contract, idiomatic host representation |
 | enum / flags | Stable integer representation, named values and bit masks |
 | variant | Tagged union with explicit alternatives |
 | interface | Object identity, methods and cross-language references |
@@ -511,10 +527,9 @@ import domain.User;
 import domain.{User, UserStatus};
 import domain as model;
 import domain.User as DomainUser;
-import domain.*;
 ```
 
-These are alternative forms, not intended to be combined redundantly. A wildcard import must resolve unambiguously. No dependence on C++ headers or Swift module names in IDL. Fully qualified logical identifiers can disambiguate types.
+These are alternative forms, not intended to be combined redundantly. Imports are explicit: qualified symbol, grouped symbols, module alias or symbol alias. Wildcard imports are not supported; reject them with a suggestion to use explicit imports. No dependence on C++ headers or Swift module names in IDL. Fully qualified logical identifiers can disambiguate types.
 
 ### 4.4 User-defined generics
 
@@ -543,7 +558,7 @@ interface PagedUserRepository {
 }
 ```
 
-Generic source types are instantiated consistently. C uses concrete generated types such as PageUser. Generic-capable targets may expose native generics when equivalent. Specialization identity comes from the fully qualified generic definition and canonical type arguments, not from the importing module or rendered name. In this example repository must explicitly own Page<User> with a specialization declaration, or import the specialization from its declared owning dependency. Public concrete specializations never acquire implicit ownership from the first use. Section 4.7.1 specifies local private instantiations and independent source/prebuilt generation. Do not silently emit several public classes for the same specialization or change ownership depending on the selected target. A prebuilt dependency can only supply specializations recorded in its manifest. Never modify it to add a new one. Reject conflicting owners and open generics at a concrete binary boundary.
+Generic source types are instantiated automatically from the reachable concrete signatures. C uses concrete generated types such as PageUser; generic-capable targets may expose native generics where equivalent. The optional specialize declaration above selects an explicit name/owner; ordinary Page<User> usage in a standalone module or assembled source library does not require it. The canonical identity is the fully qualified generic definition plus canonical type arguments, not the rendered name or consuming module. Section 4.7.1 defines deterministic ownership and when a separately distributed dependency actually requires explicit ownership.
 
 ### 4.5 Constants, inheritance and factory flow
 
@@ -602,21 +617,21 @@ Static operations obey the same synchronous executor checks, async completion, e
 
 ### 4.7 Inheritance, properties, overloads and generic specialization
 
-**Inheritance.** Use interface Child : Parent for a single base. Support multiple bases only when the canonical method set, identity and target mapping are unambiguous. Reject cycles, conflicting inherited declarations and unrepresentable target mappings. Inherited identical operations retain the declaring operation identity. A derived provider implements all inherited instance operations. An upcast retains the same underlying implementation through a validated base-contract view; no duplicate provider or registration. Explicit downcast succeeds only for an advertised compatible interface view. No cross-language RTTI guesses. Static bindings are not inherited through instance tables. Registry registration is exact-interface only; registering Child does not implicitly register Parent.
+**Inheritance.** Use interface Child : Parent for a single base. Support exactly one direct base interface. Reject multiple bases; model multiple independent roles using composition or explicit interface references. No mixin, diamond or implicit multiple-interface cast system. Reject cycles, conflicting inherited declarations and unrepresentable target mappings. Inherited identical operations retain the declaring operation identity. A derived provider implements all inherited instance operations. An upcast retains the same underlying implementation through a validated base-contract view; no duplicate provider or registration. Explicit downcast succeeds only for an advertised compatible interface view. No cross-language RTTI guesses. Static bindings are not inherited through instance tables. Registry registration is exact-interface only; registering Child does not implicitly register Parent.
 
-**Properties.** Record fields remain values. Readonly prevents public mutation; mutable record profiles still have independent value semantics. Interface methods may be exposed as properties through explicit target metadata only where a synchronous zero-argument getter or one-argument setter can preserve type, errors and ownership. A property never introduces implicit caching, a change event or blocking async work. If the language cannot express the error contract (for example a throwing Swift setter), require ordinary methods. No new property wire type.
+**Properties.** Record fields expose ordinary native fields/properties/accessors with independent value semantics. Interface operations always remain methods, including get/set names; do not infer or configure method-to-property mapping. Accessors are generated only for real fields. No IDL property keyword, cached remote property, implicit change event, or target-specific property annotation. This avoids hiding cross-runtime dispatch, errors or blocking work.
 
 **Overloads.** Distinguish operations by the declaring interface, logical method name, ordered canonical argument types and instance/static discriminator. Different method names with identical arguments are different operations. Parameter names, return type alone, async modifier alone or display name cannot distinguish overloads. Reject target collisions after lowering, including JVM erasure, Obj-C selectors, Swift argument labels and C symbols. C uses stable signature-derived symbol identifiers for overloads. A language lacking faithful overload support requires explicit distinct target names or a proven typed surface, not silently numbered methods or value-based guessing. Adapters dispatch by resolved operation identity.
 
-**Generics.** Use an explicit concrete specialization declaration in the owning module, for example specialize common.Page<domain.User> as UserPage;. This declares an alias and artifact owner, not a different canonical record. Canonical identity is the generic definition plus ordered canonical arguments. Reject conflicting owners, infinite expansions, unbound parameters and incompatible aliases. Ownership is independent of target filtering and graph traversal. Preserve legal indirect layouts, with bounded conversion. Reject recursive by-value layouts. Freeze the exact grammar with positive and negative tests in phase 1. Do not implement competing legacy syntaxes.
+**Generics.** Resolve reachable concrete instantiations automatically from the canonical graph. An optional specialize Definition<Arguments> as Name declaration selects a meaningful public alias and, when necessary, explicit artifact ownership. It does not create a second canonical record. Reject conflicting explicit owners, infinite expansions, unbound parameters and incompatible aliases. Ownership is independent of target filtering and graph traversal. Preserve legal indirect layouts with bounded conversion. Reject recursive by-value layouts. Freeze the exact grammar with positive and negative tests in phase 1.
 
 All the forms above use the existing typed IR, ABI and runtime machinery. The parser distinguishes logical aliases, target annotations and runtime binding. Any grammar adjustment requires updating the examples and conformance inventory together.
 
 #### 4.7.1 Concrete generic ownership and resolver limits
 
-Resolve all module declarations and imports before assigning physical artifacts. Public specialization ownership is explicit: exactly one declaration of specialize Definition<CanonicalArguments> as Name in an owning module per linked dependency closure. Any public signature using the concrete type, directly or nested, must reach that owner through explicit dependencies. An alias/import is not another owner. A private instantiation used only in implementation may be materialized locally with internal linkage and a module-private physical name, provided it does not escape through a public descriptor or conflict with a public owner. Its semantic type identity remains the same. Do not infer ownership from source traversal, first consumer, generation filter, name of generic definition or current build directory. Standalone native generics may preserve generic syntax but concrete ABI plans still have an owner. A separately generated module cannot extend a prebuilt module's exports; it may own a new specialization in its own source if the complete closure has no other owner. Reuse an existing owner rather than redeclare it. Independent libraries may independently own equivalent specializations only while not composed into the same physical type graph. Reject composition conflicts, including JVM erasure and shared runtime descriptor disagreement.
+Resolve all module declarations and imports before assigning physical artifacts. Collect each reachable concrete generic identity once from the complete declared graph before target filtering. Reuse an existing validated prebuilt/source explicit owner if it reaches the definition and all argument types. Otherwise, for a standalone source module, materialize the concrete use in that module's generated artifact if no existing dependency owns it; for an assembled source library, plan exactly one shared generated specialization artifact in its actual public library scope, with a stable concrete name derived from definition and arguments when native generic syntax cannot express it. For a source dependency graph outside a unified library, prefer an existing reachable source owner that can legally reach the definition and every argument type and is reachable from every public use; choose the unique nearest shared owner by dependency reachability, not traversal order. If no unique eligible shared owner exists for independently published artifacts, require an explicit owning source module and dependency edge or a unified source library; explain the competing usages. Do not generate duplicates or mutate a prebuilt dependency. An explicit specialize declaration in the eligible owner resolves that genuine distribution choice and can supply a public name; it is not required for ordinary use. A private nonescaping instantiation may use a private physical name, with canonical identity unchanged. Record the chosen physical owner in the manifest and reuse it on independent builds; reject incompatible composition before generation. All applicable profiles use the same canonical descriptor and concrete ABI identity.
 
-Allow mutual references between declarations within one module using symbol predeclaration; a source module dependency cycle is not permitted. Resolve imports by exact case-sensitive IDs, reject ambiguous wildcard/name bindings and distinguish alias from definition. Validate by-value layout cycles after expansion, not only syntactic recursion; finite indirection through collection or capability representations is different from an infinitely sized by-value structure. Reject open or infinitely expanding generic arguments. Bound expansion and parsing using section 11.7. Record canonical arguments, owner, visibility and physical representations in manifest. Test independent generation order, a shared specialization supplied prebuilt, conflicting independent owners and private instantiation leakage.
+Allow mutual references between declarations within one module using symbol predeclaration; a source module dependency cycle is not permitted. Resolve imports by exact case-sensitive IDs, reject ambiguous explicit name bindings and wildcard imports and distinguish alias from definition. Validate by-value layout cycles after expansion, not only syntactic recursion; finite indirection through collection or capability representations is different from an infinitely sized by-value structure. Reject open or infinitely expanding generic arguments. Bound expansion and parsing using section 11.7. Record canonical arguments, owner, visibility and physical representations in manifest. Test independent generation order, a shared specialization supplied prebuilt, conflicting independent owners and private instantiation leakage.
 
 ### 4.8 Declaration syntax and semantic validation baseline
 
@@ -646,6 +661,7 @@ flags Permission {
 variant Response {
     Success: User;
     Failure: string;
+    NotFound;
 }
 
 record Filter {
@@ -671,7 +687,7 @@ specialize common.Page<domain.User> as UserPage;
 
 These forms require real declarations for the imported types. The overload in this fixture needs distinct explicit names in targets lacking a faithful overload surface; it is not an automatically valid all-target fixture. The observe operation intentionally retains a callback and its provider must define removal/cleanup; it does not introduce an implicit subscription. All declarations are public unless explicitly private. A private top-level declaration is module-local, not accessible by another module's import; an exported signature may not expose a private type. Methods of a public interface form its public contract; do not allow private abstract operations to make foreign implementations incomplete. Public/private affects source visibility and export planning, not native memory isolation. Reject duplicate names, ambiguous imports and unresolved references with related source locations.
 
-Constants and field defaults are typed literals, declared constant references, or enum/flags member references with compatible canonical type. Support null only in optional positions, numeric range checks and explicit collection literals where the declared type permits them. Do not introduce arbitrary compile-time execution or implicit conversions between unrelated types. Variant cases have distinct names and deterministic canonical tags derived from their declaration order (zero-based unless an explicitly supported tag syntax is adopted in the final grammar); reordering them is a contract change. Enums and flags use explicit integer assignments. The final grammar must document literal syntax, type nesting, annotation placement, modifier order (visibility, static, async where applicable), generic declarations, inheritance and import forms, with positive/negative parser fixtures. Freeze before generating public APIs. No legacy spellings or silent syntax recovery that changes a contract.
+Constants and field defaults are typed literals, declared constant references, or enum/flags member references with compatible canonical type. Support null only in optional positions, numeric range checks and explicit collection literals where the declared type permits them. Do not introduce arbitrary compile-time execution or implicit conversions between unrelated types. Variant cases may carry a typed payload (Name: Type;) or no payload (Name;). A no-payload case has only its tag, no void-valued field; it reuses the active-tag mechanism of Result<void,E>. Variant cases have distinct names and deterministic canonical tags derived from their declaration order (zero-based unless an explicitly supported tag syntax is adopted in the final grammar); reordering them is a contract change. Enums and flags use explicit integer assignments. The final grammar must document literal syntax, type nesting, annotation placement, modifier order (visibility, static, async where applicable), generic declarations, inheritance and import forms, with positive/negative parser fixtures. Freeze before generating public APIs. No legacy spellings or silent syntax recovery that changes a contract.
 
 ## 5. Type system
 
@@ -693,7 +709,7 @@ Start with ordinary values such as integers and strings. Records group values to
 | Lifetime / control | `WeakRef<T>`, CancellationToken |
 | External | Explicitly declared type with per-target adapter |
 
-`void` is a return-only type, including Result success with no payload. Reject `optional<void>`, `list<void>` and other value positions containing void, except `Result<void,E>` as a legal success case. Null is a literal, not an independent transport type. Service discovery, constants, factories, inheritance and generic declarations are language features rather than extra wire types. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Arrays of other legal value types use element-wise conversion without a contiguous-memory promise. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
+`void` is a return-only type, including Result success with no payload. Reject `optional<void>`, `list<void>` and other value positions containing void, except `Result<void,E>` as a legal success case. Null is a literal, not an independent transport type. Service discovery, constants, factories, inheritance and generic declarations are language features rather than extra wire types. `array<T>` is a variable-length sequence with an optimized contiguous representation for fixed-width numeric primitives. `list<T>` is the general sequence representation. Restrict array<T> to bool and fixed-width integer/floating scalar elements. Reject record, reference, collection, optional, enum/flags and external/generic-expanded nonprimitive elements; use list<T> instead. A generic T resolved to an allowed primitive is legal. Both sequence forms use one element conversion/validation and ownership engine; array selects an actual typed contiguous public representation when supported, not a separate collection runtime. Optimize list<T> internally where compatible; use DataView/DataRef for explicit byte-memory sharing. Bool arrays must use explicitly defined byte storage when exposed as contiguous memory, not C++ `vector<bool>` bit proxies. Neither list nor array implies zero-copy. Use the explicit buffer contracts in section 13 for shared memory.
 
 ### 5.2 Return mapping examples
 
@@ -704,7 +720,7 @@ These are semantic API mappings. An async declaration wraps the corresponding ty
 | User | User | User | User | User |
 | `optional<User>` | `std::optional<User>` | User? | User? | User? |
 | `list<User>` | `std::vector<User>` | `List<User>` | [User] | `List<User>` |
-| int64 | int64_t | Long | Int64 | int (native) |
+| int64 | int64_t | Long | Int64 | BigInt |
 | bool | bool | Boolean | Bool | bool |
 | void | void | Unit | Void | void |
 
@@ -736,9 +752,9 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 ### 5.4 Complete type mapping contract
 
-These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a paired JVM library; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Dart/Flutter uses BigInt for int64 and uint64 by default on all platforms (section 5.4.2); native-only signed int is explicit opt-in. Java and Kotlin share one model by default when jointly declared in a paired JVM library; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
-All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. Stream acquisition returns an owning stream handle, distinct from the subscription handle created when a consumer subscribes (section 14.3.2). `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
+All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A minimal wrapper is required only when a native representation cannot preserve the full value or lifetime contract; share lowering by canonical type family, not one implementation for each concrete spelling. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. Stream acquisition returns an owning stream handle, distinct from the subscription handle created when a consumer subscribes (section 14.3.2). `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
 #### Type meaning and native boundary
 
@@ -765,7 +781,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | Ordered sequence | Typed descriptor/handle | Length + elements |
 | `set<T>` | Unique values | Typed descriptor/handle | Canonical unique elements |
 | `map<K,V>` | Keys mapped to values | Typed descriptor/handle | Canonical key/value pairs |
-| `array<T>` | Sequence with contiguous primitive optimization | Typed array descriptor | Length + typed or element buffer |
+| `array<T>` | Numeric/bool scalar sequence with typed contiguous representation | Same sequence lowering, typed scalar storage | Length + typed scalar buffer |
 | `optional<T>` | Absent or present value | Presence tag + payload | Presence tag + payload |
 | `Result<T,E>` | Business success or business error | Tagged result + destroy | Tag + active payload |
 | `interface` | Reference to an implementation | Typed opaque handle | Context-local typed handle |
@@ -811,7 +827,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `array<T>` | std::vector / exact typed wrapper (bool uses wrapper) | Exact primitive array / wrapper | Primitive or unsigned array / wrapper | Owned typed array wrapper | Typed array / wrapper |
 | `optional<T>` | `std::optional<T>` | Nullable boxed T / wrapper | T? / wrapper | Nullable object / boxed optional | `Optional<T>` |
 | `Result<T,E>` | PolyGlue Result | Generated Result | Sealed Result | Tagged result object | Result / tagged enum |
-| `interface` | Owning interface reference | Interface + proxy | Interface + proxy | Protocol + proxy | Protocol + proxy |
+| `interface` | Owning interface reference | Native interface/class | Native interface/class | Protocol/class | Native protocol or same-name owning facade for mixed interfaces (8.11) |
 | `callback` | Callable wrapper | Functional interface | Function / SAM | Block | Closure |
 | `async method / callback` | Awaitable / future | CompletableFuture | suspend | Completion block | async throws |
 | `Stream<T>` | Owning async stream | Owning stream + Publisher adapter | Owning Flow adapter | Owning stream + subscription/block | Owning AsyncSequence adapter |
@@ -834,7 +850,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `int8` | int | int | int | sbyte | number | number |
 | `int16` | int | int | int | short | number | number |
 | `int32` | int | int | int | int | number | number |
-| `int64` | int | int | BigInt | long | bigint | bigint |
+| `int64` | int | BigInt | BigInt | long | bigint | bigint |
 | `uint8` | int | int | int | byte | number | number |
 | `uint16` | int | int | int | ushort | number | number |
 | `uint32` | int | int | int | uint | number | number |
@@ -851,7 +867,7 @@ All numeric conversions check range and type. All collection mappings obey the k
 | `list<T>` | list[T] | `List<T>` | `List<T>` | `IReadOnlyList<T>` | Array | `ReadonlyArray<T>` |
 | `set<T>` | set[T] | `Set<T>` | `Set<T>` | `IReadOnlySet<T>` | Set | `Set<T>` |
 | `map<K,V>` | dict[K,V] | `Map<K,V>` | `Map<K,V>` | `IReadOnlyDictionary<K,V>` | Map | `Map<K,V>` |
-| `array<T>` | Owned typed buffer / list | Exact TypedData / wrapper | Exact TypedData / wrapper | T[] / owned typed wrapper | TypedArray / Array | TypedArray / `ReadonlyArray<T>` |
+| `array<T>` | Owned typed buffer / exact scalar sequence | Exact TypedData / wrapper | Exact TypedData / wrapper | T[] / owned typed wrapper | TypedArray / exact scalar wrapper | TypedArray / exact scalar wrapper |
 | `optional<T>` | T or None / wrapper | T? / wrapper | T? / wrapper | T? / wrapper | T or null / wrapper | T or null / wrapper |
 | `Result<T,E>` | Tagged result | Sealed Result | Sealed Result | Generated Result | Tagged object | Discriminated union |
 | `interface` | Protocol/ABC + proxy | Interface + proxy | Interface + proxy | Interface + proxy | Provider object / proxy | Interface + runtime proxy |
@@ -881,11 +897,11 @@ Before constructing a target collection, detect whether the host's native equali
 
 Integers use exact mathematical range checks before narrowing, including rejection of fractional Number, boolean-as-integer and unsafe 64-bit Number input. Float32 uses IEEE-754 round-to-nearest ties-to-even when converting a wider finite input. Preserve signed zero and allow representable subnormals; a finite input that overflows to infinity fails rather than silently becoming an explicit infinity. Explicit NaN and infinities are valid floating values; preserve classification, not NaN payload bits. Do not use floating equality to test signed zero or NaN. Use exact canonical integer/bit expectations in tests and document any explicit lossy application conversion outside the default boundary.
 
-Validate legal value positions recursively after generic and external-type expansion, not only the outer type name. DataView and MutableDataView are direct synchronous parameters only; an external borrowed representation is subject to the same rule. void is return-only except the payload-free Result success case. WeakRef<T> requires a concrete interface reference type, not a value, callback, stream, generic open type or dynamic registry proxy; weak acquisition returns an owning fixed reference or absence for an expired live-origin object. A wrong-origin or malformed weak token is an error, not absence. Stream<T> is an owning stream capability for a legal non-void owning item type; stream capabilities are return values (including async return), not record fields, keys or arbitrary nested collection elements in the initial contract. Explicitly model a factory interface when a reusable stream-producing object must be passed around. Callback values in direct parameters (including optional callback) default scoped; legal callback values returned or stored inside an owning record/collection use owning semantics and must have an explicit documented release path. A scoped or borrowed capability may never escape via a nested external adapter or generic alias. A CancellationToken is an owning observation reference to cooperative cancellation state, not cancellation authority, a boolean or an operation handle; section 14.4.2 defines the source/control distinction. These restrictions are identical across targets; a host's ability to store a pointer does not make an otherwise forbidden position valid.
+Validate legal value positions recursively after generic and external-type expansion, not only the outer type name. Reject optional directly containing another optional after expansion and array of nonprimitive elements. An optional record, optional list of optional elements, or Result containing an optional remains legal because the intervening type has its own meaning. DataView and MutableDataView are direct synchronous parameters only; an external borrowed representation is subject to the same rule. void is return-only except the payload-free Result success case. WeakRef<T> requires a concrete interface reference type, not a value, callback, stream, generic open type or dynamic registry proxy; weak acquisition returns an owning fixed reference or absence for an expired live-origin object. A wrong-origin or malformed weak token is an error, not absence. Stream<T> is an owning stream capability for a legal non-void owning item type; stream capabilities are return values (including async return), not record fields, keys or arbitrary nested collection elements in the initial contract. Explicitly model a factory interface when a reusable stream-producing object must be passed around. Callback values in direct parameters (including optional callback) default scoped; legal callback values returned or stored inside an owning record/collection use owning semantics and must have an explicit documented release path. A scoped or borrowed capability may never escape via a nested external adapter or generic alias. A CancellationToken is an owning observation reference to cooperative cancellation state, not cancellation authority, a boolean or an operation handle; section 14.4.2 defines the source/control distinction. These restrictions are identical across targets; a host's ability to store a pointer does not make an otherwise forbidden position valid.
 
 #### 5.4.2 One Dart API across native and web
 
-The tables above describe platform-specific default type mappings. A Dart package targeting both native and Web, including a Flutter plugin with Web support, must instead resolve a portable public type profile before generating any public declarations. Configure targets.dart.integer_profile (and the Flutter integration's inherited Dart profile) as auto by default. Auto resolves portable for a declared native+web integration, native for an explicitly native-only package, and portable for web-only. Portable uses BigInt for both int64 and uint64 on every selected platform, including fields, optional/nested values, method parameters/returns and array elements. Smaller integers retain int. Exact typed array wrappers or element conversion are required when a native TypedData representation cannot preserve the portable public element type. Native-only may explicitly use int for int64, with checked conversions; native is invalid for a package promising Web compatibility. A consumer may explicitly select portable on native-only targets. No conditional public declaration, dynamic/Object substitution or conversion through double/JS Number to hide the difference.
+Use one default Dart integer mapping on every platform: BigInt for int64 and uint64; int for smaller integers. No automatic API change based on selected platforms or command filters. The existing targets.dart.integer_profile option is limited to portable (default) and native (explicit opt-in for a genuinely native-only package using int for signed int64). Do not implement auto or additional profiles; native is invalid when Web compatibility is declared. Flutter inherits the Dart package's actual profile; incompatible public dependencies must be explicitly rebuilt or the deployment scope constrained. Preserve exact bits with checked conversion, not JS Number or double.
 
 Use one public Dart declaration graph and distinct private FFI/JS adapters. Native int64 and uint64 conversion must preserve the full signed/unsigned bit pattern without first constructing an overflowing native int; use validated fixed-width chunks/typed bytes where necessary. The Web adapter uses exact BigInt or checked bit representations. Verify both extreme bounds and values above 2^53 with the same installed Dart source consumer on native and Web. Compare actual public signatures, not only runtime values. A platform-specific standalone Dart package can still use the separate native mapping from the table, but a Flutter plugin cannot silently change the public types of an existing imported Dart dependency; require a compatible portable dependency or explicitly constrain supported platforms.
 
@@ -903,7 +919,7 @@ The tables describe semantic public types, not native object layouts. The type p
 | date/time/UUID | Date 0001–9999; timestamp/duration full signed 64-bit units; UUID 16 network-order bytes, explicit .NET Guid mixed-endian conversion |
 | enum/flags | Explicit signed int32 enum values and uint32 masks; reject unknown values/bits; Java/Kotlin ordinal is not IDL value |
 | records/variants | Validated value snapshots, copy value leaves and retain reference leaves; tag selects active variant; no memcpy of host objects |
-| optional/Result | Independent tags, no nested null flattening, scalar boxing where required; no payload for void success, separate runtime errors |
+| optional/Result | Presence/active tags, reject directly nested optionals, scalar boxing where required; no payload for void success, separate runtime errors |
 | list/set/map | Exact recursive element plans; canonical equality; reject duplicate keys before host collapse; independent containers |
 | array | Owned variable-length sequence; exact primitive storage where supported, typed owner or element sequence otherwise; no zero-copy promise |
 | interface/callback/weak/token | Typed capability with validated context/generation and correct root/lease; atomic weak upgrade, independent cancellation token |
@@ -912,7 +928,7 @@ The tables describe semantic public types, not native object layouts. The type p
 
 **JVM arrays and generics.** Java signed primitive arrays use byte[], short[], int[], long[], float[], double[] and boolean[]. Unsigned 8/16/32 arrays default to short[], int[], long[] with range checks; uint64 to BigInteger[] or an explicitly configured exact owning bit wrapper. Kotlin uses UByteArray/UShortArray/UIntArray/ULongArray with required opt-in where applicable, or an equivalent exact wrapper; JNI carrier bits are internal. Shared Java-owned models keep the actual Java field signatures. Java generic arguments and CompletableFuture results require boxed primitives and Void for no-payload success. Preserve legal null collection elements; avoid null-rejecting factories. Snapshot mutable arrays and containers.
 
-**Apple.** Objective-C Foundation collections and lightweight generic arguments require object types: box scalars with checked range and numeric kind (including NSNumber bool distinction), and use tagged wrappers for nested optional/variant/Result. Never insert nil in a collection. NSNull is not an independent nested presence tag. BOOL is converted to a canonical byte; NSInteger/Swift Int are not substitutes for fixed-width int64. Swift maps to native Optional, but imported Obj-C optional nesting needs tagged wrappers. Swift Result requires Error-conforming E or a generated tagged result. Completion APIs distinguish success-with-absence from NSError failure; use an explicit status/result box or native refinement when the importer cannot prove both. No exception unwinds across C.
+**Apple.** Objective-C Foundation collections and lightweight generic arguments require object types: box scalars with checked range and numeric kind (including NSNumber bool distinction), and use tagged wrappers for variant/Result and boxed optional scalars or collection elements where required. Never insert nil in a collection. NSNull is not a second presence state. BOOL is converted to a canonical byte; NSInteger/Swift Int are not substitutes for fixed-width int64. Swift maps to native Optional; use checked imported scalar/collection boxing where required. Swift Result requires Error-conforming E or a generated tagged result. Completion APIs distinguish success-with-absence from NSError failure; use an explicit status/result box or native refinement when the importer cannot prove both. No exception unwinds across C.
 
 **Python, Dart, .NET, JS/TS.** Python bool is not integer input; check int bounds and snapshot mutable bytes-like inputs. Python typing/TypeScript types do not replace boundary validation. Dart portable 64-bit values require BigInt, exact chunk conversion and compatible typed array wrappers. .NET bool, char, string and platform-dependent native long are not canonical C layouts; marshal explicit byte bool, fixed-width integer and length-delimited UTF-8. JS validates Number before narrowing, BigInt64Array/BigUint64Array capability and exact element values; reject detached buffers, holes, undefined and coercions. TypeScript uses identical runtime checks. A signed bit carrier is not the mathematical unsigned value until decoded. Snapshot/transfer mutable typed arrays only under the value contract.
 
@@ -920,9 +936,9 @@ The tables describe semantic public types, not native object layouts. The type p
 
 #### 5.4.4 Compound values, equality and non-void host generics
 
-An immutable generated record guarantees that its observable value fields do not change through aliases. Freeze or defensively copy mutable collections, arrays and bytes at construction and access; a final field, readonly property, frozen dataclass, Kotlin data class, C# record or TypeScript Readonly type alone is insufficient. Generated mutable-record profiles may expose explicit mutation but a call captures an independent snapshot, recursively through value leaves. Interface, retained callback, weak-reference, token and DataRef leaves preserve their capability identity and acquire only the appropriate independent owner; they are not deep-copied into providers or made immutable by a containing record. Releasing an owning value releases those leaves once. Host constructors/copy helpers must honor this rule too, including generated data-class copy and collection accessors. No implicit cloning of a provider. Direct immutable bytes may be returned as immutable storage; mutable public arrays are independent copies or checked readonly wrappers, never a writable alias into an immutable record.
+A record has independent value semantics, not a shared mutable aggregate. Copy, move or snapshot mutable value leaves at construction, assignment and call capture as needed; use copy-on-write where proven. Host-native value structs may have ordinary local mutation without affecting other independent values. Reference-based host models use immutable fields/protected storage and defensive copies or checked read-only access so callers cannot mutate another record through aliases. No selectable mutable-record profile. Interface, retained callback, weak-reference, token and DataRef leaves preserve capability identity and appropriate independent ownership; do not deep-copy providers or freeze capability state. Releasing a value releases its own leaves once. Native record copies, accessors and default construction must preserve this contract. A mutable independent return container is legal; a writable alias into a protected record is not.
 
-Define structural comparison for values with a fully comparable canonical shape. Records compare by same logical type and ordered fields, variants by same logical type, active tag and payload, optionals by independent presence tags, Result by active tag and payload, lists/arrays/bytes by ordered contents, sets by canonical membership and maps by canonical keys and corresponding values without iteration-order dependence. String equality is exact scalar sequence; time and UUID compare canonical values. A portable structural float comparison treats all NaNs as equivalent and distinguishes +0 from -0, after canonical width conversion. This is a value-equality policy, not a change to native arithmetic or a claim to preserve NaN bits. Generated equality/hash functions must agree where offered; use explicit canonical helpers when host native equals/Hashable cannot match. Structural equality and hashing are opt-in only for external types with a proven canonical value comparison. Do not derive structural equality/hash across arbitrary reference leaves, mutable records or resource capabilities; provide explicit identity comparison for fixed interface handles in the same context, with validation, and no equality based on pointer, proxy address or current dynamic-registry selection. Records containing capabilities may still expose host identity equality, documented as nonportable. Do not introduce these compound values as portable map/set keys. Hash output is process-local; stable fingerprints are a different mechanism. Detect actual cyclic host value graphs on the current conversion path before descending; shared acyclic subvalues may occur more than once and are snapshotted separately. Interface reference cycles are legal identity relationships, not recursive value conversion. Enforce depth and aggregate resource budgets even for acyclic graphs.
+Define structural comparison for values with a fully comparable canonical shape. Records compare by same logical type and ordered fields, variants by same logical type, active tag and payload, optionals by presence tag, Result by active tag and payload, lists/arrays/bytes by ordered contents, sets by canonical membership and maps by canonical keys and corresponding values without iteration-order dependence. String equality is exact scalar sequence; time and UUID compare canonical values. A portable structural float comparison treats all NaNs as equivalent and distinguishes +0 from -0, after canonical width conversion. This is a value-equality policy, not a change to native arithmetic or a claim to preserve NaN bits. Generated equality/hash functions must agree where offered; use explicit canonical helpers when host native equals/Hashable cannot match. Structural equality and hashing are opt-in only for external types with a proven canonical value comparison. Do not derive structural equality/hash across arbitrary reference leaves, mutable records or resource capabilities; provide explicit identity comparison for fixed interface handles in the same context, with validation, and no equality based on pointer, proxy address or current dynamic-registry selection. Records containing capabilities may still expose host identity equality, documented as nonportable. Do not introduce these compound values as portable map/set keys. Hash output is process-local; stable fingerprints are a different mechanism. Detect actual cyclic host value graphs on the current conversion path before descending; shared acyclic subvalues may occur more than once and are snapshotted separately. Interface reference cycles are legal identity relationships, not recursive value conversion. Enforce depth and aggregate resource budgets even for acyclic graphs.
 
 Flags have a uint32 known-bit mask formed by declared distinct single-bit nonzero members. Zero is allowed as a named empty mask; a named combination may only OR declared single bits. Reject undeclared bits, negative values, duplicate names and duplicate numeric names unless a separately specified explicit alias syntax is supported; no implicit ordinal values or signed interpretation of bit 31. The complete mask may be zero. Closed enums remain explicit unique int32 values. Check static defaults, external conversions and dynamic input.
 
@@ -969,23 +985,23 @@ Validate temporal and numeric operations as well as boundary representation: con
 
 #### 5.4.6 Concrete immutable model and conversion policy
 
-The default public record is immutable in its value semantics. Use the following target strategies; readonly syntax alone is not proof. Values returned independently from a record may have an idiomatic mutable container representation where the canonical table permits it; they cannot be writable aliases into the record's stored value. Retain interface/DataRef/callback capability leaves independently; their referenced state is not frozen.
+The single public record contract is independent value semantics. The following target strategies are defaults, not configurable mutability profiles; readonly syntax alone is not proof. Values returned independently from a record may have an idiomatic mutable container representation where the canonical table permits it; they cannot be writable aliases into the record's stored value. Retain interface/DataRef/callback capability leaves independently; their referenced state is not frozen.
 
-| Target | Default implementation strategy for immutable value models |
+| Target | Default implementation strategy for independent value models |
 | --- | --- |
 | C | Validated owning descriptor and typed construction/access functions; raw struct mutation is trusted native use, never a promise of compiler-enforced immutability; validate at every ingress and snapshot independent values |
-| C++ | Private storage, checked constructor/factory, const accessors; no mutable aliases into nested values; copy/move retains capability leaves correctly |
+| C++ | Native value struct with checked construction and independent copy/move; locally mutable fields are legal when value leaves are independent and capability identity retained; use protected storage only where needed |
 | Java | Final private fields and defensive copies or genuinely immutable owned collection views; arrays returned as copies; no wrapper over caller-mutable backing list |
 | Kotlin | val properties plus defensive ownership of collections and arrays; generated copy/component access obeys snapshots; paired Java-owned models retain actual Java representation |
 | Objective-C | readonly properties, explicit constructors and recursively protected value leaves; immutable Foundation container alone is shallow; mutable inputs copied; no mutable subclass storage alias |
-| Swift | Native struct with let properties, value/COW storage where valid, owned wrappers for reference-backed values; imported Objective-C model proves same semantics; no blanket Sendable |
+| Swift | Native struct with idiomatic let/var value fields, value/COW storage where valid, owned wrappers for reference-backed values; imported Objective-C model proves same semantics; no blanket Sendable |
 | Python | Frozen model plus immutable stored sequences/mappings or defensive access copies; dataclass frozen alone is shallow; typing matches actual public return |
 | Dart / Flutter | final fields, copied backing storage and genuinely unmodifiable collections or defensive copies; TypedData views cannot alias hidden mutable storage |
 | C# | readonly/private storage and checked factories; IReadOnlyList/IReadOnlyDictionary are interfaces, not immutability; use protected storage, copy mutable arrays, validate default struct state or use class |
 | JS / TS | Protect recursively owned value fields at runtime; readonly declarations and shallow Object.freeze are insufficient; typed arrays, Map and Set need copies or checked read-only facades; avoid freezing user capability objects |
 | WASM | Same native owning descriptor and validation; host-facing public model follows JS/TS or selected host strategy |
 
-Construction omission applies only to a declared typed default or an optional field (absent). Do not invent implicit zeros, empty containers, epoch date, nil UUID, enum member, variant, Result or provider for an omitted required field. A valid zero/empty/nil-UUID value may be explicitly supplied where permitted; raw initialized-empty output storage is distinct from a valid required value. A host that always supports default(T) must reject an invalid unconstructed value at ingress or use a representation without that invalid default. Keep mutable-record mode explicit and configurable. Constructor, copy, clone, equality and accessor tests must use mutable nested input and capability leaves; no validation based solely on source syntax.
+Construction omission applies only to a declared typed default or an optional field (absent). Do not invent implicit zeros, empty containers, epoch date, nil UUID, enum member, variant, Result or provider for an omitted required field. A valid zero/empty/nil-UUID value may be explicitly supplied where permitted; raw initialized-empty output storage is distinct from a valid required value. A host that always supports default(T) must reject an invalid unconstructed value at ingress or use a representation without that invalid default. Do not offer a separate mutable-record mode. Constructor, copy, clone, equality and accessor tests must use mutable nested input and capability leaves; no validation based solely on source syntax.
 
 External conversion runs on the actual host that owns the input: caller to canonical owning representation before accepted publication; canonical representation to provider host after permitted dispatch; provider result to canonical before completion; canonical to consumer on its permitted delivery domain. A source adapter that needs a different executor must require explicit preparation on that executor or a proven owning transfer before conversion. Do not enqueue an inaccessible source object, retain borrowed memory across suspension or make a synchronous invocation dispatch-and-wait. Each conversion has an independent rollback transaction; no partially initialized result becomes visible. Type support requires real executable tests of these paths and not just a table entry.
 
@@ -1021,6 +1037,8 @@ record User {
 }
 ```
 
+Keep the already specified exact canonical range and precision; do not silently restrict timestamps or durations to suit one host. Use native types directly when they represent the full contract; otherwise one small exact wrapper per needed semantic type with checked native conversion, not several configurable precision or timezone profiles. A narrower time range or precision would change the contract and requires a separate owner-approved decision backed by real consumer needs.
+
 #### 5.6.1 Native date and time integration
 
 | Target | Calendar date | UTC instant | Duration |
@@ -1050,6 +1068,8 @@ Test epoch zero, pre-epoch negative timestamps, positive and negative subsecond 
 ### 5.7 Custom and external type extension system
 
 Users must be able to add new reusable types without modifying, forking, rebuilding or publishing a new version of the Python generator. Ordinary records, enums, flags, variants, interfaces and generic declarations already define project-owned types in IDL. External types additionally expose existing host-language classes or value types through an explicit portable representation and native adapters. Both are first-class module symbols. Use a stable, documented declarative descriptor schema and a small adapter API. Do not require a Python plugin for an ordinary new type or copy the built-in backend templates just to integrate one.
+
+External types are a mapping to existing canonical IR, not a new type system or compiler plugin. One descriptor loader, one checked two-direction conversion contract and the ordinary build dependency graph serve all targets. Do not require adapters for normal records or introduce arbitrary custom native ABI layouts. Reuse value/capability conversion and cleanup paths; an identity mapping needs no redundant generated adapter body.
 
 #### 5.7.1 Portable representation
 
@@ -1237,7 +1257,7 @@ Publish the descriptor schema with the generator package, document exact adapter
 
 All values are required and non-null unless declared as `optional<T>`. Do not introduce an untyped null value or an implicit nullable mode. The IDL keyword null is a literal allowed only where an optional value is expected, including an optional default. Optional does not mean that a method parameter may be omitted. Every call supplies every declared argument. An optional parameter accepts an explicitly absent value, not an omitted argument. Generated record constructors may omit a field only when it has a declared default or is optional without a default. An absent optional field with no default becomes absent. A required field without a default must be supplied.
 
-At the ABI, every optional has an explicit presence tag. An absent optional carries no active payload. A present optional carries a valid T. The outer and inner tags of `optional<optional<T>>` are independent. Do not read, retain or release inactive payloads. The generated record representation contains all declared fields after construction. A constructor may use a language-specific omission sentinel, but the sentinel is never a transported value. The decoder receives fully constructed fields and never reapplies defaults to explicit absence. Omission is a construction-time rule, not an extra wire state.
+At the ABI, every optional has one explicit presence tag. An absent optional carries no active payload; a present optional carries a valid T. Direct optional<optional<T>> is invalid, including through generic substitution or aliases. Use a named variant with payload-free cases for distinct semantic states. Do not read, retain or release inactive payloads. Record construction applies defaults only to omitted arguments; the decoder receives fully constructed fields and never reapplies defaults to explicit absence. A host-specific omission sentinel is never transported.
 
 | Input or state | Meaning |
 | --- | --- |
@@ -1246,11 +1266,11 @@ At the ABI, every optional has an explicit presence tag. An absent optional carr
 | Optional field omitted | Use declared default, otherwise absent |
 | Optional field explicitly null | Absent, not the default |
 | Optional value present with empty string/list/bytes, zero or false | A real present value |
-| Nested optional | Outer absent, outer present with inner absent, or both present |
+| Direct nested optional | Invalid; use a named variant for three or more domain states |
 | Successful optional return with no value | Success with absence, not an invocation failure |
 | Failed Result, runtime error or cancellation | Distinct from optional absence |
 
-Use the native nullable form for a single optional when it can represent both states. Use a small explicit tagged wrapper where native nullability collapses nested states. For Objective-C collections, use generated boxed optional values rather than inserting nil in NSArray or NSDictionary. Java/Kotlin collections must preserve optional elements without using collection constructors that reject legal null values. Swift Optionals retain both tags even when imported Objective-C APIs need wrappers. Python uses None for a single absent value and a tagged wrapper for nested optionals. JavaScript and TypeScript use explicit null for a single absent value. A declared field is not a TypeScript optional property merely because its value can be null. Enable strictNullChecks and exactOptionalPropertyTypes. Reject explicit undefined at value boundaries and sparse array holes rather than treating them as null. The exception is the no-payload void result. Detect missing record properties before default application. A missing map key is not a present key with an absent optional value.
+Use native nullable/optional types where they preserve absence and presence. Box only where a host cannot directly represent an allowed value, such as Objective-C scalar/collection elements. Java/Kotlin collections must preserve legal optional elements without constructors that reject null. Python uses None; JavaScript/TypeScript use explicit null. A nullable field is not a TypeScript optional property. Enable strictNullChecks and exactOptionalPropertyTypes. Reject explicit undefined and sparse holes except the no-payload void result. Detect missing record fields before default application. A missing map key is distinct from a present key with an absent optional value.
 
 ```text
 record Profile {
@@ -1268,7 +1288,19 @@ interface ProfileStore {
 
 For example, a missing biography uses "New user", an explicit null biography stays absent, and an empty biography stays present. A call returning an absent profile succeeded. A failed conversion or missing provider did not.
 
-Required conformance cases cover null rejection for required values, default versus explicit absence, nested optional tags, missing map keys versus present absent values, nullable elements, empty and zero values, successful absent async results, and cleanup of partially converted optional collections. Test representative distinct conversion paths in both directions using the common fixtures.
+For a three-state update, express the actual domain meaning instead of stacking nullability:
+
+```text
+variant UserUpdate {
+    Unchanged;
+    Clear;
+    Value: User;
+}
+```
+
+All targets reuse ordinary tagged variant lowering. A payload-free variant case allocates no synthetic value; the active tag determines whether a payload exists.
+
+Required conformance cases cover null rejection for required values, default versus explicit absence, rejection of directly nested optionals, payload-free variant states, missing map keys versus present absent values, nullable elements, empty and zero values, successful absent async results, and cleanup of partially converted optional collections. Test representative distinct conversion paths in both directions using the common fixtures.
 
 Official host API references: [Foundation collections](https://developer.apple.com/documentation/foundation/collections), [TypeScript strict null checks](https://www.typescriptlang.org/tsconfig/strictNullChecks.html) and [Python datetime](https://docs.python.org/3/library/datetime.html).
 
@@ -1420,7 +1452,7 @@ flowchart TD
     J --> K["Caller receives value or absence"]
 ```
 
-Nested optionals repeat the presence decision for each layer. A runtime error is never converted into absence.
+Direct nested optionals are rejected; optional values inside a distinct aggregate use their own presence decision. A runtime error is never converted into absence.
 
 #### Result and runtime errors
 
@@ -1536,6 +1568,8 @@ Use the fully qualified case-sensitive logical module and symbol name as identit
 
 module.name is required and matches every IDL module declaration in its source roots. module.version is optional for local source-only modules; absence is recorded as unversioned, not 0.0.0 or the tool version. A separately distributed prebuilt module requires an explicit MAJOR.MINOR.PATCH module version and validated contract/ABI fingerprints. A packaged library may contain local unversioned source modules; its release version never fills module versions. Project version is optional application metadata. Source dependencies resolve from explicit manifest paths and logical identity. An optional exact dependency version constraint is checked against the manifest, not resolved by downloading another version. Reject conflicting logical IDs, incompatible fingerprints and competing artifact owners in the selected closure. Deduplicate identical references to the same owner. Version equality alone is not compatibility.
 
+Source IDL and prebuilt manifests are two inputs to the same canonical declaration graph. Decode manifests into validated immutable canonical nodes and actual artifact references; run one symbol, import, generic and dependency resolver. Do not implement a parallel prebuilt compiler or remote version resolver. One schema/catalog defines canonical metadata; source and prebuilt use the same identity and compatibility rules.
+
 ### 6.3 Manifest
 
 ```json
@@ -1573,7 +1607,7 @@ Illustrative versioned module excerpt. The full schema includes artifact kind (s
 ### 6.4 Acceptance tests
 
 - Generate domain and repository together and separately, using source and prebuilt dependencies.
-- Import a type by alias, grouped import and wildcard. Detect ambiguity.
+- Import a type by explicit symbol, module/symbol alias and grouped import. Reject wildcard imports and detect ambiguity.
 - Change a domain output path, prefix or package and regenerate repository imports correctly.
 - Reject incompatible duplicates, missing targets, invalid cycles, incompatible manifests and unavailable generated artifacts.
 - Confirm stable logical identity regardless of generated target casing or path. IDL identifiers themselves are case-sensitive: User and user are distinct logical declarations and may cause a target collision.
@@ -1613,6 +1647,24 @@ From lowest to highest priority:
 Library public entry-point identities and exposure rules are assembly settings, not inherited module naming overrides. They are resolved separately from module defaults. A library can specify its public module, package, namespace, facade aliases and export set. A source module's derived standalone physical scope may be planned in the unified library scope under section 10.5. Explicit defining-module names and prebuilt names are never silently rewritten. Module-level explicit naming and declaration annotations still control the defining symbols. Multiple libraries can consume the same module with distinct public facades. For different actual module render configurations, stage isolated outputs keyed by the effective configuration; never overwrite another library's files. Prebuilt modules cannot be renamed or recompiled by consumer defaults; use compatible public aliases or explicitly rebuild from source.
 
 Project, library and module defaults use the same defaults key, with shared settings and nested targets. Library defaults are configured at libraries.<id>.defaults. Apply shared settings before target-specific settings at each level. Normalize naming shorthand before merging, for example methods: camelCase means methods: {case: camelCase}. Merge mappings recursively. Scalar and list values replace inherited values unless explicitly documented otherwise. Missing values inherit. Null is only valid for nullable options. Unknown keys, conflicting options and invalid types fail validation. Relative paths resolve from the file that originally declares them, even after inheritance. Reject duplicate YAML mapping keys, unsafe YAML tags, cyclic aliases and unbounded alias expansion before merge. Source roots and authorized output roots are distinct. External output paths are allowed when explicitly configured, but traversal outside the configured output root and unintended symlink writes are forbidden.
+
+One schema and merge engine serves generation, annotations, template lookup and build planning. Normalize supported shorthand once, retain origin metadata, derive missing public identities once and feed every command the same resolved model. Runtime creation options are a typed resource policy, not a second configuration language. Keep internal naming and implementation switches out of YAML; reject obsolete options, no compatibility aliases.
+
+Minimal standalone configuration (all output, source discovery and naming defaults are derived):
+
+```yaml
+module:
+  name: repository
+targets:
+  cpp:
+    namespace: app::repository
+  swift:
+    module: AppRepository
+  kotlin:
+    package: com.app.repository
+```
+
+Only explicit application choices and integration requirements should need configuration; do not require callers to repeat generated technical defaults.
 
 ### 7.2 Global configuration
 
@@ -2203,7 +2255,7 @@ flowchart TD
     F -->|Conflict| X["Stop before writing"]
 ```
 
-### 7.9 Single configuration and runtime options inventory
+### 7.10 Single configuration and runtime options inventory
 
 Use one machine-readable schema and one resolution implementation. The following paths close the gaps in the previously named options. These are project defaults, not a second runtime configuration file. Per-module or target overrides may tune generation, naming, templates and build settings but may not silently change the policy of a shared core/context supplied by the application. Resolve context initialization defaults at the embedding/library integration boundary; if independently selected libraries disagree, require the context owner to explicitly choose one supported policy. No last-loaded-wins. The actual typed options passed at create/attach override generation defaults for that resource only; subsequent adapters inspect effective policy without mutating it.
 
@@ -2245,7 +2297,7 @@ All sizes/counts are positive integers (not YAML booleans, floats or coercible s
 | C# | PascalCase | PascalCase | PascalCase | PascalCase |
 | JS / TS | PascalCase | camelCase | camelCase | kebab-case |
 
-These are PolyGlue's explicit defaults, not claims that every language enforces these conventions. C++ uses camelCase by default for methods, async methods, fields, parameters, local variables and private member base names. For example repository.findAll() and repository.findById(id), with arrow syntax when using a pointer-like interface reference. Consumers may override any category without changing the logical contract. Support PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase, UPPERCASE and dot-separated paths where legal. Configure types, records, interfaces, methods, async methods, fields, parameters, constants, enum values, files, namespaces, packages, private fields and proxy names independently.
+These are PolyGlue's explicit defaults, not claims that every language enforces these conventions. C++ uses camelCase by default for methods, async methods, fields, parameters, local variables and private member base names. For example repository.findAll() and repository.findById(id), with arrow syntax when using a pointer-like interface reference. Consumers may override public naming categories without changing the logical contract. Private implementation names and temporary variables are derived internally. Support PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, lowercase, UPPERCASE and dot-separated paths where legal. Configure types, records, interfaces, methods, async methods, fields, parameters, constants, enum values, files, namespaces and packages independently. Private fields, temporary names, proxy/adapter names and internal generic parameter spellings are not configurable.
 
 ### 8.1.1 Mandatory dash-based filenames
 
@@ -2387,7 +2439,7 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 
 A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default. When Objective-C and Swift are both declared in one Apple integration, the default is one mixed public framework/module using the unsuffixed derived PascalCase library name (or module name for standalone). Both languages import the same identity. The Apple build system coordinates the Swift module with its underlying Clang module; do not register two unrelated top-level modules with the same name. Internal modules may have distinct configurable technical names, never required consumer imports. Explicit separate public modules are opt-in and must use distinct names. See section 10.6.1. A project or library may explicitly choose a project-wide prefix with per-module/category overrides. Do not change a defining module's default based on whether another library consumes it. Detect cross-module Objective-C runtime class-name collisions before publication. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
 
-Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. No language-name prefix or separate static-helper suffix is added by default. C# adds Async only to genuinely asynchronous operations; other targets have no automatic async suffix unless explicitly configured. Mixed Apple frameworks use one unsuffixed public identity. C and Objective-C keep configurable global-symbol prefixes to prevent real native linkage/runtime collisions. Java/Kotlin use distinct actual package scopes if independent callable artifacts must coexist (section 10.6). C# I is opt-in. C# Async is the default for genuinely async operations only and may be explicitly disabled. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
+Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties (record field presentation only), parameters, constants, enum_values, factories, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Allocate implementation-only proxy/adapter names privately and deterministically; no public naming options for them. They do not appear in ordinary API contracts. No default public interface prefix I except where explicitly configured. No language-name prefix or separate static-helper suffix is added by default. C# adds Async only to genuinely asynchronous operations; other targets have no automatic async suffix unless explicitly configured. Mixed Apple frameworks use one unsuffixed public identity. C and Objective-C keep configurable global-symbol prefixes to prevent real native linkage/runtime collisions. Java/Kotlin use distinct actual package scopes if independent callable artifacts must coexist (section 10.6). C# I is opt-in. C# Async is the default for genuinely async operations only and may be explicitly disabled. Generated implementation names are not public options. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
 
 Example effective C++ defaults:
 
@@ -2407,18 +2459,11 @@ naming:
   fields: camelCase
   properties: camelCase
   parameters: camelCase
-  variables: camelCase
-  private_fields: camelCase
   constants: SCREAMING_SNAKE_CASE
   enum_values: PascalCase
-  generic_parameters: PascalCase
   namespaces: snake_case
   files: kebab-case
   directories: kebab-case
-  proxies:
-    suffix: Proxy
-  adapters:
-    suffix: Adapter
 ```
 
 This is the built-in resolved profile, not required YAML in a consumer project. Other supported categories inherit documented base categories. For example a user can override methods.case, async_methods.suffix, interfaces.prefix, files.case or a single declaration with its target annotation. Empty affix explicitly removes an inherited affix. Missing settings inherit. Use a single casing resolver and preserve token boundaries and acronym rules deterministically, including mixed ID, URL, HTTP, GPU, IPv6, numbers and configured acronyms. Do not infer semantic abbreviations or shorten methods by guessing which words are redundant.
@@ -2814,7 +2859,6 @@ Allocate technical symbols in private/reserved implementation scopes using deter
 ```text
 @deprecated("Use UserProfile instead")
 record User {
-    @readonly
     id: int64;
     name: string;
 }
@@ -2825,7 +2869,9 @@ interface Camera {
 }
 ```
 
-Universal annotations carry defined semantic meaning. The allowed thread/executor annotation vocabulary, inheritance and runtime enforcement are defined in section 14.7.2. For callback parameters, @ownership accepts the scoped, retained and one-shot lifetime values defined in section 14.2, including optional callback parameters. It is validated on the parameter and does not change the callback's synchronous/asynchronous signature. An executor/thread annotation must affect dispatch, not just comments. Readonly semantics must be enforced by generated APIs and runtime where required. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
+Universal annotations carry defined semantic meaning. The allowed thread/executor annotation vocabulary, inheritance and runtime enforcement are defined in section 14.7.2. For callback parameters, @ownership accepts the scoped, retained and one-shot lifetime values defined in section 14.2, including optional callback parameters. It is validated on the parameter and does not change the callback's synchronous/asynchronous signature. An executor/thread annotation must affect dispatch, not just comments. Record value semantics apply without a readonly annotation. No interface property mapping or mutability annotation. Availability and ownership constraints cannot be overridden by an unsafe target-specific annotation.
+
+The supported universal catalog is deliberately small: deprecated(message) on public declarations; ownership(mode) on callback parameters with the modes in section 14.2; thread(executor) on interfaces/operations/callbacks as defined in section 14.7; platform availability with registered platform/version keys. Public/private and async/static are IDL modifiers, not annotations. Record field access and value semantics do not require readonly. Do not add arbitrary compiler attributes, arbitrary host expressions or a second property grammar. One typed annotation catalog provides placement, arguments, repetition, inheritance, conflicts, effective semantics and diagnostics; unknown or inapplicable annotations fail.
 
 ### 9.2 Language-specific annotations
 
@@ -2850,6 +2896,8 @@ interface SpatialRenderer {
 ```
 
 Annotations are allowed on modules, records, interfaces, enums, enum members, fields, methods, parameters, callbacks and constants where their registered schema permits. Validate argument count/type, duplicates, placement, conflicts and target availability. An unknown annotation is an error even if its namespace is not selected. Known annotations for non-selected targets may be validated and ignored for rendering.
+
+Target name annotations are limited to registered public declaration kinds and valid native identifier/selector/signature grammar: target.name for supported public names, swift.label for parameter labels, objc.selector for the physical selector including synthetic arguments (validate against the actual lowerer), plus explicitly registered platform/actor metadata where it changes or constrains real exposure. Do not interpret compiler attribute inventories in sections 9.3–9.4 as an automatic list of user annotations: derive required ABI/ownership/nullability/deprecation attributes in backend code. A new public annotation requires a concrete interoperability need and semantic validation/test coverage.
 
 ### 9.3 Apple interop details
 
@@ -2914,7 +2962,7 @@ For a repository async method, generate a compatible Objective-C completion API 
 | TypeScript | readonly, JSDoc deprecated |
 | WASM | Export and visibility controls |
 
-Backend catalog defines exact supported annotations and transformations. Do not allow arbitrary raw code injection as the default annotation mechanism.
+The table lists backend-emitted attributes, not a public annotation catalog. Derive necessary attributes from the canonical plan. Only the small explicitly registered metadata catalog is accepted in IDL; do not add raw language attribute passthrough or code injection.
 
 ### 9.5 Annotation processing flow
 
@@ -5208,7 +5256,7 @@ For each target, generate a capability manifest listing types, sync/async direct
 
 ```c
 /* Illustrative generated API shape. */
-pg_status app_repo_user_repository_count_async(
+pg_status app_repo_user_repository_count(
     app_repo_user_repository *repository,
     pg_int64_completion completion,
     void *context,
@@ -5315,7 +5363,7 @@ users = await repo.find_all()
 
 **Artifacts and configuration:** Dart package, public barrel export, lib/src models/interfaces/proxies, FFI binding declarations and native assets loading configuration. Separate web implementation and conditional imports. Package/output, naming, annotations and optional pubspec. A pure Dart target must not require Flutter SDK. No dart:ffi imports in web build.
 
-**Types and memory:** native-only int for signed 64-bit, BigInt for uint64; portable native/Web packages use BigInt for both signed and unsigned 64-bit under section 5.4.2. Typed data arrays when exact. Immutable models, sealed variants and Result. Native memory uses checked handles and explicit dispose plus NativeFinalizer where safe. Never keep raw borrowed TypedData views beyond synchronous lifetime. DataRef retains native storage through async. NativeFinalizer cannot serve as the only deterministic lifecycle mechanism.
+**Types and memory:** BigInt for both signed and unsigned 64-bit by default on every platform; native-only signed int is explicit opt-in under section 5.4.2. Typed data arrays when exact. Immutable models, sealed variants and Result. Native memory uses checked handles and explicit dispose plus NativeFinalizer where safe. Never keep raw borrowed TypedData views beyond synchronous lifetime. DataRef retains native storage through async. NativeFinalizer cannot serve as the only deterministic lifecycle mechanism.
 
 **Provider and consumer:** Future/Completer, typed functions, Stream and cancellation. NativeCallable.listener or supported message dispatch delivers async operation and async callback envelopes from arbitrary threads. A synchronous callback, including void, needs a supported same-context invocation. A queued listener cannot satisfy that contract. Isolate-local calls require the correct thread/isolate. No synchronous foreign-thread Dart return. Root registered providers in their owning isolate. On detach/hot restart invalidate registrations, drain/cancel operations and ensure no callback into a closed NativeCallable. Completion arguments remain valid until isolate consumes them.
 
@@ -5763,7 +5811,7 @@ For each feasible ordered pair A -> B (A consumes, B implements), test all suppo
 | --- | --- |
 | Input and output | A constructs input. B checks exact values and returns independently constructed output. A checks it |
 | Round trip | A -> B -> A, with canonical comparison and independent expected values |
-| Record/collection | Every valid field/element type, nested optional/list/map/result/variant and generic substitution |
+| Record/collection | Every valid field/element type, legal nested list/map/result/variant/optional combinations and generic substitution |
 | Async | Every permitted return type, inline and delayed completion, failure and cancellation |
 | Callback / stream | Reverse calls, repeated values, ordering, cancellation and ownership |
 | Borrowed data | Sync-only scoped view, mutation exclusivity and rejected escape |
@@ -5883,7 +5931,7 @@ Extend the existing finite case inventory, reusing prior fixtures when they alre
 | idl.inheritance | Base view preserves provider identity; exact registry key; reject ambiguity |
 | idl.overload | Correct canonical operation IDs; reject return-only/erasure/selector conflicts |
 | idl.specialization | Shared owner generates once; competing owner rejected |
-| idl.property | Compatible explicit property preserves types/errors; unsafe mapping rejected |
+| idl.property | Record field accessors preserve value semantics; methods remain methods; reject property-mapping metadata |
 | config.library-template | Library target/wide precedence and path origins; standalone omits library layer |
 | config.module-version | Unversioned source works; prebuilt version required; no inherited library version |
 | api.jvm-shared | Automatic joint ownership, distinct Java/Kotlin contracts, standalone and override |
@@ -5927,7 +5975,7 @@ Maintain an independent concrete lowering inventory for every built-in and legal
 | Case ID | Required observation |
 | --- | --- |
 | types.jvm-box-array | Java unsigned arrays, Kotlin bit carriers, boxed generics, optional elements and void completion |
-| types.apple-boxing | Scalar/boxed Obj-C distinction, nested optional states, Swift Result and async optional/error |
+| types.apple-boxing | Scalar/boxed Obj-C distinction, optional scalar/collection boxing and payload-free variant states, Swift Result and async optional/error |
 | types.value-snapshot | Mutable containers do not alias foreign values; reference leaves retain same provider and release once |
 | types.exact-uuid-time | UUID network byte order including Guid mixed endian and full temporal extremes |
 | types.host-limits | Length/stride multiplication, cumulative budget, allocation failure and recursion rejection |
@@ -5952,7 +6000,7 @@ Extend the existing finite case inventory with these distinct risk paths. Existi
 | --- | --- |
 | types.compound-equality | Deep immutable snapshots; ordered/unordered structural comparison, NaN/signed-zero, reference leaves and no forbidden keys |
 | types.recursive-value | Cyclic host value rejected; repeated acyclic subvalue legal; depth and cumulative budget enforced |
-| types.void-result | Real compiler-valid no-payload business Result in every target, including async and nested optional |
+| types.void-result | Real compiler-valid no-payload business Result in every target, including async and legal optional-bearing aggregate combinations |
 | types.boolean-array | No vector<bool> raw buffer; exact 0/1 canonical byte conversion and packed-host arrays |
 | types.flags-mask | Named single bits, legal combination, bit31, zero and rejected unknown/duplicate masks |
 | types.external-rollback | Partial adapter conversion unwinds acquired owners on correct host, preserves primary failure |
@@ -6757,7 +6805,7 @@ Explicit implementation gates to settle with proof-of-concept and tests: complet
 
 ## 22. Implementation and acceptance checklist
 
-The checklist includes the consolidated gates in sections 4.7.1, 5.4.6, 7.9, 11.7, 12.10–12.12, 13.8.2–13.8.3, 14.3.3, 14.4.5, 14.7.9–14.7.10, 18.16–18.17 and 19.6.1. Map applicable requirements to independent test/evidence IDs as part of the existing checklist and reports. In particular, freeze the operational ABI and shared-core bootstrap before broad adapter rollout; verify prepared/consumer delivery/transfer states, demand, immutable values and compiler transaction recovery, and record trust/benchmark evidence before release. No new checklist item is considered complete from documentation alone.
+The checklist includes the consolidated gates in sections 4.7.1, 5.4.6, 7.10, 11.7, 12.10–12.12, 13.8.2–13.8.3, 14.3.3, 14.4.5, 14.7.9–14.7.10, 18.16–18.17 and 19.6.1. Map applicable requirements to independent test/evidence IDs as part of the existing checklist and reports. In particular, freeze the operational ABI and shared-core bootstrap before broad adapter rollout; verify prepared/consumer delivery/transfer states, demand, immutable values and compiler transaction recovery, and record trust/benchmark evidence before release. No new checklist item is considered complete from documentation alone.
 
 This is the detailed delivery checklist, grouped by responsibility rather than a second architecture specification. All boxes are initially unchecked. Each item requires actual implementation, the applicable tests from section 18 and current documentation. Mark only completed work with evidence. Do not create one test per checkbox when an existing test proves several requirements. No publication is authorized by checking these boxes.
 
@@ -6773,8 +6821,8 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.2 Compiler, IDL and diagnostics
 
 - [ ] Implement source discovery, UTF-8 grammar (section 4.8), comments/docs, source spans, AST, symbol table, semantic validation and canonical typed IR with deterministic ordering. Reject private signature leaks and invalid nested value positions.
-- [ ] Support modules, imports, aliases, grouped and wildcard imports with ambiguity checks, public/private visibility, constants and validated defaults.
-- [ ] Implement records, enums, flags, variants, interfaces, inheritance/base views, callbacks, explicit static bindings/factories, overload IDs, property mappings and named concrete generics under sections 4.6–4.7. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
+- [ ] Support modules, imports, aliases and grouped explicit imports with ambiguity checks; reject wildcard imports, public/private visibility, constants and validated defaults.
+- [ ] Implement records, enums, flags, variants, interfaces, inheritance/base views, callbacks, explicit static bindings/factories, overload IDs, record field accessors and automatic concrete generics with optional explicit aliases/owners under sections 4.6–4.7. Reject invalid recursive values, cycles, duplicate symbols, unsupported types and unresolved references.
 - [ ] Implement async declarations, typed errors/Result, streams, cancellation and weak references with explicit legal usage rules. Reject borrowed types in escaping/async positions.
 - [ ] Provide clear diagnostics with stable symbolic codes, structured JSON, file/span, related locations, symbol, module, library and target. Validate the entire selected plan before writing. Fail on invalid config, type mapping, name, path or missing dependency.
 - [ ] Expose CLI generate, validate, config defaults/schema/resolved, list targets, version and local Python API. Support project, individual module and selected target invocation, including source dependency closure, explicit standalone versus project defaults and installed/offline generation.
@@ -6803,7 +6851,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 ### 22.5 Built-in types and extension mechanism
 
 - [ ] Implement bool, all signed/unsigned integer widths and float32/64 with exact range/precision rules, Unicode strings and copied bytes. Enforce the concrete lowering inventory of section 5.4.3, including host boxing, arrays, limits and nested ownership. Enforce canonical map/set equality, checked rounding and portable Dart integer profiles from sections 5.4.1–5.4.2. Verify boundaries, invalid encodings, null and empty distinctions.
-- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and array types (contiguous primitive representations only where proven). Enforce deep value immutability, canonical structural comparison where legal, cycle detection, payload-free Result specialization, boolean-array wrappers and concrete initialization/destruction/execution-domain plans (sections 5.4.4–5.4.5). Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct nested optional states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
+- [ ] Implement records, enum/flags, variant, optional, Result, list, set, map and array types (contiguous primitive representations only where proven). Enforce deep value immutability, canonical structural comparison where legal, cycle detection, payload-free Result specialization, boolean-array wrappers and concrete initialization/destruction/execution-domain plans (sections 5.4.4–5.4.5). Test valid nested combinations, required null rejection, construction defaults versus explicit null, distinct optional scalar/collection boxing and payload-free variant states, optional collection elements, missing map keys versus present absent values, exact enum/flag/tag checks, canonical equality/hash constraints and duplicate keys.
 - [ ] Implement date, timestamp, duration and UUID as built-ins common to all targets. All instants cross as UTC epoch microseconds. Preserve calendar dates without timezone shifts, signed exact units, canonical UUID order and checked native conversions, including different host timezone settings.
 - [ ] Implement DataView, MutableDataView and DataRef with explicit copy, scope, storage identity, checked access leases, aliasing, allocator/deleter provenance and host memory domain rules under sections 13.5–13.8. Do not silently copy when a zero-copy contract is requested.
 - [ ] Implement typed interface references, callback, async, stream, cancellation and weak-reference representations in every supported target.
