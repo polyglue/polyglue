@@ -50,6 +50,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Public signature resolution and identity](#88-public-signature-resolution-and-identity)
   - [Swift signature grammar and Apple exposure](#89-swift-signature-grammar-and-apple-exposure)
   - [Idiomatic callable surfaces for every target](#810-idiomatic-callable-surfaces-for-every-target)
+  - [Public API without generator artifacts](#811-public-api-without-generator-artifacts)
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
   - [Unified library public entry points](#105-unified-library-public-entry-points)
@@ -129,6 +130,7 @@ Start with chapters 1 through 5 if this is your first time using a cross-languag
   - [Independent coverage, regression and performance gates](#1816-independent-coverage-regression-and-performance-gates)
   - [Final contract closure and negative evidence](#1817-final-contract-closure-and-negative-evidence)
   - [Public signature and importer conformance](#1818-public-signature-and-importer-conformance)
+  - [No-leakage public API conformance](#1819-no-leakage-public-api-conformance)
 - [19. GitHub Actions](#19-github-actions)
   - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
   - [CI trust boundaries](#1961-ci-trust-boundaries)
@@ -584,7 +586,7 @@ This is an alternative fixture assuming the imported domain type exists. Generat
 
 The embedding application explicitly supplies a fixed static implementation to a generated context-bound facade or binds it as the default static implementation for that contract in the selected context. Validate canonical contract, context, owner and executor before publishing a binding. Use the same reference, operation and execution machinery as ordinary interfaces. Default binding has one slot per declaring contract per context, not a service stack. Duplicate binding fails without mutation. No dynamic replacement, priority, restoration or Service Registry lookup. Removing the binding ends class-level discovery; independently retained fixed facades remain valid while their actual provider is Open. Rebinding after explicit removal has a new unique control identity. Detach revokes bindings whose binding owner or actual provider belongs to the closing attachment. Closing the context revokes all bindings. Applications needing dynamic replacement use ordinary registered interfaces.
 
-Generate convenient class/type-level syntax where the language permits it and the embedding application has explicitly selected a default context and bound implementation. An absent or ambiguous context or binding reports a typed error. Never choose the last initialized context, a thread ID or an arbitrary language. Multiple contexts can always use explicitly bound facade objects. In Swift an all-static helper owns the short name; a mixed interface uses a separate static companion, default suffix Statics, so the native instance protocol does not collide. C exposes typed operations taking a bound static handle. Class-level convenience generation and companion naming are configurable. The static binding's lifetime is controlled by a unique owning binding token with idempotent explicit removal and last-control-reference cleanup. It never removes another binding generation. Reuse registry control bookkeeping where appropriate without exposing static bindings as registry entries. No package import initializes a runtime.
+Generate convenient class/type-level syntax where the language permits it and the embedding application has explicitly selected a default context and bound implementation. An absent or ambiguous context or binding reports a typed error. Never choose the last initialized context, a thread ID or an arbitrary language. Multiple contexts can always use explicitly bound facade objects. The declared public type owns both static and instance methods in all languages with type-level calls. A mixed interface never requires a separate public static helper. A pure static interface owns its public name without a fake instance. C exposes typed prefixed functions and bound handles because it has no class methods. Static dispatch and provider adaptation are generated internally (section 8.11); class-level convenience is enabled by default, and explicit fixed context-bound calls remain available. The static binding's lifetime is controlled by a unique owning binding token with idempotent explicit removal and last-control-reference cleanup. It never removes another binding generation. Reuse registry control bookkeeping where appropriate without exposing static bindings as registry entries. No package import initializes a runtime.
 
 Illustrative Swift calls after explicit initialization:
 
@@ -592,7 +594,7 @@ Illustrative Swift calls after explicit initialization:
 import Ubook
 
 let index = try ProductChapterHelper.index(of: chapterId, in: chapters)
-let repository = try await ProductChapterRepositoryStatics.create(catalogId: catalogId)
+let repository = try await ProductChapterRepository.create(catalogId: catalogId)
 let chapters = try await repository.findAll()
 ```
 
@@ -734,7 +736,7 @@ Use one C++20-compatible Result representation. Swift uses Result when E conform
 
 ### 5.4 Complete type mapping contract
 
-These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a shared JVM package; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
+These tables are the proposed default public APIs, not native struct layouts. C and WASM describe the boundary representation. Generated wrappers are small and typed. Their final names follow module naming rules. Standalone platform-specific Dart uses the corresponding column; Dart/Flutter sharing native and Web public APIs uses the portable profile (PROJECT.md section 5.4.2), including BigInt for int64 and uint64 on all selected platforms. Java and Kotlin share one model by default when jointly declared in a paired JVM library; explicit independent packages and ownership are supported. Swift may import Objective-C models. Shared model ownership does not change the canonical type.
 
 All numeric conversions check range and type. All collection mappings obey the key and optional rules below. A wrapper is required when a native representation cannot preserve the full value or lifetime contract. No silent conversion or fallback. A pointer, offset or handle is valid only inside its owning runtime or WASM instance. Stream acquisition returns an owning stream handle, distinct from the subscription handle created when a consumer subscribes (section 14.3.2). `async` is a declaration modifier rather than a value type. Async callbacks use the same completion contract as async methods. `void` is return-only, including the success case of Result. The WASM column describes a conceptual canonical lowering, not a finalized ABI signature.
 
@@ -1682,11 +1684,8 @@ targets:
     package: com.app.domain
   kotlin:
     output: ../../android/generated/domain/kotlin
-    package: com.app.domain
+    package: com.app.domain.kotlin
     model_source: java
-    naming:
-      interfaces:
-        prefix: Kotlin
   objc:
     output: ../../apple/Domain/ObjC
     prefix: DOM
@@ -1717,7 +1716,7 @@ targets:
     output: ../../native/domain/wasm
 ```
 
-The model_source and implementation_source settings express artifact ownership. Section 10.6 specifies automatic paired-target defaults and explicit independent mode. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the shared-package example, Java owns UserRepository and the explicit Kotlin interface prefix produces KotlinUserRepository with its suspend API. Names do not change based on command-level target filters. Resolve paired-target ownership from the complete declared module or library target set before filtering. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, use the imported type directly in the mixed framework; emit a qualified public typealias only in a genuinely distinct facade module. Never emit a recursive same-module alias. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin classes are required, configure distinct packages. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
+The model_source and implementation_source settings express artifact ownership. Section 10.6 specifies automatic paired-target defaults and explicit independent mode. The owner target alone emits the shared files. Selecting a dependent target automatically includes the owner artifacts in its dependency closure. An internal C, JNI or Apple adapter does not automatically make that adapter's language a public target. Only explicitly requested public targets and declared shared public artifact owners are exposed. Internal adapters use the canonical representation for external types, without demanding an unrelated public host mapping. For shared Java/Kotlin models, Java owns JVM class identity and public field types. Kotlin adapters convert at the API boundary where needed. Java and Kotlin interfaces with different async signatures cannot occupy the same JVM name. In the paired example Java owns com.app.repository.UserRepository and Kotlin owns com.app.repository.kotlin.UserRepository with its suspend API. Both use the Java-owned shared models. Distinct real packages preserve the same simple type name. Names do not change based on command-level target filters. Resolve paired-target ownership from the complete declared module or library target set before filtering. Both use the same logical IDL descriptor and ABI. For Swift model_source: objc, use the imported type directly in the mixed framework; emit a qualified public typealias only in a genuinely distinct facade module. Never emit a recursive same-module alias. A plain Swift import does not itself re-export types. Shared JS/TS output has one JS runtime and package.json owner, with TypeScript adding declarations and type metadata to the joint file plan. Validate artifact ownership and emit only required files. If independent Java and Kotlin callable classes are required, use distinct real packages (derived automatically for a paired library unless explicitly configured). Independent value models are a separate opt-in choice. If independent Swift models are needed, use non-conflicting modules/names. JavaScript and TypeScript outputs may share a package only when their planned filenames and export contracts do not conflict.
 
 ### 7.4 Repository module configuration
 
@@ -1750,11 +1749,8 @@ targets:
     package: com.app.repository
   kotlin:
     output: ../../android/generated/repository/kotlin
-    package: com.app.repository
+    package: com.app.repository.kotlin
     model_source: java
-    naming:
-      interfaces:
-        prefix: Kotlin
   objc:
     output: ../../apple/Repository/ObjC
     prefix: REP
@@ -1813,11 +1809,8 @@ targets:
     package: com.app.network
   kotlin:
     output: ../../android/generated/network/kotlin
-    package: com.app.network
+    package: com.app.network.kotlin
     model_source: java
-    naming:
-      interfaces:
-        prefix: Kotlin
   objc:
     output: ../../apple/Network/ObjC
     prefix: NET
@@ -1964,11 +1957,8 @@ targets:
         - app_domain
   kotlin:
     output: ../../android/generated/repository/kotlin
-    package: com.app.repository
+    package: com.app.repository.kotlin
     model_source: java
-    naming:
-      interfaces:
-        prefix: Kotlin
     build:
       android_namespace: com.app.repository
       consumer_rules: ../../android/consumer-rules.pro
@@ -2303,7 +2293,7 @@ All three swift_names values above are built-in defaults even when the entire sw
 
 A category-specific prefix replaces the target-wide prefix. It is not concatenated twice. Apply the configured filename convention to the final emitted symbol, subject to required type filenames. C/C++ filenames default to kebab-case while identifiers retain their configured case. An imported type always uses the defining module's resolved name, never the consuming module's prefix.
 
-C# configuration example:
+C# optional naming override example (neither I nor Async is a built-in affix):
 
 ```yaml
 targets:
@@ -2338,7 +2328,7 @@ naming:
 
 Define normalization and preservation policies per target. Default acronym segmentation recognizes the listed acronym dictionary and normalizes word casing deterministically. The acronym list and per-target casing/preservation rules are configurable. Test HTTPClient, XMLParser, getUserID, GPUTexture2D, URLRequest and IPv6Address. Expected normalized examples: httpClient / http_client, getUserId / get_user_id, gpuTexture2D / gpu_texture_2d. Swift-specific public names may explicitly preserve ID/URL spelling via the resolved acronym policy or annotations; do not invent semantic rewrites.
 
-Handle reserved words through legal escaping where appropriate (Swift/Kotlin backticks, C# @identifier) or configured suffixes. Detect collisions after all conversions, including user_id vs userId, generated proxies vs user types, Unicode/case-folded filenames, Java/Kotlin duplicate JVM types and reserved Windows filenames. Fail with both source locations. Never silently rename public symbols to resolve an ambiguity.
+Handle reserved words through legal escaping where appropriate (Swift/Kotlin backticks, C# @identifier) or configured suffixes. Detect collisions after all conversions, including user_id vs userId, generated proxies vs user types, Unicode/case-folded filenames, Java/Kotlin duplicate JVM types and reserved Windows filenames. Fail genuine public collisions with both source locations; allocate private implementation names internally under section 8.11.5. Never silently rename public symbols to resolve an ambiguity.
 
 ### 8.4 Formatting and headers
 
@@ -2376,7 +2366,7 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 | Kotlin | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
 | Dart / Flutter | PascalCase | camelCase | camelCase | camelCase | camelCase |
 | Python | PascalCase | snake_case | snake_case | SCREAMING_SNAKE_CASE | SCREAMING_SNAKE_CASE |
-| C# | PascalCase | PascalCase; async suffix Async | public properties PascalCase; parameters/locals/private camelCase | PascalCase | PascalCase |
+| C# | PascalCase | PascalCase (no default async suffix) | public properties PascalCase; parameters/locals/private camelCase | PascalCase | PascalCase |
 | JavaScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
 | TypeScript | PascalCase | camelCase | camelCase | SCREAMING_SNAKE_CASE | PascalCase |
 | WASM | C ABI internal representation; JS/TS facade uses its target defaults | C ABI internal names; no public raw offsets | Canonical boundary layout; JS/TS facade defaults | Facade target defaults | Facade target defaults |
@@ -2397,7 +2387,7 @@ Use the canonical case names PascalCase, camelCase, snake_case, SCREAMING_SNAKE_
 
 A library facade uses the library ID rather than the module ID to derive its public entrypoint. Standalone scopes and actual artifact ownership are resolved from the defining module, not the consuming module. Never derive a reverse-DNS organization, public registry owner or abbreviation such as UB from an arbitrary name. An Objective-C prefix uses the logical module name in PascalCase by default. When Objective-C and Swift are both declared in one Apple integration, the default is one mixed public framework/module using the unsuffixed derived PascalCase library name (or module name for standalone). Both languages import the same identity. The Apple build system coordinates the Swift module with its underlying Clang module; do not register two unrelated top-level modules with the same name. Internal modules may have distinct configurable technical names, never required consumer imports. Explicit separate public modules are opt-in and must use distinct names. See section 10.6.1. A project or library may explicitly choose a project-wide prefix with per-module/category overrides. Do not change a defining module's default based on whether another library consumes it. Detect cross-module Objective-C runtime class-name collisions before publication. Library-level Objective-C public prefix can be specified explicitly, but existing prebuilt Objective-C runtime class names cannot be physically renamed by a facade. A C public prefix uses a module-derived snake_case base plus an underscore. Internal stable ABI symbols use the ABI identity plan, not consumer naming heuristics. Required platform symbols, reserved filenames and language syntax take precedence over cosmetic preferences.
 
-Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, argument_labels (where supported), variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. The paired JVM profile derives Kotlin as a configurable interface prefix; mixed static/instance companions derive Statics, and mixed Apple frameworks use one unsuffixed public identity. Other public type/method affixes are empty except the C# async-method Async convention and the required/default C/Objective-C symbol prefixes. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
+Each naming category is independently resolved: types, records, interfaces, classes, enums, flags, variants, callbacks, methods, async_methods, static_methods, fields, properties, parameters, variables, private_fields, constants, enum_values, generic_parameters, factories, proxies, adapters, namespaces, packages, modules, assemblies, files, directories and public entrypoints. Unsupported categories or operations on a particular target fail validation, not silent no-ops. Specific categories inherit the general category's case and affixes unless explicitly overridden. Generated implementation-only proxy and adapter names default to the public base type plus Proxy and Adapter, respectively, with appropriate target case; they remain internal unless intentionally exposed. No default public interface prefix I except where explicitly configured. No language-name prefix, separate static-helper suffix or asynchronous-method suffix is added by default. Mixed Apple frameworks use one unsuffixed public identity. C and Objective-C keep configurable global-symbol prefixes to prevent real native linkage/runtime collisions. Java/Kotlin use distinct actual package scopes if independent callable artifacts must coexist (section 10.6). C# I and Async affixes are explicit opt-in presentation choices. Generated implementation adapter/proxy suffixes are independent internal defaults. A suffix is applied once to the resolved stem; an explicitly named declaration can intentionally include the same word. Track generated affixes structurally, not by repeatedly trimming strings. Naming defaults do not force users to rename IDL declarations.
 
 Example effective C++ defaults:
 
@@ -2459,7 +2449,7 @@ Plan public names from the IDL declaration and target naming policy before compu
 
 For Swift, Objective-C swift_names.enabled, remove_prefix and remove_suffix are all true by default. Generate explicit NS_SWIFT_NAME metadata for representable types and methods and NS_SWIFT_ASYNC_NAME where supported, using the resolved Swift signature rather than relying on importer heuristics. The native Swift backend uses the same planned Swift names and argument labels. When a wrapper is required for async, ownership, nullable values or another importer limitation, emit the wrapper with the same public signature and keep the imported bridge symbol internal or appropriately refined. A shared imported model has one canonical type; do not emit an independent public Swift type with the same role. Avoid underscored compiler-only re-export attributes as a required public strategy. See sections 9.3 and 10.5.
 
-Swift parameters use their resolved camelCase names as argument labels by default. Configure argument_labels.policy under the Swift target as parameter_names (default), omit_first or omit_all. Use @swift.label("of") or @swift.label("_") on a parameter to override its label. A conflicting full @swift.name signature and explicit parameter label is an error. Completion/error bridge parameters are excluded from logical label arity. Explicitly configure a per-target label policy or declaration/parameter override to omit labels, change individual labels or express natural prepositions. A full @swift.name annotation specifies the complete base name and ordered external argument labels, with _ for an omitted label. It does not change parameter order, arity, value types, instance/static semantics or async/error contract. Internal parameter names may differ from external labels. Validate the Swift name grammar, argument count, reserved identifiers, constructor/static context and overload conflicts before emission; Objective-C selector collisions are independently checked. If both a full-signature annotation and a parameter label override specify the same label inconsistently, fail with both source locations. Simple @swift.name("User") remains valid for a type, and a simple method name override retains resolved labels.
+Swift parameters use their resolved camelCase names as argument labels by default. Configure argument_labels.policy directly under the Swift target (not under naming) as parameter_names (default), omit_first or omit_all. Use @swift.label("of") or @swift.label("_") on a parameter to override its label. A conflicting full @swift.name signature and explicit parameter label is an error. Completion/error bridge parameters are excluded from logical label arity. Explicitly configure a per-target label policy or declaration/parameter override to omit labels, change individual labels or express natural prepositions. A full @swift.name annotation specifies the complete base name and ordered external argument labels, with _ for an omitted label. It does not change parameter order, arity, value types, instance/static semantics or async/error contract. Internal parameter names may differ from external labels. Validate the Swift name grammar, argument count, reserved identifiers, constructor/static context and overload conflicts before emission; Objective-C selector collisions are independently checked. If both a full-signature annotation and a parameter label override specify the same label inconsistently, fail with both source locations. Simple @swift.name("User") remains valid for a type, and a simple method name override retains resolved labels.
 
 ```text
 interface ProductChapterRepository {
@@ -2493,7 +2483,7 @@ A synchronous method may cross only a supported synchronous execution path; choo
 
 The prefix remains in Objective-C symbols. To keep a generated affix on Swift imports, set remove_prefix or remove_suffix to false explicitly. Setting swift_names.enabled false disables the optional imported-name metadata, not the independent Swift backend's native naming rules. An imported-model configuration that cannot satisfy the selected public Swift contract must generate an appropriate typed facade or report an incompatibility; it must not silently leak a different public API. Validate actual Swift compiler-visible names, not macro text alone.
 
-Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python owning awaitable consumer / async def provider, C# Task with Async suffix, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
+Other language profiles follow the same principle: C++ camelCase and RAII, Java CompletableFuture, Kotlin suspend, Swift async throws, Dart Future, Python owning awaitable consumer / async def provider, C# Task without an automatic name suffix, JS/TS Promise. Explicit per-target names and supported labels/annotations can override presentation; a language cannot turn an asynchronous logical operation into a blocking or fire-and-forget call merely to match another API. Use native Optionals/nullables, typed collections, exceptions/status and Result mappings only when the canonical semantics are preserved. The naming plan records logical ID, defining declaration, final public name and bridge linkage separately.
 
 ### 8.8 Public signature resolution and identity
 
@@ -2509,9 +2499,9 @@ Resolve the following distinct layers before rendering any output:
 | Internal linkage | Canonical ABI descriptors and stable function/operation IDs, thunks, adapter symbols, ownership and executor metadata; never derived from public names |
 | Presentation | File paths, documentation, source aliases and import spelling; cannot change actual ownership or runtime meaning |
 
-Use the precedence in section 7.1 independently per property. For callable categories, resolve general method settings first, then the applicable static/async category settings (async-specific settings override the same static-specific property for a static async operation), then declaration-level overrides. Explicit complete public names replace automatic case/affix application for that identifier; an explicit empty name is invalid. Module/package names, type names, parameter identifiers and external labels are separate properties. Declaration annotations never rename a dependency as seen through another module. Validate all known annotations even when a target is not selected; target-specific collision and representability checks run on the selected public plan and its dependency closure. The registered annotation catalog must document accepted declaration kinds, value grammar, precedence and any applicability constraints.
+Use the precedence in section 7.1 independently per property. For callable categories, first merge each category across the configuration layers in section 7.1, then resolve general method settings followed by static/async category settings (async-specific settings override the same static-specific property for a static async operation), then declaration annotations. A project async_methods.suffix wins over a module methods.suffix unless the module overrides async_methods.suffix itself; an explicitly empty specialized suffix clears the inherited one. No built-in async suffix for any target. Explicit complete public names replace automatic case/affix application for that identifier; an explicit empty name is invalid. Module/package names, type names, parameter identifiers and external labels are separate properties. Declaration annotations never rename a dependency as seen through another module. Validate all known annotations even when a target is not selected; target-specific collision and representability checks run on the selected public plan and its dependency closure. The registered annotation catalog must document accepted declaration kinds, value grammar, precedence and any applicability constraints.
 
-Implement a target-independent resolved public signature IR, with backend-specific semantic validation, not template string replacement. Include canonical operation ID, declaration span, effective setting origins, owner, public qualified name, member kind, static/instance/factory status, ordered parameter IDs, public labels/keyword names, local identifiers, mapped parameter and result types, generic/receiver constraints, async/error form, availability and visibility, native linkage, and any facade-to-owner mapping. Model generated constructors, accessors, static companions, callback adapters, protocol requirements, default helpers and aliases in the same symbol inventory. The provider, consumer, proxy, registry helpers, docs, imports, manifests and tests must read the same plan. Do not independently recompute spelling in templates. Parameter conversion is by canonical position/ID, never by a public string lookup.
+Implement a target-independent resolved public signature IR, with backend-specific semantic validation, not template string replacement. Include canonical operation ID, declaration span, effective setting origins, owner, public qualified name, member kind, static/instance/factory status, ordered parameter IDs, public labels/keyword names, local identifiers, mapped parameter and result types, generic/receiver constraints, async/error form, availability and visibility, native linkage, and any facade-to-owner mapping. Model generated constructors, accessors, static member exposure, callback adapters, protocol requirements, default helpers and aliases in the same symbol inventory. The provider, consumer, proxy, registry helpers, docs, imports, manifests and tests must read the same plan. Do not independently recompute spelling in templates. Parameter conversion is by canonical position/ID, never by a public string lookup.
 
 Resolution order:
 
@@ -2522,7 +2512,7 @@ Resolution order:
 5. Check source, runtime, binary, inherited, generated-member, export and filesystem collision domains, including the full selected dependency and library assembly closure.
 6. Compute canonical linkage independently; produce the validated render model and manifests. Fail before changing generated files if a collision or unsupported mapping exists.
 
-A naming-only override must leave canonical operation identity, ABI contract fingerprints, provider dispatch, parameter ordering and value marshalling unchanged. It can change public binary or source compatibility, so record a separate public API fingerprint. A source or prebuilt library may not be silently renamed by downstream defaults. Re-export only real supported aliases and reject ambiguous publication. The generator must not automatically append arbitrary numbers, hide a user symbol, drop a meaningful word, change an async operation to sync, or resolve a collision by generation order.
+A naming-only override must leave canonical operation identity, ABI contract fingerprints, provider dispatch, parameter ordering and value marshalling unchanged. It can change public binary or source compatibility, so record a separate public API fingerprint. A source or prebuilt library may not be silently renamed by downstream defaults. Re-export only real supported aliases and reject ambiguous publication. The generator must not automatically append arbitrary numbers to public names, hide a user symbol, drop a meaningful word, change an async operation to sync, or resolve a collision by generation order.
 
 Collision analysis uses the language's actual rules, not one global case-insensitive set. Check keywords and legal escaping, lexical normalization, namespaces, package exports, inherited and generated members, overloads after type mapping/erasure, host runtime names, library dependencies, and normalized filesystem paths. Two declarations sharing a canonical operation through inheritance may share one implementation where the host supports it; unrelated logical operations must not merge. Require explicit overrides for unresolved ambiguity. Diagnostics must identify target, logical IDs, original source locations, conflicting final qualified signatures, configuration origins, collision domain and suggested legal resolution. Escaping a keyword must be tracked as syntax rather than part of the underlying name. No invisible fallback or lossy transliteration. External/adapter types participate in collision analysis using their actual resolved host representation.
 
@@ -2542,11 +2532,11 @@ The following forms extend the existing registered annotations in sections 8.7 a
 | @swift.name("find(_:)") | Omit one external label |
 | @swift.name("index(of:in:)") | Two ordered labels; internal names remain independent |
 | @swift.name("reset()") | Explicit zero-argument method |
-| @swift.name("init(id:name:)") | Initializer signature only on a declaration that actually supports constructor exposure |
+| @swift.name("init(id:name:)") | Reserved for a future explicit initializer declaration; illegal on current methods, factories and records |
 | @swift.name("identifier") on a parameter | Override local parameter identifier; default parameter_names policy uses this identifier unless a label is explicitly supplied |
 | @swift.label("of") or @swift.label("_") on a parameter | Override that parameter's external label; _ means no external label |
 
-For ordinary callable names, the signature string is an identifier optionally followed by parentheses containing zero or more identifier-or-underscore tokens, each terminated by a colon. Parse the entire string; no whitespace, dots, module qualification, operators, generic argument syntax, types, default values, return arrows, async/throws suffixes, arbitrary Swift expressions or backticks in this annotation grammar. Use legal target identifiers; escape permitted contextual/reserved identifiers in emitted source only where the compiler and selected importer support them. The underscore is reserved as the no-label marker, never a standalone type/base/local parameter name. The special base init is accepted only for an actual supported initializer shape, never to convert an ordinary method or static factory into an initializer by naming alone. Type/field/enum/parameter simple-name annotations do not accept callable syntax. Record constructors derived from fields use the resolved field names and existing record-construction contract; do not invent new IDL constructor declarations or allow arbitrary per-constructor annotations until that declaration form is supported. An annotation on a callback type names the type, not its invocation signature.
+For ordinary callable names, the signature string is an identifier optionally followed by parentheses containing zero or more identifier-or-underscore tokens, each terminated by a colon. Parse the entire string; no whitespace, dots, module qualification, operators, generic argument syntax, types, default values, return arrows, async/throws suffixes, arbitrary Swift expressions or backticks in this annotation grammar. Use legal target identifiers; escape permitted contextual/reserved identifiers in emitted source only where the compiler and selected importer support them. The underscore is reserved as the no-label marker, never a standalone type/base/local parameter name. The special base init is rejected by the current callable annotation grammar because the IDL has no explicit initializer declaration. Record initializers derive from fields. Never rename an ordinary method or factory into an initializer. Type/field/enum/parameter simple-name annotations do not accept callable syntax. Record constructors derived from fields use the resolved field names and existing record-construction contract; do not invent new IDL constructor declarations or allow arbitrary per-constructor annotations until that declaration form is supported. An annotation on a callback type names the type, not its invocation signature.
 
 Full signatures describe only the ordered logical parameters of the declaration. Exclude self, implicit context, continuation, completion block, NSError out parameter, buffer counts and other synthetic bridge arguments. Parameter order and count are invariant. The Swift code generator emits a local identifier distinct from its external label when needed, e.g. index(of chapterId: Int64, in chapters: [ProductChapter]); use find(_ id: Int64) for omission. A parameter annotation cannot change its type or introduce a default. All ordinary method arguments remain mandatory under section 5.8.
 
@@ -2637,7 +2627,7 @@ let index = try ProductChapterHelper.index(
 )
 ```
 
-For an async declaration use try await; do not suppress bridge errors or make a synchronous cross-executor call legal through naming. A real instance service instead uses the typed registry or an injected reference, e.g. try await repository.findAll(catalogId: catalogId, ascending: true). The class-level and instance forms are not interchangeable. Mixed static/instance interfaces use the configured companion name (default Statics) and one instance contract; an all-static interface owns its short name. A factory remains a factory even when renamed and must preserve its return ownership and explicit binding.
+For an async declaration use try await; do not suppress bridge errors or make a synchronous cross-executor call legal through naming. A real instance service instead uses the typed registry or an injected reference, e.g. try await repository.findAll(catalogId: catalogId, ascending: true). The class-level and instance forms are not interchangeable. Mixed interfaces expose static and instance operations through the original public type name; an all-static interface owns its short name. Provider and static-contract adaptation follows section 8.11. A factory remains a factory even when renamed and must preserve its return ownership and explicit binding.
 
 Additional examples (shown as independent method names/call shapes, not a change to runtime/error syntax):
 
@@ -2688,7 +2678,7 @@ For each canonical Apple declaration choose one exposure owner per public Swift 
 
 By default a selected mixed Apple library publishes one real unsuffixed module (section 10.6.1), e.g. import Ubook. In explicitly modular or separate-library layouts where the corresponding modules actually exist, the consumer can import UBDomain, UBRepository and UBHelper and use UBRepository.ProductChapterRepository for disambiguation. Do not manufacture these imports as aliases for folders or require language-suffixed modules. In one unified module duplicate short public types must be explicitly renamed or exported through a valid distinct namespace/facade; a fictitious submodule qualifier is not a solution.
 
-Validate Swift collisions by enclosing scope, declaration kind, base name, ordered external labels, host-mapped types, generic constraints, static/instance and actual Swift compiler overload rules. Check potential ambiguity introduced by default arguments on generated constructors, inherited protocol requirements, extensions, generated accessors, static companions, imported Objective-C categories/selectors and compiler-synthesized names. Neither local parameter identifiers nor return/error spelling alone is a valid way to disambiguate logical overloads. Do not rely on async/throws differences to split operations with the same canonical signature. Reject unsupported or ambiguous call shapes, including optional/literal conversions that make required fixture calls ambiguous. Check Objective-C method families (init, new, copy, mutableCopy, alloc), ARC ownership, selectors and availability so a naming override cannot change ownership semantics. A distinct Swift name does not repair a conflicting Objective-C selector. Override a selector independently or use the appropriate facade.
+Validate Swift collisions by enclosing scope, declaration kind, base name, ordered external labels, host-mapped types, generic constraints, static/instance and actual Swift compiler overload rules. Check potential ambiguity introduced by default arguments on generated constructors, inherited protocol requirements, extensions, generated accessors, static member exposure, imported Objective-C categories/selectors and compiler-synthesized names. Neither local parameter identifiers nor return/error spelling alone is a valid way to disambiguate logical overloads. Do not rely on async/throws differences to split operations with the same canonical signature. Reject unsupported or ambiguous call shapes, including optional/literal conversions that make required fixture calls ambiguous. Check Objective-C method families (init, new, copy, mutableCopy, alloc), ARC ownership, selectors and availability so a naming override cannot change ownership semantics. A distinct Swift name does not repair a conflicting Objective-C selector. Override a selector independently or use the appropriate facade.
 
 ### 8.10 Idiomatic callable surfaces for every target
 
@@ -2697,7 +2687,7 @@ All targets use independent names derived from IDL and registered target annotat
 | Target | Public shape and naming-specific validation |
 | --- | --- |
 | C | snake_case module-prefixed functions and typed receiver/static handles; no language overloads or named arguments. Stable signature-derived overload symbols as in section 4.7. Check global identifiers, typedef/tag/macro names, exported symbols and reserved implementation prefixes. Preserve typed status/out parameters. |
-| C++ | PascalCase types, camelCase methods/parameters by default; namespace-qualified types, actual overloads, RAII and configured static companion. Check mapped signatures, cv/ref constraints where supported, inherited members, constructors/destructors and reserved identifiers. Do not expose raw ABI names in normal API. |
+| C++ | PascalCase types, camelCase methods/parameters by default; namespace-qualified types, actual overloads, RAII and static methods on the declared class. Check mapped signatures, cv/ref constraints where supported, inherited members, constructors/destructors and reserved identifiers. Do not expose raw ABI names in normal API. |
 | Objective-C | Independent configurable prefixed types, complete selectors via registered @objc.selector, distinct instance/class dispatch, compiler-checked method families, property accessors, protocol requirements, nullability and synthetic error/completion arity. Swift annotations do not change selectors. |
 | Swift | PascalCase types, camelCase methods, independently configurable labels/local names, native protocols and async throws where required; section 8.9 owns imported/native visibility, static and constructor rules. |
 | Java | PascalCase types, camelCase methods, positional arguments, actual packages, CompletableFuture for async. Check JVM descriptors after erasure, inherited/interface/default methods, generated accessors and static helpers. No parameter-name-only overloads. |
@@ -2705,7 +2695,7 @@ All targets use independent names derived from IDL and registered target annotat
 | Python | PascalCase classes, snake_case methods/parameters, explicit positional-or-keyword names where supported, async provider/consumer as specified. Check self/cls and Python reserved names, generated special methods and package exports. No runtime overload guessing or unsupported typing-only overloads. |
 | Dart | PascalCase classes, camelCase methods/parameters, Future for async. Preserve mandatory positional arguments by default; use required named parameters only when a separately registered callable-form feature explicitly supports them and preserves the same required canonical arguments. No overloads by type, no implicit optionality. Check library privacy and generated accessors. |
 | Flutter | Uses the same resolved Dart public API on supported native and web platforms, not separate Flutter naming rules. Platform adapters, plugin channel names if used, JNI and Apple internals do not enter the public Dart signature. |
-| C# | PascalCase public types/methods/properties, camelCase parameters and Task/Async suffix for asynchronous operations. A full explicit method name replaces the automatic suffix. Check CLR mapped overloads, inherited members, property/event accessors and generated members. Named arguments use resolved parameter identifiers. |
+| C# | PascalCase public types/methods/properties, camelCase parameters and Task for asynchronous operations without a default suffix. An explicitly configured suffix or full explicit name changes presentation only. Check CLR mapped overloads, inherited members, property/event accessors and generated members. Named arguments use resolved parameter identifiers. |
 | JavaScript | PascalCase public types, camelCase methods/parameters, Promise for async, positional arguments by default. Check package exports, prototype/static members and dangerous or reserved property names. No runtime guessing of overloads; explicit distinct names where necessary. |
 | TypeScript | Same actual callable exports and runtime names as paired JavaScript, with typed declarations and Promise. Type-only overload declarations are valid only if a real unambiguous runtime implementation preserves the canonical operation identity; never fabricate overload support by declaration alone. |
 | WebAssembly | Internal typed ABI exports/imports and canonical layout; public consumer uses selected JS/TS or Dart facade. Validate export and adapter names independently; no raw numeric pointer/offset API as an idiomatic facade. |
@@ -2728,6 +2718,94 @@ Example public spelling for an ordinary already-resolved instance repository wit
 | JS / TS / WASM facade | repository.findAll(catalogId, ascending) |
 
 These names are presentation examples with explicit shortening of the long IDL name, not new automatic naming heuristics. The native API must remain typed and idiomatic for providers as well as callers, in both directions. A provider override/implementation must implement the resolved native contract and dispatch to the same canonical operation ID.
+
+### 8.11 Public API without generator artifacts
+
+**Mandatory product invariant:** the generator owns interoperability complexity. Normal application source uses domain names, native language syntax and explicit lifetime/context controls only when they represent real application responsibility. Do not require internal proxy, adapter, bridge, thunk, raw handle, extra static invocation type, language-name prefix or synthetic descriptor name merely to call, implement, inject, register or retrieve a service. Implement a typed facade or a legitimate host language construct instead. Fail when a real host restriction prevents faithful representation; do not weaken typing, errors, async, ownership or execution guarantees. C global function names, Objective-C runtime class names, JVM binary identity and explicit lifetime/executor selection are real constraints, not cosmetic generator artifacts.
+
+#### 8.11.1 Same public type for static and instance methods
+
+Keep distinct canonical static and instance contracts and bindings internally. A factory returns the normal owning instance type, never an implementation-specific proxy or a separately named static invocation type. All-static interfaces have no empty instance provider. After explicit runtime integration and binding, this fixture:
+
+```text
+module repository;
+import domain.ProductChapter;
+
+interface ProductChapterRepository {
+    static async create(catalogId: int64): ProductChapterRepository;
+    async findAll(): list<ProductChapter>;
+}
+```
+
+requires these default public call shapes (illustrative, not full executable programs):
+
+| Target | Factory and instance call |
+| --- | --- |
+| C | product_chapter_repository_create(bound, catalog_id, ...); product_chapter_repository_find_all(repo, ...); (configured prefix and actual typed async operation controls follow C ABI) |
+| C++ | auto repo = co_await ProductChapterRepository::create(catalogId); auto chapters = co_await repo->findAll(); |
+| Objective-C | [UBProductChapterRepository createWithCatalogId:catalogId completion:...]; [repository findAllWithCompletion:...]; |
+| Swift | let repository = try await ProductChapterRepository.create(catalogId: catalogId); let chapters = try await repository.findAll() |
+| Java | ProductChapterRepository.create(catalogId).thenCompose(repository -> repository.findAll()); |
+| Kotlin | val repository = ProductChapterRepository.create(catalogId = catalogId); val chapters = repository.findAll() |
+| Python | repository = await ProductChapterRepository.create(catalog_id=catalog_id); chapters = await repository.find_all() |
+| Dart / Flutter | final repository = await ProductChapterRepository.create(catalogId); final chapters = await repository.findAll(); |
+| C# | var repository = await ProductChapterRepository.Create(catalogId); var chapters = await repository.FindAll(); |
+| JS / TS | const repository = await ProductChapterRepository.create(catalogId); const chapters = await repository.findAll(); |
+| WASM | Same public JS/TS or Dart facade; internal typed ABI is not the consumer API |
+
+The C# naming convention Async is optional through naming.async_methods.suffix: Async or an exact target name. Default Create and FindAll still return Task<T>. Do not strip an explicit IDL word Async or emit duplicate alias methods by default. All other target casing follows section 8.5.
+
+#### 8.11.2 Native strategies
+
+| Target | Required native public strategy |
+| --- | --- |
+| C | Typed prefixed functions and bound handles, not untyped pointers; adapter tables and dispatch IDs stay internal. |
+| C++ | Abstract class with static methods and virtual instance requirements, or typed facade if necessary; RAII. |
+| Objective-C | Prefixed public class owns class methods and conforms to the same-name instance protocol where needed (separate class/protocol namespaces); native typed instances. Check Swift importer names independently. |
+| Swift | Instance-only native protocol; mixed native owning facade with static and instance methods and nested Provider protocol for instance implementation; pure static native namespace type. |
+| Java | Interface static methods plus instance requirements where legal, or typed class where needed. |
+| Kotlin | Interface/class with companion object methods callable on the type itself, native suspend and named arguments; no Companion qualifier in Kotlin code. |
+| Python | ABC/class with class/static methods and ordinary instance implementation; native async and keyword arguments. |
+| Dart / Flutter | Abstract interface class with static methods and instance requirements, or typed facade; static members are not required of implements providers; one native/Web API. |
+| C# | Abstract class with static and abstract instance methods where legal, or typed facade and provider contract when required by inheritance/other host constraints. Do not rely on static-abstract generic dispatch for ordinary calls. |
+| JS / TS | Real same-name ESM value/class with static methods; TypeScript interface and value may share a name in separate namespaces. Static members exist at runtime and are not instance implementation requirements. |
+| WASM | Canonical exports and imports remain internal; public facade uses host-native API. |
+
+Do not impose a facade class in a language that supports the same surface with a native interface. A concrete facade wraps the existing owning capability, not a second business object, registry key, or provider implementation. Preserve weak references, base views, callbacks, return values, exact type identity and lifetime. Reuse valid wrappers rather than wrap repeatedly. For inheritance that cannot be represented by native subtype relationships, use validated typed base-view conversion preserving provider identity; never pretend a final facade inherits an unrelated concrete type. Avoid fake abstract methods with trap bodies, unsafe casts and untyped reflection. A distinct provider role is legitimate only if necessary to represent a real different implementation responsibility; scope it under the domain type where legal, e.g. ProductChapterRepository.Provider, otherwise use a configurable meaningful role name. Static bindings use typed closures for a single operation where supported, or typed provider objects for several operations. The static implementation contract is not the public invocation surface.
+
+#### 8.11.3 Swift mixed interface, provider and registry
+
+For a mixed interface use a concrete owning class under the original name, with a native nested provider protocol (supported in nongeneric types since Swift 5.10, SE-0404). Illustrative generated declaration shape, bodies omitted for explanation:
+
+```swift
+public final class ProductChapterRepository {
+    public protocol Provider {
+        func findAll() async throws -> [ProductChapter]
+    }
+
+    public static func create(
+        catalogId: Int64
+    ) async throws -> ProductChapterRepository {
+        // Generated typed static dispatch.
+    }
+
+    public func findAll() async throws -> [ProductChapter] {
+        // Generated typed instance dispatch.
+    }
+}
+```
+
+The wrapper owns the same validated native capability, not a duplicate provider. A handwritten provider conforms to ProductChapterRepository.Provider. Generated registry registration accepts the provider with ProductChapterRepository.self, creates its typed adapter once and uses the same instance descriptor as lookup, dynamic proxy and factory result. Direct injection and local factory implementations can use an explicit generated typed wrap(provider, in: attachment) operation that validates actual ownership/executor and returns the ordinary public type. Instance-only protocols keep direct conformance without an extra provider name. Static binding remains separate from registry registration; binding a factory never registers its result. Preserve base-view identity across inheritance and avoid illegal native subtype claims. If a compiler cannot express the selected native shape, diagnose incompatibility rather than exposing an extra static caller type. In mixed Apple frameworks the native Swift facade owns the mixed callable name; competing Objective-C imports must be refined or unavailable to Swift without breaking Objective-C consumers.
+
+#### 8.11.4 Static context selection and native type tokens
+
+Resolve a default static call through an explicitly configured integration default, selected once by embedding initialization, not by last initialized context, thread ID or a global search. Selection has a unique owning generation token associated with the actual host integration/attachment and compatible Open context. Duplicate selection fails; removal of a stale token cannot remove a newer selection. Resolve selection and acquire static binding lease atomically with admission; removal, detach and shutdown stop new default admissions, while accepted calls retain their captured provider and drain. Explicit fixed context-bound calls bypass the default and support concurrent independent contexts. No implicit worker, context creation, thread-local routing or hidden service lookup. Expose native lifecycle operations selectDefaultContext, clearDefaultContext and acquireStatic with the semantics in section 12.5; normal callers use Type.create after one setup. C keeps explicit bound handles.
+
+Use actual native identity for typed registry resolution: Java Class<T>, Kotlin KClass/reified T, Swift metatype, C++/C# typed generic, Python class, Dart reified T, and a real same-name JS/TS runtime value. Dart resolves only exact generated type identities in the selected integration, rejecting dynamic/unknown types; no reflection by name. JS/TS exports the runtime value under the same name as the contract, never relies on erased interface values or type-only imports. C and Objective-C may expose typed descriptor accessors when necessary. Never match unrelated physical types by simple spelling or require raw descriptors in ordinary host APIs. Aliases of the same actual public type resolve to one canonical descriptor.
+
+#### 8.11.5 No public names for internal collision workarounds
+
+Allocate technical symbols in private/reserved implementation scopes using deterministic canonical identity. A user symbol that happens to match a private proxy or adapter must not require a user override; rename the internal artifact safely. Public roles that really occur in signatures are scoped under their owning type where legal. Only genuine public collisions, e.g. erased overloads, explicit duplicate user names or conflicting fully qualified JVM identities, require precise diagnostics and legal scope/name alternatives. Never silently suffix a public type, weaken semantics or move prebuilt owners. Separate public visibility from internal ABI symbols that need loader visibility. Generated docs, imports, manifests, autocomplete and tests must show the clean native surface.
 
 ## 9. Annotations and platform attributes
 
@@ -2877,7 +2955,7 @@ Plan all generated symbols before rendering any file. The repository refers to t
 
 ### 10.2 Expected cross-module output
 
-For the repository contract in section 4, using naming overrides in sections 7.2–7.5 where relevant. The C# declaration uses the optional I prefix from section 8.2, not the default. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The shared JVM layout uses KotlinUserRepository as defined in section 7.4.
+For the repository contract in section 4, using naming overrides in sections 7.2–7.5 where relevant. The C# declaration uses the optional I prefix from section 8.2, not the default. These are deliberately reduced excerpts, not complete generated files. The Java and Kotlin snippets show independent API naming. The paired JVM layout keeps UserRepository in each target's actual package as defined in section 7.4.
 
 **C**
 
@@ -2911,7 +2989,7 @@ public:
 **Kotlin**
 
 ```kotlin
-package com.app.repository
+package com.app.repository.kotlin
 
 import com.app.domain.User
 
@@ -2935,7 +3013,7 @@ public interface UserRepository {
 }
 ```
 
-Java/Kotlin examples illustrate alternative standalone API surfaces. If both are selected for one JVM, choose a shared contract and non-conflicting wrapper names. Do not compile these two same-name interface examples together.
+These examples show the paired JVM profile: separate actual callable packages let the same simple names coexist. In Kotlin-only generation the package may be com.app.repository. Both contracts share canonical descriptors and models; compile them together.
 
 **Objective-C**
 
@@ -3000,7 +3078,7 @@ namespace App.Repository;
 
 public interface IUserRepository
 {
-    Task<IReadOnlyList<User>> FindAllAsync();
+    Task<IReadOnlyList<User>> FindAll();
 }
 ```
 
@@ -3032,7 +3110,7 @@ android/generated/domain/java/
 └── com/app/domain/User.java
 
 android/generated/repository/kotlin/
-└── com/app/repository/KotlinUserRepository.kt
+└── com/app/repository/kotlin/UserRepository.kt
 
 apple/Domain/
 ├── ObjC/
@@ -3101,7 +3179,7 @@ Every library has an explicit public import plan per selected target. The defaul
 | Objective-C | `@import Ubook;` | Actual Clang module, umbrella header and compatible prefixed runtime classes |
 | Swift | `import Ubook` | Actual importable Swift module/target, native public declarations or explicit public typealiases and forwarding APIs |
 | Java | `import com.ubook.ProductChapterRepository;` | Actual public class/package layout in JAR/AAR; no fictitious Java re-export |
-| Kotlin | `import com.ubook.ProductChapterRepository` (Kotlin-only); `import com.ubook.KotlinProductChapterRepository` (default shared JVM profile) | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
+| Kotlin | `import com.ubook.ProductChapterRepository` (Kotlin-only); `import com.ubook.kotlin.ProductChapterRepository` (paired callable scopes) | Actual public package declarations or compatible Kotlin aliases/wrappers; Java consumers validated when selected |
 | Dart | `import 'package:ubook/ubook.dart';` | Public library entrypoint exports selected src declarations; conditional native/web adapter imports |
 | Flutter | `import 'package:ubook_flutter/ubook_flutter.dart';` | Plugin entrypoint exports the shared Dart API and platform initialization |
 | Python | `from ubook.api import ProductChapterRepository` | Explicit public api.py module re-exports selected defining symbols; __init__.py stays empty |
@@ -3123,7 +3201,7 @@ flowchart TD
 
 The entrypoint must be a real language mechanism. A SwiftPM product named Ubook is insufficient if the only available Swift modules are Domain and Repository. Emit a Swift target/module named Ubook when unified mode requires it. Use public typealiases to the canonical imported or generated models and public forwarding functions/proxies where needed. A plain import in a Swift source file is not a re-export. Generate actual public declarations or explicitly imported typealiases instead of relying on underscored attributes. Do not generate two protocols with the same role into one public namespace; choose one canonical public surface and keep the lower bridge in a distinct internal module where necessary. Test actual import Ubook in a clean consumer, including type checking of values crossing module boundaries, async and errors, not only package resolution.
 
-For Java/Kotlin and C#, putting multiple already-compiled module artifacts in one package archive does not move their class/namespace identities. To support a unified source library, plan the defining public declarations in the selected package or namespace, with distinct internal paths and one actual type owner. Source-only assembly renders those declarations directly into the final public scope by default in unified mode when there is no conflicting explicit module identity. Built-in or inherited derived standalone scope names are not explicit conflicting identities. Explicit module package/namespace settings take precedence and must be compatible with unified mode. Such output has a distinct physical artifact plan, not a different canonical ID. Explicit module package overrides and prebuilt binaries retain their names. Where aliases are not equivalent (Java lacks type aliases), require an explicitly compatible source layout or modular distribution; do not create duplicate model classes or claim a facade is a transparent re-export when it changes identity. Java/Kotlin shared artifacts have one JVM class owner. Kotlin-only aliases cannot satisfy a Java import contract.
+For Java/Kotlin and C#, putting multiple already-compiled module artifacts in one package archive does not move their class/namespace identities. To support a unified source library, plan the defining public declarations in the selected package or namespace, with distinct internal paths and one actual type owner. Source-only assembly renders those declarations directly into the final public scope by default in unified mode when there is no conflicting explicit module identity. Built-in or inherited derived standalone scope names are not explicit conflicting identities. Explicit module package/namespace settings take precedence and must be compatible with unified mode. Such output has a distinct physical artifact plan, not a different canonical ID. Explicit module package overrides and prebuilt binaries retain their names. Where aliases are not equivalent (Java lacks type aliases), require an explicitly compatible source layout or modular distribution; do not create duplicate model classes or claim a facade is a transparent re-export when it changes identity. Java/Kotlin shared artifacts have one JVM class owner. Paired callable scopes follow section 10.6, and shared models retain their actual defining package. Kotlin-only aliases cannot satisfy a Java import contract.
 
 A public Objective-C library umbrella can expose actual prefixed classes from multiple defining headers, but its import module does not rename existing runtime class names. A public C++ umbrella may include defining headers and expose configured aliases without duplicate declarations. C header naming cannot discard required ABI prefixes. Python api.py, Dart entrypoint, JS/TS barrel exports and package exports must contain only explicitly selected public API and required public dependencies, not arbitrary recursive wildcard exports. A Flutter plugin reuses canonical Dart contracts; the integration layer is not another source of data model identities.
 
@@ -3139,12 +3217,12 @@ Compute ownership from the complete declared target set, effective configuration
 
 | Combination | Automatic default for the same package/library | Explicit alternative |
 | --- | --- | --- |
-| Java + Kotlin, shared JVM package | Java owns shared value models and CompletableFuture interface; Kotlin owns distinct suspend interface with Kotlin prefix | Separate packages/models, explicit interface affixes or one public contract target |
+| Java + Kotlin, paired JVM library | Java owns shared value models and CompletableFuture interface; Kotlin owns independent suspend interface with the same simple name in a distinct real package when required | Explicit distinct packages, proven compatible single callable owner, separate model layouts or one public contract target |
 | Objective-C + Swift | One mixed public framework/module; shared representable imported Obj-C value models by default, Swift-native callable refinements | Native Swift value models with checked conversions; explicit separate modules |
 | JavaScript + TypeScript | JavaScript owns ESM implementation and package metadata; TypeScript contributes declarations/type exports | Separate packages with explicitly selected implementation owners/loaders |
 | Dart + Flutter | Dart owns shared typed models/API; Flutter owns plugin metadata and exports the Dart API | Explicit separate Dart package dependency |
 
-For Java/Kotlin, the paired default is derived only when both are declared in a shared physical JVM package, not when a command happens to select one. Kotlin-only modules own their value models and use short UserRepository names. With paired targets the Kotlin interface prefix Kotlin is configurable. The two callable contracts share one canonical descriptor; typed adapters bridge suspend and CompletableFuture, never cast between unrelated interfaces. Java-owned models retain their actual JVM field types. Use checked conversions where needed or explicitly choose separate model layouts. No duplicate class files. Validate erasure, mangling and actual mixed-language consumers.
+For Java/Kotlin, derive ownership from the complete declared target set, not the CLI filter. Kotlin-only modules own their models and use short names. In a paired JVM library incompatible callable shapes (e.g. CompletableFuture versus suspend) cannot occupy one JVM binary name. Preserve the simple type name: Java retains its resolved base package, and the Kotlin callable package defaults to that base plus .kotlin if no explicit Kotlin package was configured. Shared Java-owned model types remain in their actual defining package; Kotlin imports them directly instead of generating duplicates. Explicit distinct packages take precedence. If explicitly configured equal packages require incompatible classes, reject with both binary identities and suggest a distinct actual package or a compiler-proven compatible single owner; never silently add a language prefix or pretend Java methods support Kotlin named arguments. A Kotlin-only package has no automatic .kotlin suffix. Typed adapters bridge both contracts through one canonical descriptor; never cast unrelated interfaces. Resolve callable and model ownership separately for unified, modular and prebuilt artifacts. A consumer deliberately using both APIs can qualify or alias the real package names. Validate erasure, mangling, mixed consumers and filter-independent naming.
 
 For Apple use the mixed-framework identity defined in section 10.6.1. The paired profile defaults to model_source: objc for representable shared value models; Swift-only uses native Swift models. A type requiring a native Swift representation for exact semantics uses an explicit typed refinement/conversion without duplicate visible names. model_source: swift selects independent native value models and checked conversions. Objective-C remains usable with configurable prefixed symbols. Native Swift callable contracts or verified imported refinements expose one short Swift name; supported importer metadata and private bridge declarations prevent collisions. Compile actual imports, optional/error cases and model identities.
 
@@ -3546,7 +3624,7 @@ The C ABI must distinguish the lifetime of the native context, the lifetime of e
 | Operation/delivery | Selected provider, caller, participating callback/stream attachments and unique completion state | Terminal result and actual execution lifetime are tracked separately |
 | Registration/subscription | Unique control identity; resource owner and relevant host attachment identities | Removal ends new discovery or delivery; already admitted execution retains its resources |
 
-The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, explicit static binding/acquisition, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
+The runtime's semantic control surface comprises context creation, attachment to an existing context, explicit registry acquisition/creation, explicit static binding/acquisition and default integration selection/removal, attachment close and full context shutdown, plus reference release. These are lifecycle operations, not IDL services. Use opaque handles and the existing versioned ABI; concrete function names and binary layouts are finalized during implementation. A generated binding receives the context/attachment from the embedding application or plugin initialization. It must not initialize a second core as a side effect of importing a package or obtaining a registry. The context owner alone initiates full shutdown. Ordinary plugin disposal closes only resources for its attachment. Failure during attachment initialization rolls back partial resources without affecting live peers.
 
 Contexts and attachments have Opening, Open, Closing and Closed states. Opening admits no business work. Initialization failure with mandatory cleanup pending transitions to Closing, not Closed, and preserves an owner-controlled rollback/drain result (section 12.9). Closing is irreversible for that generation: reject new work, allow idempotent cleanup, drain admitted execution and required releases; Closed retains only the validation/control metadata necessary for safe late release. A failed or timed-out drain remains Closing and can be inspected or resumed by the owner; it must not reopen or be reported as closed. A successful replacement/restart attaches a new generation. A host object wrapper may outlive its target attachment, but it cannot resurrect its adapter.
 
@@ -3580,7 +3658,10 @@ Expose equivalent typed lifecycle operations on every target. Context-control au
 | attach(context, executor) | Attach current host domain to a compatible Open context with explicitly bound executor(s) |
 | defaultRegistry(attachment) | Obtain default registry for explicitly selected attachment |
 | createRegistry(attachment) | Create independent registry and close authority |
-| bindStatic(attachment, descriptor, implementation) | Explicit binding per section 4.6 |
+| bindStatic(attachment, descriptor, implementation) | Explicit binding per section 4.6; resolve descriptors internally where native identities suffice |
+| selectDefaultContext(integration, attachment) | Select a live default for class-level static calls; returns owning generation control; duplicates fail |
+| clearDefaultContext(selection) | Remove only matching generation; accepted work keeps its captured provider |
+| acquireStatic(attachment, contract) | Acquire fixed explicitly context-bound static facade/handle without changing default selection |
 | closeAttachment(control) | Revoke admission and initiate asynchronous cooperative attachment drain |
 | shutdownContext(control) | Revoke all admission and initiate full cooperative shutdown |
 | release(reference) | Release only the specified owned reference |
@@ -3988,7 +4069,7 @@ final response = await client.request(request);
 ```
 
 ```csharp
-var response = await client.RequestAsync(request);
+var response = await client.Request(request);
 ```
 
 ```python
@@ -4545,7 +4626,7 @@ Equivalent usage patterns for every host (blocking method spelling illustrative,
 | Python | Existing thread/executor calls client.request_blocking(request), with actual adapter releasing interpreter lock where safe | await client.request(request) |
 | Dart native | Existing worker isolate with valid own attachment and locally acquired client calls requestBlocking(request) | await client.request(request) |
 | Flutter native | Same worker-isolate restriction; communicate transferable result to UI isolate | await client.request(request) on UI isolate |
-| C# | Existing Thread or deliberate Task.Run(() => client.RequestBlocking(request)) with valid handle lease | await client.RequestAsync(request) |
+| C# | Existing Thread or deliberate Task.Run(() => client.RequestBlocking(request)) with valid handle lease | await client.Request(request) |
 | JS / TS | Only supported worker-local WASM/native binding, not arbitrary blocking browser HTTP; use async if transport is event-loop-bound | await client.request(request) |
 | Flutter Web / WASM | No baseline general synchronous HTTP worker path; only independently proven worker-local blocking transport; otherwise reject | Host async HTTP bridge / Promise or Future |
 
@@ -4620,7 +4701,7 @@ interface Application {
 callback HttpClientFactory(): HttpClient;
 ```
 
-No special Provider type is needed. A factory can also be declared as an interface or async callback when appropriate. Generated references preserve the implementation's identity and lifetime according to the ABI.
+Instance-only interfaces need no special Provider type. When a target requires distinct consumer and implementation roles for a mixed contract, use the native scoped provider role defined in section 8.11; consumers retain the original type name. A factory can also be declared as an interface or async callback when appropriate. Generated references preserve the implementation's identity and lifetime according to the ABI.
 
 ### 15.2 Optional registry API
 
@@ -4628,14 +4709,14 @@ Proposed Kotlin registration:
 
 ```kotlin
 val registry = ServiceRegistry.global
-val registration = registry.register(KotlinHttpClient.TYPE, AndroidHttpClient())
+val registration = registry.register(HttpClient::class, AndroidHttpClient())
 ```
 
 Dart resolution:
 
 ```dart
 final registry = ServiceRegistry.global;
-final client = registry.get(HttpClientType);
+final client = registry.get<HttpClient>();
 final response = await client.request(request);
 ```
 
@@ -4657,7 +4738,7 @@ C#:
 
 ```csharp
 var client = ServiceRegistry.Global.Get<HttpClient>();
-var response = await client.RequestAsync(request);
+var response = await client.Request(request);
 ```
 
 Python:
@@ -4667,7 +4748,7 @@ client = ServiceRegistry.global_instance().get(HttpClient)
 response = await client.request(request)
 ```
 
-C, Java, Objective-C and JS/TS expose equivalent typed descriptors or generated typed accessors. A descriptor is an actual runtime value, not a language type annotation. Use generated top-level descriptor values for Dart and JS/TS interface contracts, and typed tokens or class-based accessors where the host supports them. The API is illustrative and must be proven with C/C++ and managed runtimes before freezing.
+C and Objective-C expose equivalent typed descriptor accessors where necessary. Java uses class literals, Kotlin KClass or reified T, Swift metatypes, C++/C# typed generics, Python generated classes, Dart reified T and JS/TS a real same-name runtime value. Resolve canonical descriptors internally through actual host identities scoped to the integration; never use names or strings as runtime keys. Do not require an additional suffixed type token in ordinary calls. The API is illustrative and must be proven with real compilers (section 8.11).
 
 ### 15.3 How lookup actually works
 
@@ -4868,7 +4949,7 @@ Android installs a platform override after the shared context is initialized:
 
 ```kotlin
 val registry = ServiceRegistry.global
-val platformRegistration = registry.register(DeviceService.TYPE, AndroidDeviceService(), RegistrationPolicy.SCOPED_OVERRIDE)
+val platformRegistration = registry.register(DeviceService::class, AndroidDeviceService(), RegistrationPolicy.SCOPED_OVERRIDE)
 ```
 
 iOS installs its equivalent provider instead of the Kotlin provider:
@@ -5036,7 +5117,7 @@ class DartHttpClient implements HttpClient {
   }
 }
 
-final registration = ServiceRegistry.global.register(HttpClientType, DartHttpClient());
+final registration = ServiceRegistry.global.register<HttpClient>(DartHttpClient());
 ```
 
 The implementation function above is illustrative. Examples must supply a real implementation.
@@ -5046,7 +5127,7 @@ The implementation function above is illustrative. Examples must supply a real i
 A handwritten Kotlin repository implements the generated interface from the shared JVM configuration in section 7.4. The executable sample uses a small deterministic in-memory store, not a real database dependency. This example shows all repository methods from section 4.1. UserStore is a handwritten in-memory implementation supplied by the sample:
 
 ```kotlin
-class AndroidUserRepository(private val store: UserStore) : KotlinUserRepository {
+class AndroidUserRepository(private val store: UserStore) : UserRepository {
     override suspend fun findById(id: Long): User? = store.findById(id)
 
     override suspend fun findAll(): List<User> = store.findAll()
@@ -5070,13 +5151,13 @@ class AndroidUserRepository(private val store: UserStore) : KotlinUserRepository
 Register the implementation in the shared Android runtime during plugin initialization:
 
 ```kotlin
-val registration = ServiceRegistry.global.register(KotlinUserRepository.TYPE, AndroidUserRepository(store))
+val registration = ServiceRegistry.global.register(UserRepository::class, AndroidUserRepository(store))
 ```
 
 Dart consumes the same contract and the imported domain model. This example uses the portable integer profile so the public signatures also work on Web with a compatible provider:
 
 ```dart
-final repository = ServiceRegistry.global.get(UserRepositoryType);
+final repository = ServiceRegistry.global.get<UserRepository>();
 final users = await repository.findAll();
 final user = await repository.findById(BigInt.from(10));
 final count = await repository.count();
@@ -5153,14 +5234,14 @@ auto users = co_await repo->findAll();
 
 ### 16.7 Java backend
 
-**Artifacts and configuration:** public classes/interfaces, proxy and provider adapter classes, JNI bridge source/header, package and Java file naming, optional Gradle Java library. Every public top-level class uses its required filename. Support nullability/deprecation attributes with explicit dependency policy. Never add an annotation library implicitly. Share JVM models by default when jointly declared with Kotlin in one physical JVM package; follow section 10.6 for ownership and explicit alternatives.
+**Artifacts and configuration:** public classes/interfaces, proxy and provider adapter classes, JNI bridge source/header, package and Java file naming, optional Gradle Java library. Every public top-level class uses its required filename. Support nullability/deprecation attributes with explicit dependency policy. Never add an annotation library implicitly. Share JVM models by default when jointly declared with Kotlin in a paired JVM library; follow section 10.6 for ownership and explicit alternatives.
 
 **Types and memory:** primitive and boxed representations follow section 5. Unsigned values widen or use checked BigInteger. JNI strings convert UTF-16 to canonical UTF-8 and back, not modified UTF-8 shortcuts that lose NUL/supplementary characters. JNI global references retain providers, local frames bound references, weak globals only for explicit weak semantics. Use direct buffers only when valid native memory and owner lifetime are established. Do not expose an unrestricted direct ByteBuffer as a safe borrowed view.
 
 **Provider and consumer:** generated Java interface uses CompletableFuture for async, functional interfaces for callbacks, typed stream subscription and a publisher adapter where useful. JNI retains callbacks/provider objects, attaches foreign threads, checks and clears/translates Java exceptions, and releases references on a valid JVM thread. Never cache JNIEnv across threads. No JVM initialization or destruction while active adapters remain. Cancellation of the returned CompletableFuture must propagate to the native operation under the common cancellation contract. Provider completion still controls resource lifetime.
 
 ```java
-UserRepository repo = registry.get(UserRepository.TYPE);
+UserRepository repo = registry.get(UserRepository.class);
 CompletableFuture<List<User>> users = repo.findAll();
 ```
 
@@ -5168,15 +5249,15 @@ CompletableFuture<List<User>> users = repo.findAll();
 
 ### 16.8 Kotlin backend
 
-**Artifacts and configuration:** Kotlin classes/interfaces and adapters, .kt files, package, JVM module and optional Gradle/Kotlin library. For Android emit appropriate Android library/JNI packaging integration, not a mandatory application rewrite. When Java is also selected, either generate one shared model set with distinct API wrapper names or use separate packages. Validate JNI signatures after Kotlin name mangling. Support JvmName/JvmStatic/JvmOverloads only where legal and needed.
+**Artifacts and configuration:** Kotlin classes/interfaces and adapters, .kt files, package, JVM module and optional Gradle/Kotlin library. For Android emit appropriate Android library/JNI packaging integration, not a mandatory application rewrite. When Java is selected, preserve shared value owners and identical simple callable names in distinct actual packages if required (section 10.6). Validate JNI signatures after Kotlin name mangling. Support JvmName/JvmStatic/JvmOverloads only where legal and needed.
 
 **Types and memory:** Kotlin signed and unsigned types, nullable types and explicit tagged nesting, immutable data models, Kotlin collections, sealed Result/variant. Primitive arrays with exact conversion. Shared Java models may require safe value conversions. Do not duplicate class identities. Use JNI lifetime rules from Java. DataRef keeps the owner and any direct memory valid across suspension.
 
 **Provider and consumer:** suspend methods, cancellation-aware continuations and Flow for streams. Bridge Java CompletableFuture when sharing API artifacts. Cancellation and exceptions map to native terminal states without resuming a continuation twice. Use structured concurrency or supplied CoroutineScope/dispatcher. No GlobalScope or blocking event loops. Android UI/system APIs dispatch to the main looper only when required. Kotlin providers can be registered or injected and invoked by Dart or C++.
 
 ```kotlin
-val registration = registry.register(KotlinUserRepository.TYPE, repositoryImpl)
-val users = registry.get(KotlinUserRepository.TYPE).findAll()
+val registration = registry.register(UserRepository::class, repositoryImpl)
+val users = registry.get(UserRepository::class).findAll()
 ```
 
 **CI:** kotlin-desktop.yml exercises JVM on desktop and Kotlin↔Java/C++. Kotlin-android.yml builds Android Gradle project, packages ABI-specific .so, runs instrumented tests/emulator and Flutter↔Kotlin integration in both directions. Test coroutine cancellation, thread dispatch, activity recreation, provider detach, JNI references, camera buffer release and exact unsigned mapping. Test Android XR separately when device/emulator is available.
@@ -5206,7 +5287,7 @@ id<REPUserRepository> repo = [registry userRepository];
 
 **Types and memory:** Swift value types where appropriate, protocols and generated proxies, optional, enum/OptionSet, tagged variants and Result when Error constraints are satisfied. Exact numeric/time mappings. Checked DataView operations by default, raw UnsafeRawBufferPointer only via explicit unsafe scoped native access under section 13.5; owned DataRef and explicit Data copying. ARC and Unmanaged bridge ownership must be balanced. Never label arbitrary object types Sendable or use unchecked Sendable without a documented proof and tests.
 
-**Provider and consumer:** async throws, checked continuation adapter with exactly-once resume and cancellation propagation, typed closures, AsyncSequence stream, explicit executor/actor policy. MainActor is enforced for UI APIs. Swift implementations register or pass protocol references and may be called from Kotlin/C++/Dart where valid. Do not block an actor waiting for a callback scheduled on that actor.
+**Provider and consumer:** async throws, checked continuation adapter with exactly-once resume and cancellation propagation, typed closures, AsyncSequence stream, explicit executor/actor policy. MainActor is enforced for UI APIs. Swift implementations register or pass protocol references for instance-only interfaces; mixed interfaces use a generated owning facade and scoped Provider contract under section 8.11. Both may be called from Kotlin/C++/Dart where valid. Do not block an actor waiting for a callback scheduled on that actor.
 
 ```swift
 let repo = try registry.get(UserRepository.self)
@@ -5239,7 +5320,7 @@ users = await repo.find_all()
 **Provider and consumer:** Future/Completer, typed functions, Stream and cancellation. NativeCallable.listener or supported message dispatch delivers async operation and async callback envelopes from arbitrary threads. A synchronous callback, including void, needs a supported same-context invocation. A queued listener cannot satisfy that contract. Isolate-local calls require the correct thread/isolate. No synchronous foreign-thread Dart return. Root registered providers in their owning isolate. On detach/hot restart invalidate registrations, drain/cancel operations and ensure no callback into a closed NativeCallable. Completion arguments remain valid until isolate consumes them.
 
 ```dart
-final repo = registry.get(UserRepositoryType);
+final repo = registry.get<UserRepository>();
 final users = await repo.findAll();
 ```
 
@@ -5270,7 +5351,7 @@ app_repository_plugin/
 
 ### 16.14 C# backend
 
-**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods and Async suffix by default; I interface prefix is opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
+**Artifacts and configuration:** .cs models, interfaces, proxies, native adapter declarations, namespace and assembly, project references, optional .csproj. PascalCase types/methods by default; Async method suffix and I interface prefix are opt-in, as in the naming override example. All are configurable. Use generated P/Invoke/LibraryImport declarations appropriate to supported .NET version and platform. Validate calling convention, StructLayout and field sizes. Do not assume C# bool/string layout is the C ABI layout.
 
 **Types and memory:** exact signed/unsigned primitives, immutable record models, nullable or tagged optionals, generated Result/variant and read-only collections. Use SafeHandle or equivalent for owning references and explicit IDisposable. Retain delegates/GCHandle for provider callbacks and release only after native operations drain. Checked borrowed access by default; explicit scoped unsafe Span/ReadOnlySpan interop only when the lease cannot escape its valid access scope. DataRef owner enables async use. GC pinning or copies are explicit. No pointer to movable managed memory after pin scope.
 
@@ -5279,7 +5360,7 @@ app_repository_plugin/
 ```csharp
 using var registration = registry.Register<UserRepository>(implementation);
 var repo = registry.Get<UserRepository>();
-var users = await repo.FindAllAsync();
+var users = await repo.FindAll();
 ```
 
 **CI:** csharp.yml runs dotnet build/test on Windows/Linux/macOS with pinned SDK, C#↔C/C++, GC stress and forced collection, delegate lifetime, SafeHandle explicit/finalizer cleanup, struct size/offset assertions, cancellation and native thread callbacks. Test package/project reference and platform native-library resolution. Sample console or simple UI with all three scenarios.
@@ -5293,7 +5374,7 @@ var users = await repo.FindAllAsync();
 **Provider and consumer:** Promise, typed callable shape at runtime, AsyncIterable, AbortSignal adapter and generated provider registration. Maintain rooted JS references while native handles are alive. Prevent calls after module teardown. Handle synchronous reentrancy and asynchronous microtask completion. Use worker/message dispatch only with explicit transfer/sharing contract. No cross-worker raw pointers.
 
 ```javascript
-const repo = registry.get(UserRepositoryType);
+const repo = registry.get(UserRepository);
 const users = await repo.findAll();
 ```
 
@@ -5305,10 +5386,10 @@ const users = await repo.findAll();
 
 **Types and memory:** exact mappings match JavaScript runtime. Interfaces/read-only models, tagged unions, bigint, typed arrays and explicit nullable/optional states. TypeScript declarations do not substitute runtime validation. Model the owner/borrow API without claiming the TS type checker can enforce lifetime of escaped views.
 
-**Provider and consumer:** strongly typed interfaces, `Promise<T>`, `AsyncIterable<T>`, callback signatures, AbortSignal and typed registry descriptors. Generated declarations match actual runtime exports and implementation signatures. Emit a real value export such as UserRepositoryType for each generated interface descriptor, in addition to the TypeScript interface declaration. Do not access static members on an erased interface or use a type-only import as a runtime value. Verify both valid and invalid type-check fixtures.
+**Provider and consumer:** strongly typed interfaces, `Promise<T>`, `AsyncIterable<T>`, callback signatures, AbortSignal and typed registry descriptors. Generated declarations match actual runtime exports and implementation signatures. Emit an actual same-name value export UserRepository alongside the TypeScript interface (separate type/value namespaces), or a native class. This value carries the typed descriptor and declared static members. Type-only imports cannot be used as runtime values; no separate descriptor-named public symbol is needed. Verify both valid and invalid type-check fixtures.
 
 ```typescript
-const repo: UserRepository = registry.get(UserRepositoryType);
+const repo: UserRepository = registry.get(UserRepository);
 const users: User[] = await repo.findAll();
 ```
 
@@ -5494,7 +5575,7 @@ Illustrative consumer expressions, in their proper async context, using the defa
 | Swift | let response = try await client.request(input: request) |
 | Python | response = await client.request(request) |
 | Dart / Flutter | final response = await client.request(request); |
-| C# | var response = await client.RequestAsync(request); |
+| C# | var response = await client.Request(request); |
 | JS / TS | const response = await client.request(request); |
 | WASM | Typed async C/C++ start or JS facade Promise; no blocking JS import waiting for result |
 
@@ -5993,7 +6074,7 @@ Build an independently authored expected public signature inventory per target f
 | naming.identity | Rename type/method/parameter/label/selector independently; canonical IDs, contract fingerprints and operation dispatch remain equal; source/binary API fingerprint changes where applicable |
 | naming.precedence | Each configuration layer, static/async category overlap, explicit empty affix, explicit complete name, parameter override and acronym/keyword escape; record effective origins |
 | naming.swift-grammar | Simple and full names, zero/multiple labels, repeated labels where legal, first/middle/last omission, all three label policies, local vs external identifiers; reject malformed signature, wrong arity, wrong declaration kind, conflicting labels, invalid identifier or unsupported initializer |
-| naming.swift-static | Compile and call exact repository/helper fixture in section 8.9.2 after explicit binding; missing/duplicate binding, independent contexts, mixed companion, direct instance service and async factory; same values and errors through canonical dispatch |
+| naming.swift-static | Compile and call exact repository/helper fixture in section 8.9.2 after explicit binding; missing/duplicate binding, independent contexts, mixed type with static and instance methods, direct instance service and async factory; same values and errors through canonical dispatch |
 | naming.swift-import | Compile actual prefixed/suffixed Objective-C imports with metadata; default flags, retained affixes, explicit name, metadata disabled, selectors with synthetic completion/error args; verify compiler-visible name and faithful imported or native wrapper shape |
 | naming.swift-ownership | Installed mixed framework exposes only one intended Swift type/member owner; native wrappers do not duplicate imported models/protocols; Objective-C client remains usable; inspect generated Swift interface/actual exported declarations and compile negative public-import probes where applicable |
 | naming.swift-modules | Actual import Ubook, explicitly modular qualified imports, same short name in separate real modules, rejection of conflicting unified names and Objective-C runtime collisions |
@@ -6003,11 +6084,15 @@ Build an independently authored expected public signature inventory per target f
 | naming.jvm | Actual Java/Kotlin clients and providers; JVM erasure, suspend/static/property lowering, Kotlin named arguments on Kotlin facade, shared class ownership and explicit distinct packages |
 | naming.python | Installed module, keyword and positional invocation, async and static calls, reserved/self/cls names and overload rejection |
 | naming.dart-flutter | Native and web compile/run with same Dart API; reject unsupported named/overload forms, test required named arguments only if the registered feature is supported |
-| naming.csharp | Actual compiled named/positional calls, Async suffix and explicit override, CLR overload/property collisions and native invocation |
+| naming.csharp | Actual compiled named/positional calls with Create/FindAll/Request returning Task, no implicit Async suffix, explicit opt-in suffix and exact override, CLR overload/property collisions and native invocation |
 | naming.js-ts-wasm | Run actual JS exports and typed TS consumer against same runtime; test rejected overloads/export collisions, Promise and WASM facade parity |
 | naming.diagnostics | Report both conflicting logical IDs, source spans, target, final signatures, config origins and collision domain; no partial output or successful manifest on failure |
 
 Include negative cases for generated helpers colliding with user symbols, inherited operation identity, keyword escapes producing equal effective names, acronym normalization, file case-folding, prebuilt symbol ownership, public aliases and target-specific annotations on the wrong declaration kind. Verify argument labels/keyword names in the installed package and not merely in generated source. Check public source and binary inventory with appropriate toolchain inspection (e.g. Swift module interfaces and compiler imports, JVM descriptors, CLR metadata, C exported symbols, JS package exports). Compile actual consumer call sites for every distinct public profile; execute representative calls to distinguish misrouting or parameter swaps from a cosmetic pass. Where a platform/toolchain is unavailable record blocked, not passed. Keep all cases planned until the generator and real target evidence exist.
+
+### 18.19 No-leakage public API conformance
+
+Compile installed consumers with exact section 8.11 call shapes for all targets, with independently authored mixed, all-static, instance-only and self-returning factory fixtures. Execute both directions and verify static and instance providers can live in distinct attachments. Verify owning return, injection, weak refs, base views, callbacks, streams, fixed and dynamic registry identity. Compile Swift nested provider, facade and registry overload, plus independent Objective-C client with no competing imported public names. Compile and run same simple-name JVM contracts in actual separate packages, shared models and filter-stable names; reject genuine binary-name conflicts. Compile default C# Create/FindAll/Request with Task and optional Async naming separately. Compile Dart reified registry access on native and web; run same-name real JS/TS exports including static calls. Test missing/duplicate/stale default selection, two contexts, removal versus admission, fixed facade, detach/close, no implicit initialization and internal symbol collision isolation. Inspect actual installed public names and imports: no required static helper, language-prefixed callable type or separate type token solely due to implementation mechanics. Preserve semantics, ownership, cancellation and errors. Text-only snapshots are insufficient; unavailable toolchains are blocked, not passed.
 
 ## 19. GitHub Actions
 
@@ -6712,7 +6797,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Reject unknown IDs, missing explicit files, render failures, traversal and incompatible contexts. Never recover from an invalid custom template by silently selecting another.
 - [ ] Implement universal deprecated, readonly, thread, ownership and availability metadata and validate placement/arguments, including scoped/retained/one-shot callback parameters as specified in section 14.2. Enforce actual semantics where applicable, not comments alone.
 - [ ] Implement language-specific annotations with real compiler validation: Obj-C prefixes/selectors/nullability/Swift names/async import, Swift actor/availability, JVM naming/nullability, C/C++ visibility, C# layout, Dart and JS/TS attributes. Swift imported names remove generated affixes by default; implement complete @swift.name signatures and explicit argument labels/omission.
-- [ ] Implement the resolved public signature IR, separate source/binary API identity and canonical ABI identity, exact Swift signature grammar and parameter-label precedence, independent Objective-C selector/importer lowering, native/imported exposure ownership, shared-artifact collision checks and target-native callable surfaces from sections 8.8–8.10. Preserve errors, ownership and execution semantics.
+- [ ] Implement the resolved public signature IR, separate source/binary API identity and canonical ABI identity, exact Swift signature grammar and parameter-label precedence, independent Objective-C selector/importer lowering, native/imported exposure ownership, shared-artifact collision checks and target-native callable surfaces from sections 8.8–8.11. Preserve errors, ownership and execution semantics.
 - [ ] Verify customized templates, imports, naming and generated build files compile in each applicable target. Test one representative real override path per distinct backend behavior.
 
 ### 22.5 Built-in types and extension mechanism
@@ -6784,6 +6869,7 @@ This is the detailed delivery checklist, grouped by responsibility rather than a
 - [ ] Implement a fake login form or CLI invoking a foreign provider, returning populated User and typed invalid-credential errors. Never log credentials.
 - [ ] Implement repository methods returning records, lists, optionals, integers, bool and void asynchronously across modules and runtimes.
 - [ ] Run every supported type across every feasible ordered caller/provider language pair with independent expected values, both directions and distinct async/callback/stream/ownership cases.
+- [ ] Implement the no-leakage native public API policy (section 8.11), same-type static/instance invocation, scoped provider roles, typed registry resolution, default-context controls, C# opt-in affixes and real JVM scopes where required; execute installed consumer/provider cases in section 18.19.
 - [ ] Execute the independent public signature/importer conformance inventory in section 18.18 against installed packages and real compilers; prove canonical dispatch unchanged by names, exact static and instance Swift call sites, native/imported ownership, language-specific collision diagnostics and consumer/provider parity.
 - [ ] Test relevant invalid inputs and actual failure modes, with bounded deterministic tests and property/fuzz coverage only where useful. Reuse shared fixtures. Reject missing expected case IDs.
 - [ ] Run appropriate sanitizer and runtime diagnostics, verify actual instrumentation, test memory and concurrency regression paths and document any blocked hardware/toolchain checks.
