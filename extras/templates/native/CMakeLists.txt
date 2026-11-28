@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
-project(Example LANGUAGES C CXX)
+if(DEFINED POLYGLUE_LIBRARY_VERSION)
+    project(Example VERSION "${POLYGLUE_LIBRARY_VERSION}" LANGUAGES C CXX)
+else()
+    project(Example LANGUAGES C CXX)
+endif()
 
 # Editable consumer project. The generator supplies the binding fragment, not
 # the handwritten source list, dependency graph or compiler configuration.
@@ -64,7 +68,7 @@ if(EXAMPLE_WITH_JSON)
     else()
         # Conan installs its generated config files before this configure.
         # The system path uses the same ordinary CMake imported target.
-        find_package(nlohmann_json 3.12.0 EXACT CONFIG REQUIRED)
+        find_package(nlohmann_json CONFIG REQUIRED)
     endif()
     target_link_libraries(example PRIVATE nlohmann_json::nlohmann_json)
 endif()
@@ -91,9 +95,10 @@ install(TARGETS example
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
-if(DEFINED POLYGLUE_GENERATED_INCLUDE_DIR AND IS_DIRECTORY "${POLYGLUE_GENERATED_INCLUDE_DIR}")
-    install(DIRECTORY "${POLYGLUE_GENERATED_INCLUDE_DIR}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+if(NOT DEFINED POLYGLUE_GENERATED_INCLUDE_DIR OR NOT IS_DIRECTORY "${POLYGLUE_GENERATED_INCLUDE_DIR}")
+    message(FATAL_ERROR "Generated public include directory was not supplied")
 endif()
+install(DIRECTORY "${POLYGLUE_GENERATED_INCLUDE_DIR}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 if(EXAMPLE_BUILD_TESTS)
     enable_testing()
