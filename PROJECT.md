@@ -228,7 +228,7 @@ For a first project, start with a record and one interface method. Generate bind
 - A module can import data models and interfaces defined or generated in another module.
 - A developer can implement a contract in Kotlin and consume it from Flutter, C++ or another available runtime. The same contract can also be implemented in Dart or Swift.
 - Native calls can share memory without copying when supported, and make copying explicit when necessary.
-- Every module can choose independent output directories, packages, namespaces, prefixes, naming conventions, annotations and build integration.
+- Every module can choose independent output directories, packages, namespaces, prefixes, naming conventions and annotations. Native build integration is owned by CMake or the ecosystem project.
 - The generator and native support libraries live in one repository and are released and tested together.
 - An optional registry allows runtime service discovery and replacement. Ordinary interface references work without it.
 
@@ -415,7 +415,7 @@ Use explicit module/target selection for standalone generation and explicit libr
 
 All CLI entry points use the same project/config resolver and immutable generation/build plan. generate and validate remain SDK-free. build calls generation when required; package ensures generation and a matching staged build, building missing/stale prerequisites through the same planner; test without a format runs the selected source/native tests, while test with a format requires the exact existing package and never rebuilds or mutates it; deploy consumes the verified existing package. No parallel implementations of dependency discovery, toolchain selection, version propagation, artifact hashing or command execution. The commands are thin entry points, not separate orchestration engines. Reuse native ecosystem tooling and explicit user source/build integration rather than reimplementing it.
 
-Module discovery, conventional handwritten implementation folders, generated sources and optional local CMake entrypoints use the same resolved project plan (sections 6.1.1, 7.7, 20.4.4). A local Python action file may replace an explicitly requested build/package/deploy action through run(params: dict) (section 20.5.2). Missing file means built-in behavior. Existing projects can build generated sources using their own tools. Never import local Python or execute CMake during generate, validate or configuration inspection.
+Module discovery and generated source planning use one resolver. The project-owned CMakeLists.txt and ecosystem files own handwritten implementation and native compilation. Optional project-local delivery actions are described in section 20.5.2. Existing projects can build generated sources directly without PolyGlue. Never execute local Python or CMake during generate, validate or configuration inspection.
 
 ### 3.5 Development version and release authorization
 
@@ -1175,9 +1175,7 @@ targets:
       includes: ["geo-point-adapter.hpp"]
       to_representation: toRepresentation
       from_representation: fromRepresentation
-    build:
-      include_directories: [../adapters/cpp]
-      sources: [../adapters/cpp/geo-point-adapter.cpp]
+
   kotlin:
     type: com.app.maps.GeoPoint
     imports: [com.app.maps.GeoPoint, com.app.maps.GeoPointAdapter]
@@ -1185,8 +1183,7 @@ targets:
       type: com.app.maps.GeoPointAdapter
       to_representation: toRepresentation
       from_representation: fromRepresentation
-    build:
-      sources: [../adapters/kotlin/GeoPointAdapter.kt]
+
   swift:
     type: AppMaps.GeoPoint
     imports: [AppMaps]
@@ -1194,11 +1191,10 @@ targets:
       type: GeoPointAdapter
       to_representation: toRepresentation
       from_representation: fromRepresentation
-    build:
-      sources: [../adapters/swift/GeoPointAdapter.swift]
+
 ```
 
-The descriptor paths resolve relative to the descriptor itself. The adapter sources and external AppMaps/application classes are user-owned. Generated files never overwrite them. The fixture must supply real host types and dependency declarations. The example selects only C++, Kotlin and Swift, but the descriptor must cover every additional selected public target before generation. Required C ABI and JNI/Apple bridge representations derive from GeoPointValue rather than requiring another application class in C. If a product exposes GeoPoint publicly in C, Java, Objective-C or another language, it needs an explicit mapping or explicit opt-in to the canonical representation as that target's public type. No implicit fallback.
+The descriptor declares type/import/adapter semantics only; compile and link the handwritten adapter through the project's CMake or managed ecosystem files. The adapter sources and external AppMaps/application classes are user-owned. Generated files never overwrite them. The fixture must supply real host types and dependency declarations. The example selects only C++, Kotlin and Swift, but the descriptor must cover every additional selected public target before generation. Required C ABI and JNI/Apple bridge representations derive from GeoPointValue rather than requiring another application class in C. If a product exposes GeoPoint publicly in C, Java, Objective-C or another language, it needs an explicit mapping or explicit opt-in to the canonical representation as that target's public type. No implicit fallback.
 
 #### 5.7.3 Adapter contract
 
@@ -1246,7 +1242,7 @@ The sample shares validation between both directions. Adapters are synchronous c
 | JS / TS | Explicit ESM exports, imports, runtime validation and declarations |
 | WASM | Canonical native representation plus JS adapter and checked memory conversion |
 
-Adapters are handwritten in the host language, not arbitrary snippets evaluated by the generator. User-owned native dependency targets, includes and sources integrate with the CMake graph. Managed dependencies use the corresponding ecosystem tooling. Build paths and dependencies are explicit and validated. No new generator backend is needed for a new type that uses an existing canonical representation. Adding a fundamentally new ABI primitive or language backend is a separate compiler feature, not promised by this extension contract.
+Adapters are handwritten in the host language, not arbitrary snippets evaluated by the generator. User-owned native dependency targets, includes and sources integrate with the CMake graph. Managed dependencies use the corresponding ecosystem tooling. Build paths and dependencies are declared and validated by the native ecosystem tools. No new generator backend is needed for a new type that uses an existing canonical representation. Adding a fundamentally new ABI primitive or language backend is a separate compiler feature, not promised by this extension contract.
 
 #### 5.7.4 Discovery, module sharing and diagnostics
 
@@ -1596,7 +1592,7 @@ my-project/
                 └── linux/
 ```
 
-All implementation directories and files are optional; no empty scaffolding. A module may contain only IDL. Use the actual declared target IDs for language folders and actual platform IDs for platform folders. Only modules in the selected dependency closure participate; only selected languages and platform variants contribute sources. Generation and clean never overwrite or delete handwritten code. Explicit implementation roots and extra source/dependency lists remain supported. Existing projects can opt out of conventional discovery with an explicit source plan. CMake integration and Python local actions are explained in sections 20.4.4 and 20.5.2.
+All handwritten implementation files are optional; no empty scaffolding. A module may contain only IDL. Project CMakeLists.txt and managed ecosystem files explicitly choose handwritten sources and dependencies. The generator never discovers native implementation sources or rewrites user files. Only the selected IDL dependency closure contributes generated sources. Optional project/module CMake fragments are ordinary files included by the project itself. See sections 20.4 and 20.5.2.
 
 A module is the fundamental unit of logical compilation, dependency resolution and independent generation. It can be distributed independently or composed into a library with other modules. A project is a collection of modules, optional library definitions and shared defaults, not a mandatory monolithic input. A logical module name is not automatically a public language import name.
 
@@ -1970,8 +1966,8 @@ None of these choices is imposed on domain or repository.
 | Formatting | Indentation, line endings, final newline, brace style where supported |
 | Annotations | Registered semantic metadata and target-specific public names/labels/selectors; derive backend attributes automatically |
 | Visibility | Exported/public/private/internal symbols |
-| Availability | Platforms, SDK minimums and capability checks |
-| Build | Sources or package mode. Platform build settings |
+| Availability | Platforms, semantic availability and capability checks; native SDK floors live in native tool files |
+| Build | Optional native project directory/preset selection and requested package slice matrix; no compiler/dependency settings |
 | Runtime | Shared runtime integration and supported version |
 | ABI | Version and binary contract checks |
 | Documentation | Comments and generated API docs |
@@ -2003,10 +1999,9 @@ Defaults output contains all applicable presentation and integration settings, i
 | Output root | generated/<module-id>/<target-id> relative to module manifest for standalone generation; isolated library output under configured build root when necessary | Output paths, public/private dirs, header/source dirs |
 | Generation mode | sources | package integration metadata when selected |
 | Build root / artifact root | build/polyglue and dist relative to project config | Config-relative paths |
-| Implementation roots | implementation relative to project or module; discover_implementation true | Explicit build.implementation_root, build.discover_implementation, additional sources |
-| Native CMake root | Project implementation/CMakeLists.txt if present, otherwise generated root | build.cmake.source_dir and per-platform override |
-| Native dependency provider | system (ordinary CMake) | build.native_dependencies.provider: cpm, conan or custom |
-| Build configuration | release for library build/package; explicit debug/sanitizer profiles supported | Configuration, toolchain, flags, parallelism, environment allowlist |
+| Handwritten sources and native dependencies | Project CMakeLists.txt / ecosystem files | Edit the native build files, never duplicate in YAML |
+| Native CMake root | implementation/CMakeLists.txt when present, otherwise generated starter | build.cmake.source_dir and optional slice-to-preset mapping |
+| Build configuration | release for library orchestration | Requested configuration; actual native options belong to CMake presets |
 | Library API exposure | unified, public selected modules plus required signature types | modular, export allowlist, aliases, entrypoint and public identities |
 | Public imports | Resolved automatically from defining manifests and selected library export graph | Include/import prefixes, module/package/namespace, supported import strategies |
 | Runtime linking | Explicit context selection per library integration; cooperating libraries may share a context; generated internal native adapter as needed | Static/shared linkage and explicit existing-context attachment |
@@ -2027,7 +2022,7 @@ Keep presentation/build options, context creation options and declaration semant
 
 | Setting | Built-in default |
 | --- | --- |
-| Native linkage | static for standalone native libraries where valid; required platform adapter/shared-runtime linkage takes precedence |
+| Native linkage | project CMake target type; generated starter uses an appropriate type for the requested format |
 | Generation and build | incremental reuse of validated matching fingerprints; explicit clean supported |
 | Parallel jobs | auto, max(1, detected available logical CPU count), subject to configured resource limits |
 | Logging | info; diagnostics on stderr; debug/quiet configurable |
@@ -2039,7 +2034,7 @@ Keep presentation/build options, context creation options and declaration semant
 | Stream | ordered bounded lossless demand (section 14.3.1) |
 | Deployment | disabled until explicitly selected |
 
-Define generation.incremental, build.incremental, build.jobs, build.cmake and build.native_dependencies as specified in 7.7.3, diagnostics.format, diagnostics.log_level and target build.linkage in the schema. Use --jobs, --clean, --diagnostics and --log-level for command-local overrides of applicable operational settings. They do not override canonical semantics or security invariants. Config --format json is distinct from build/package artifact --format. Unavailable CPU count resolves to one job. Positive resource limits must be enforced; job count alone does not guarantee bounded memory.
+Define generation.incremental and the minimal build orchestration schema in 7.7.3, plus diagnostics.format and diagnostics.log_level. Use --jobs and --clean as invocation controls where applicable, passing jobs to the native tool; native instrumentation and compiler flags belong to CMake presets. --diagnostics and --log-level control diagnostics only. Config --format json is distinct from artifact --format. No duplicate native build configuration schema.
 
 Diagnostics have stable symbolic codes, severity, message, source path, line/column/span where applicable, related locations, module/target/library context and actionable guidance. Examples: CONFIG_UNKNOWN_KEY, IDL_UNRESOLVED_SYMBOL, NAME_COLLISION, ABI_INCOMPATIBLE, OUTPUT_UNOWNED and TOOLCHAIN_MISSING. Sort diagnostics deterministically by location and code. JSON emits structured records rather than scraped terminal text; ordinary result output stays separate. Exit 0 for success, 2 for invalid input/configuration, 1 for operation/build/test failure and host-conventional interruption status. Keep one typed code registry. Redact secrets and sensitive arguments; generated files remain free of machine-specific paths. Local diagnostic paths are allowed. Never downgrade errors to hide a missing toolchain or target failure.
 
@@ -2049,40 +2044,8 @@ A module remains the unit of logical generation. A library is an explicit aggreg
 
 A library without artifact settings can generate its source facade and selected bindings. Packaging a distributed library (binary or source) requires an explicit release version and build number. Library target selection is a list; per-target public identity and export customization belongs under api.targets. Keep this distinction rather than supporting competing YAML shapes for the same property.
 
-Module-level build settings configure integration, not global compiler installation:
+Module and target settings define generated API names, output paths and source/package generation mode. They do not declare handwritten sources, CMake dependencies, native linkage, compiler flags or Gradle options. The project owns those in its CMakeLists.txt and ordinary ecosystem build files. The following library examples select distributables, not compiler settings.
 
-```yaml
-targets:
-  cpp:
-    output: ../../native/repository/cpp
-    namespace: app::repository
-    include_prefix: app/repository
-    mode: package
-    build:
-      library_name: app_repository
-      linkage: static
-      public_headers: include
-      private_sources: src
-      implementation_sources:
-        - ../../native/implementations/repository.cpp
-      dependencies:
-        - app_domain
-  kotlin:
-    output: ../../android/generated/repository/kotlin
-    package: com.app.repository.kotlin
-    model_source: java
-    build:
-      android_namespace: com.app.repository
-      consumer_rules: ../../android/consumer-rules.pro
-```
-
-Optional project and module configuration: build.implementation_root defaults to implementation relative to its own declaring project or module configuration. An optional build.discover_implementation boolean defaults to true; false selects only explicitly declared implementation inputs and applicable explicit CMake integration. Project implementation root contains optional CMakeLists.txt, project.cmake and local Python actions; module root contains module.cmake and sources. The existing targets.<target>.build.implementation_sources extends the conventional list; deduplicate canonical paths. The same schema, resolver and plan expose these choices. Generation must not require any build-only settings or implementation directory. Never execute embedded Python in YAML.
-
-```yaml
-build:
-  implementation_root: implementation
-  discover_implementation: true
-```
 
 Illustrative project-level libraries in polyglue.yaml (in addition to module paths and defaults from section 7.2). This unified-library example assumes source modules with derived package/namespace identities; it is an alternative to the explicit independent package/namespace layouts in sections 7.3–7.5. To use those exact independent module configurations, choose api.mode: modular or explicitly adapt their source package identities and export plans before using unified mode. Do not silently relocate prebuilt or explicitly scoped types:
 
@@ -2103,7 +2066,6 @@ libraries:
       build_number: 1
     platforms:
       android:
-        min_sdk: 26
         abis: [arm64-v8a, armeabi-v7a, x86_64]
 
   apple:
@@ -2124,14 +2086,11 @@ libraries:
       build_number: 1
     platforms:
       ios:
-        minimum_version: "17.0"
         device_architectures: [arm64]
         simulator_architectures: [arm64, x86_64]
       macos:
-        minimum_version: "14.0"
         architectures: [arm64, x86_64]
       visionos:
-        minimum_version: "1.0"
         device_architectures: [arm64]
         simulator_architectures: [arm64]
 
@@ -2152,9 +2111,9 @@ libraries:
         architectures: [arm64, x86_64]
 ```
 
-SDK floors and architectures above are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Library manifests declare the exact module closure, native implementation sources, runtime linkage, library version, build number, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them. When only one applicable format remains, infer it; otherwise require --format unless artifact.default_format explicitly selects a permitted applicable format. Reject an invalid or inapplicable default rather than choosing a different format. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop library spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Library packaging can select source or prebuilt modules, with strict compatibility validation. A prebuilt module may carry its own module version but must not silently replace the library version. Library metadata is generated at the packaging boundary. Separate library output roots prevent cross-product contamination. A source-only project never has to declare libraries.
+Architectures above are illustrative choices; native SDK floors are defined in the project toolchain/build files and verified against ecosystem packaging. The architectures are illustrative choices, not a verified toolchain matrix. The tool checks whether the installed SDK can build each requested slice. It must not silently remove an unavailable slice. Library manifests declare the exact module closure, actual native artifact linkage and provenance, library version, build number, requested output format and target/architecture matrix. artifact.formats declares the permitted outputs. The CLI --format selects one of them. When only one applicable format remains, infer it; otherwise require --format unless artifact.default_format explicitly selects a permitted applicable format. Reject an invalid or inapplicable default rather than choosing a different format. SwiftPM packaging depends on the matching XCFramework artifacts. A command builds only explicitly requested slices and never silently drops an unavailable one. For a desktop library spanning multiple host OSes, require explicit --platform selection unless the build plan can produce all requested platforms. CI assembles evidence across hosts rather than expecting one host to build every SDK. Library packaging can select source or prebuilt modules, with strict compatibility validation. A prebuilt module may carry its own module version but must not silently replace the library version. Library metadata is generated at the packaging boundary. Separate library output roots prevent cross-product contamination. A source-only project never has to declare libraries.
 
-Dependency names in native build configuration refer to explicitly declared CMake targets, not arbitrary flags. IDL dependencies and native build dependencies are distinct. Module output paths, native implementation source paths, SDK settings, extra includes and link libraries are schema-validated. Accept additional CMake integration via an explicit, trusted consumer CMake target or source list. No arbitrary shell execution from IDL.
+IDL dependencies and native build dependencies are distinct. Native dependency targets, sources and link settings belong to CMake or the relevant managed ecosystem. No arbitrary shell execution from IDL.
 
 #### 7.7.1 Minimal library and explicit overrides
 
@@ -2223,7 +2182,7 @@ libraries:
       build_number: 1
 ```
 
-This example shows names only, not a request to build every platform/format in one command. The selected library platform/build settings and ecosystem capability checks determine the actual distributables. When exactly one format is applicable to a requested platform and target set, infer it. Multiple compatible formats require explicit selection unless artifact.default_format was configured. Never infer unsupported architectures, signing credentials, deployment destinations, or publish coordinates. Native platform deployment floors and architecture sets must be explicitly resolved by the build plan, and must be compatible with selected toolchains and declared availability. Source generation stays independent of installed native SDKs. A library can define separate package identities for platform integrations without duplicating public canonical Dart models.
+This example shows names only, not a request to build every platform/format in one command. The selected library platform/build settings and ecosystem capability checks determine the actual distributables. When exactly one format is applicable to a requested platform and target set, infer it. Multiple compatible formats require explicit selection unless artifact.default_format was configured. Never infer unsupported architectures, signing credentials, deployment destinations, or publish coordinates. Native platform deployment floors come from native tool settings; requested architecture sets must be resolved by orchestration, and must be compatible with selected toolchains and declared availability. Source generation stays independent of installed native SDKs. A library can define separate package identities for platform integrations without duplicating public canonical Dart models.
 
 #### 7.7.2 Export selection and dependency closure
 
@@ -2231,48 +2190,25 @@ By default expose the public declarations of explicitly listed modules and the p
 
 A library is not allowed to re-declare an interface with a different logical identity merely to move it to a convenient namespace. Re-exports, aliases, native public module ownership and forwarding facades must preserve canonical type identity and ownership. Validate the complete public symbol graph before rendering. If the target cannot offer a chosen unified layout with compatible prebuilt dependencies, require a compatible explicit modular layout or source rebuild. Do not silently generate duplicate classes or a second registry.
 
-#### 7.7.3 Per-platform native build configuration
+#### 7.7.3 Minimal native build orchestration configuration
 
-PolyGlue consumes the project's build intent from YAML, generates the integration, runs CMake for each native slice, then invokes the ecosystem packager. This is P1 convenience, not a prerequisite for P0 generation or actual source conformance. The user may point to an existing CMakeLists.txt directory or use the generated default. No extra handwritten script is required for ordinary projects.
+YAML declares what to generate and which final deliverables to assemble, not how to compile them. The project-owned CMakeLists.txt, CMakePresets.json, toolchain files, CPM script, Conan recipe/profiles/lockfiles and ecosystem build files remain the only authorities for compilation, sources, include paths, dependencies, flags, SDK floors, linkages, sanitizer, generator and compiler settings. Do not mirror those options in YAML. Module/target build settings for native compilation are not supported.
 
-Resolve project build defaults, libraries.<id>.build and libraries.<id>.platforms.<platform>.build in that order; explicit command-local selection of configuration/platform/architecture is last. Merge mappings per key, replace lists. Module/target build settings describe sources and dependencies, not competing top-level toolchains. Paths resolve relative to the YAML declaring them. Every slice has one CMake root, native product, provider and composed toolchain. For a single library product, the resolved native product linkage is controlled by build.linkage; a target's build.linkage describes only its own component integration when that component is separate. Do not use conflicting per-target linkage to create duplicate core instances. JNI/FFI/extension hosts require actual loadable outputs even if their internal core objects are static. Validate with one schema. Explicit null clears a nullable setting only where a default is defined.
-
-| Path relative to build | Contract |
+| YAML path | Meaning |
 | --- | --- |
-| cmake.source_dir | Optional directory containing CMakeLists.txt; default project implementation root if it contains that file, otherwise generated root. Explicit nonexistent root fails. |
-| cmake.target | Optional actual native product target; default generated product; explicit custom target must satisfy 20.4.5. |
-| cmake.generator | Optional generator; default compatible native choice (e.g. Ninja, Xcode, Visual Studio). |
-| linkage | static or shared for the selected native library where applicable; default static for C/C++ install, shared for JNI/FFI/PInvoke/loadable extension, actual framework linkage for Apple; WASM module is its own format, not an OS shared library. |
-| offline | Boolean, default false; true forbids dependency/tool downloads during build/package and uses available verified local/cache inputs. |
-| native_dependencies.conan.build_missing | Boolean, default false; explicit permission to build missing dependency packages, subject to offline constraints. |
-| cmake.toolchain_file | Optional user toolchain; compose with selected platform/provider, never pass two competing toolchains. |
-| cmake.definitions | Map of CMake cache keys to bool/int/string or list of strings. Default empty. Reject overrides of reserved ABI/slice/ownership keys; preserve typed argument boundaries. |
-| native_dependencies.provider | system (default), cpm, conan or custom. |
-| native_dependencies.cpm.file / cache | Optional pinned local CPM.cmake and source cache; built-in pinned script if file omitted. |
-| native_dependencies.conan.recipe | Explicit conanfile.py or conanfile.txt; if absent use exactly one conventional recipe in project implementation root. |
-| native_dependencies.conan.build_profile / host_profile | Required explicit profile path or installed profile name for build tools and target dependency ABI. |
-| native_dependencies.conan.lockfile | Existing lockfile, required for reproducible release dependency resolution. |
-| native_dependencies.conan.settings / options / conf | Explicit Conan host mappings, empty default; validate against resolved slice. |
-| native_dependencies.custom.setup_file | Explicit trusted local Python dependency setup action; required only for custom. |
+| build.root | Owned build root; defaults to build/polyglue. |
+| build.artifacts | Local package root; defaults to dist. |
+| build.configuration | Requested build configuration, default release; validate against the native build. |
+| build.cmake.source_dir | Directory containing the project CMakeLists.txt; default implementation/ if it exists, otherwise generated starter root. Explicit missing path fails. |
+| build.cmake.presets | Optional map from exact slice ID to a project-owned CMake configure preset name. No missing-entry fallback for explicitly mapped builds. |
+| libraries.<id>.platforms | Requested platform and architecture/SDK variant set to assemble, not a second compiler configuration. |
 
-Provider-specific inactive settings may be inherited but only the selected provider requires its tool/files. The existing targets.<id>.build.dependencies remains a list of CMake target names. Dependency recipes and versions live in ordinary CPM/Conan/CMake files, not a second package manager DSL. Profile and lockfile may be a mapping by exact normalized slice ID where graphs differ; no missing-entry fallback. A parameterized host profile can be used across ABIs only if checked slice settings actually select the correct ABI.
-
-Minimal source project remains unchanged; the generated root builds from the conventional implementation directories. Example explicit roots/providers (illustrative SDK values and paths):
+Project build defaults may be overridden at library and platform scope. Paths resolve relative to the declaring YAML. CLI platform/architecture/configuration selection filters the requested outputs. Use explicit root/preset only when needed. The native preset must match the requested slice; the CLI does not override conflicting native settings. A default generated starter can use standard official SDK invocation parameters for the selected slice. Deployment floors come from the actual native build and ecosystem settings, not repeated YAML fields; generated package settings consume the verified native floor and explicit user-owned ecosystem metadata, and reject mismatches.
 
 ```yaml
 build:
-  root: build/polyglue
-  artifacts: dist
-  configuration: release
   cmake:
-    source_dir: native
-    generator: Ninja
-    definitions:
-      EXAMPLE_ENABLE_LOGGING: true
-  native_dependencies:
-    provider: cpm
-    cpm:
-      file: cmake/CPM.cmake
+    source_dir: implementation
 
 libraries:
   example:
@@ -2285,38 +2221,22 @@ libraries:
       build_number: 42
     platforms:
       android:
-        min_sdk: 26
-        abis: [arm64-v8a, armeabi-v7a, x86_64]
+        abis: [arm64-v8a, x86_64]
         build:
           cmake:
-            source_dir: native/android
-          native_dependencies:
-            provider: conan
-            conan:
-              recipe: native/conanfile.py
-              build_profile: profiles/build
-              host_profile: profiles/android
-              lockfile: locks/android.lock
+            presets:
+              android/device/arm64-v8a: android-arm64
+              android/device/x86_64: android-x64
       ios:
-        minimum_version: "17.0"
         device_architectures: [arm64]
         simulator_architectures: [arm64, x86_64]
-        build:
-          cmake:
-            source_dir: native/apple
-            generator: Xcode
-      macos:
-        minimum_version: "14.0"
-        architectures: [arm64, x86_64]
-        build:
-          cmake:
-            source_dir: native/apple
-            generator: Xcode
       linux:
-        architectures: [x86_64, arm64]
+        architectures: [x86_64]
 ```
 
-Here the Android selection uses Conan and its specific CMake root; Apple uses CPM and Xcode; Linux uses the inherited native root. The actual Android profile must match every selected ABI through explicit per-slice settings or profiles. A platform/format plan selects the applicable declared public targets and private bridge closure; no irrelevant platform languages are compiled. An explicitly requested incompatible target fails. Ownership/identity is derived from the full declared graph, not filtered platform. Existing SDK/platform fields in sections 2 and 7.7 remain authoritative. Build/doctor checks actual CMakeLists.txt, tools and SDK availability before changing outputs; generate and config inspection do not execute native tools. The same standard layout can be used for the generator's own examples and tests.
+Slice IDs use canonical platform/variant/architecture coordinates; Android uses device for its native ABI slices. Actual native tools determine SDK capabilities. Generation does not require or execute SDKs or native build files. See section 20.4 for the generated integration contract and complete starter. Reject obsolete native compilation keys rather than accepting aliases, ignored configuration or migration logic.
+
+
 
 ### 7.8 Library version and build number
 
@@ -2346,7 +2266,6 @@ libraries:
       build_number: 42
     platforms:
       ios:
-        minimum_version: "17.0"
         device_architectures: [arm64]
         simulator_architectures: [arm64, x86_64]
 ```
@@ -2412,7 +2331,7 @@ flowchart TD
 
 ### 7.10 Single configuration and runtime options inventory
 
-Use one machine-readable schema and one resolution implementation. The following paths close the gaps in the previously named options. These are project defaults, not a second runtime configuration file. Per-module or target overrides may tune generation, naming, templates and build settings but may not silently change the policy of a shared core/context supplied by the application. Resolve context initialization defaults at the embedding/library integration boundary; if independently selected libraries disagree, require the context owner to explicitly choose one supported policy. No last-loaded-wins. The actual typed options passed at create/attach override generation defaults for that resource only; subsequent adapters inspect effective policy without mutating it.
+Use one machine-readable schema and one resolution implementation. The following paths close the gaps in the previously named options. These are project defaults, not a second runtime configuration file. Per-module or target overrides may tune generation, naming and templates but may not silently change the policy of a shared core/context supplied by the application. Resolve context initialization defaults at the embedding/library integration boundary; if independently selected libraries disagree, require the context owner to explicitly choose one supported policy. No last-loaded-wins. The actual typed options passed at create/attach override generation defaults for that resource only; subsequent adapters inspect effective policy without mutating it.
 
 | Path | Value / built-in default | Scope |
 | --- | --- | --- |
@@ -5636,7 +5555,7 @@ const users: ReadonlyArray<User> = await repo.findAll();
 
 WebAssembly is a compilation/execution target for the same native core, not another IDL language or runtime implementation. JS/TS and Dart Web use the same host bridge and explicit selected instance. No duplicate pure-JS core. Single-threaded WASM is the baseline; threaded WASM is capability-dependent, not another required architecture.
 
-**Artifacts and configuration:** generated C/C++ WASM adapter, exported functions, Emscripten build integration, JS module loader and TypeScript declarations. Configure output, include prefix, module/package name, environment (browser/Node), memory growth/thread mode and public exports. Avoid unnecessary Embind or other dependencies when typed C ABI plus generated JS suffices.
+**Artifacts and configuration:** generated C/C++ WASM adapter, exported functions, Emscripten build integration, JS module loader and TypeScript declarations. Configure output, include prefix, module/package name, environment (browser/Node) and public exports; native memory/thread compiler options belong to CMake/Emscripten. Avoid unnecessary Embind or other dependencies when typed C ABI plus generated JS suffices.
 
 **Types and memory:** fixed WASM ABI, validate pointer/length and linear memory bounds. Use exact i64/BigInt conversion. Views of WebAssembly.Memory may become detached/stale after growth. Pin or prohibit growth while a borrow is active, or reacquire using checked owner/offset. Never expose stale cached views as valid. Shared DataRef may keep a linear-memory allocation alive. It cannot prevent arbitrary JS buffer detach unless policy enforces it. Separate shared memory/threads support and cross-origin isolation requirements from baseline single-thread mode.
 
@@ -6479,7 +6398,7 @@ flowchart TD
 
 ## 20. Repository documentation and branding
 
-**Delivery reference and priority.** The conventional build/distribution approach is inspired by the owner's [Nativium](https://github.com/nativium/nativium), inspected at [1ab4230](https://github.com/nativium/nativium/tree/1ab4230c5df66035d50337aac2955391164d9be4). Its [module CMake inclusion](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/cmake/functions.cmake), [module target selection](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/modules/app-core/cmake/module.cmake), [Python action dispatch](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/commands/target.py), [AAR packaging](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/android/verbs/package.py), [Apple packaging](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/ios/verbs/package.py) and [S3 distribution](https://github.com/nativium/nativium/blob/1ab4230c5df66035d50337aac2955391164d9be4/targets/android/verbs/dist.py) establish the desired practical pattern. Adapt the pattern, not source code, global mutable CMake lists, dependencies or automatic tag-triggered publication. No mandatory dependency on Nativium, XPLPC, Djinni, pygemstones or Conan. CPM and Conan are optional supported native dependency tools. P0 generation/conformance, P1 conventional builds/packages, P2 delivery/deploy are independently testable milestones.
+**Delivery reference and priority.** Follow the practical separation in XPLPC (section 20.4): native CMake owns compilation and dependency integration, Python dispatches commands and orchestrates packaging. Nativium is a secondary reference for conventional project layout and optional delivery customization, not a dependency or a second architecture. P0 generation/conformance, P1 build/package convenience and P2 explicit deployment remain independently testable.
 
 ### 20.1 Repository layout
 
@@ -6556,224 +6475,52 @@ PROJECT.md is the normative product/semantic contract. AGENTS.md describes perma
 
 ### 20.4 Native build system and CMake organization
 
-CMake is the authoritative native build system for C, C++, JNI, Objective-C/Objective-C++, native FFI support, and WASM. SwiftPM, Gradle, Xcode, Flutter, .NET and Python packaging remain the native ecosystem entry points where appropriate. Python orchestrates them and CMake builds their native components. Do not force pure managed-language or frontend sources through CMake.
+**One authority for native compilation: the project's CMakeLists.txt.** PolyGlue generates the interoperability sources and a small CMake integration fragment. It does not select business source files, resolve native dependencies, calculate compiler flags, choose link libraries, recreate platform toolchain files or implement CMake inside Python/YAML. The consumer can use CMake directly without the PolyGlue CLI. CMakePresets.json and standard toolchain files own native build profiles; Gradle, SwiftPM, Python, Dart/Flutter, .NET and npm own their ecosystem settings.
 
-Use target-based modern CMake. Choose the minimum version during implementation from the current stable CMake and supported SDK/toolchain requirements. C++20 and C11 are the language baselines. Use CMakePresets.json for reproducible common development configurations and CMakeUserPresets.json (ignored) for local customizations. Cross-compilers, sysroots, target architecture and SDK selection are explicit and validated at configure time.
+The practical reference is [XPLPC's xplpc.py](https://github.com/xplpc/xplpc/blob/main/xplpc.py), its [CMakeLists.txt](https://github.com/xplpc/xplpc/blob/main/CMakeLists.txt), [C++ build](https://github.com/xplpc/xplpc/blob/main/core/cxx.py), [Kotlin build/AAR](https://github.com/xplpc/xplpc/blob/main/core/kotlin.py), [Swift build/XCFramework](https://github.com/xplpc/xplpc/blob/main/core/swift.py), [Conan preparation](https://github.com/xplpc/xplpc/blob/main/core/conan.py), [CPM dependencies](https://github.com/xplpc/xplpc/blob/main/cmake/cpm/cpm-dependency.cmake) and [Conan dependencies](https://github.com/xplpc/xplpc/blob/main/cmake/conan/conan-dependency.cmake). XPLPC's Python entrypoint dispatches tasks; its native helpers invoke Conan where selected, configure/build CMake and invoke Gradle or xcodebuild for final packaging. Its CMake root selects actual sources, linkage, compiler settings and dependency targets. Adopt that responsibility split, not its implementation or dependencies.
 
-Required layout (create files only when their functionality is implemented):
+#### 20.4.1 Generated integration contract
 
-```text
-polyglue/
-├── CMakeLists.txt
-├── CMakePresets.json
-├── cmake/
-│   ├── options.cmake
-│   ├── dependencies.cmake
-│   ├── compiler-warnings.cmake
-│   ├── sanitizers.cmake
-│   ├── install.cmake
-│   ├── PolyGlueConfig.cmake.in
-│   ├── dependencies/
-│   │   └── testing.cmake
-│   └── toolchains/
-│       └── README.md
-├── support/
-│   ├── core/
-│   │   ├── CMakeLists.txt
-│   │   ├── include/polyglue/
-│   │   └── src/
-│   ├── c/
-│   │   ├── CMakeLists.txt
-│   │   ├── include/polyglue/
-│   │   └── src/
-│   ├── cpp/
-│   │   ├── CMakeLists.txt
-│   │   └── include/polyglue/
-│   ├── jni/
-│   │   ├── CMakeLists.txt
-│   │   ├── include/polyglue/
-│   │   └── src/
-│   ├── objc/
-│   │   ├── CMakeLists.txt
-│   │   ├── include/
-│   │   └── src/
-│   └── wasm/
-│       ├── CMakeLists.txt
-│       └── src/
-├── tests/
-│   ├── CMakeLists.txt
-│   ├── conformance/
-│   ├── native/
-│   └── consumers/
-├── examples/
-│   ├── modules/
-│   ├── c/
-│   │   └── CMakeLists.txt
-│   └── cpp/
-│       └── CMakeLists.txt
-├── build/                # ignored
-└── dist/                 # ignored
-```
+The ordinary generator emits polyglue-integration.cmake with a function polyglue_attach_generated(target). The project creates the target first and calls the function once. The function attaches only the selected generated native sources, required generated public include roots, private bridge sources, actual support runtime targets and mandatory ABI features/definitions. It exposes the generated public header directory as POLYGLUE_GENERATED_INCLUDE_DIR, sets target property POLYGLUE_LIBRARY_ID and uses target-scoped requirements. It must be callable for libraries or WASM executables as appropriate, preserve C/C++ baselines (C11/C++20), avoid duplicates and enforce required runtime ownership. It neither selects arbitrary handwritten sources nor creates a competing final product. A parent project can consume runtime support using add_subdirectory or installed PolyGlue::runtime, PolyGlue::cpp, PolyGlue::jni and PolyGlue::objc where applicable. Provide relocatable exports and verify independent consumers. Static archives must include required objects or distribute their actual transitive closure; do not imply target_link_libraries physically merges archives. Use PIC where needed; preserve parent settings and private symbols.
 
-Additional language support directories remain in the repository layout from section 20.1. Add a local CMakeLists.txt only where native compilation is needed. Prefer a single source list per component, explicit files rather than implicit recursive globbing, and small focused modules. Use official SDK toolchain files for Android NDK and Emscripten. Use explicit Apple SDK/sysroot, architecture and deployment target settings. Do not duplicate vendor toolchain implementations or ship a custom Apple toolchain unless a demonstrated requirement justifies it.
+The only required invocation inputs are POLYGLUE_INTEGRATION_FILE (absolute generated fragment), POLYGLUE_LIBRARY_ID, POLYGLUE_LIBRARY_VERSION and POLYGLUE_LIBRARY_BUILD_NUMBER (both absent for unversioned local build), selected platform/variant/architecture coordinates and ordinary CMake binary/install paths. Native target selection belongs to CMake. The default product name derives from the artifact name and the starter uses it via POLYGLUE_ARTIFACT_NAME. Use CMake's File API and install metadata to locate the selected product; the CMake root declares one unambiguous primary product with the POLYGLUE_LIBRARY_ID target property. Missing/ambiguous product, missing integration, incompatible native type or absent installed output fails. No arbitrary binary scanning.
 
-#### 20.4.1 Targets and options
+#### 20.4.2 Complete project-owned CMake starter
 
-Stable exported CMake target names:
+Ship an editable starter at [extras/templates/native/CMakeLists.txt](extras/templates/native/CMakeLists.txt). It illustrates how to choose system, CPM or Conan in CMake rather than in YAML, link the same ordinary dependency targets, attach generated bindings and declare handwritten sources. The accompanying optional conanfile.txt demonstrates the same dependency graph. These files are examples, not dependencies of the generator or runtime. The generated starter adapts actual target type, sources, public headers and install layout to the requested library/format. Users edit or replace their own copy; never regenerate over it. Do not make the example dependency mandatory. CPM is a pinned user-owned script; Conan is a project-owned recipe/profile and standard CMakeToolchain/CMakeDeps. Use a tested pinned dependency version in the illustrative starter and deliberate lockfile upgrades, not floating downloads.
 
-| Target | Responsibility |
-| --- | --- |
-| PolyGlue::runtime | Common C ABI and native support runtime |
-| PolyGlue::cpp | Public C++ wrappers/headers. Links runtime |
-| PolyGlue::jni | Optional JNI support, linked only where needed |
-| PolyGlue::objc | Optional Apple adapter, linked only where needed |
-| PolyGlue::<module> | Generated module integration target where appropriate |
+For mixed Objective-C/Swift frameworks enable the needed languages in CMake and declare the actual framework target, public umbrella header, module map, Swift module and required metadata; CMake/Xcode own build flags and the framework layout. JNI/FFI uses a shared library target, C/C++ static/shared as selected by the project, WASM uses add_executable and official Emscripten options. Ecosystem templates select the correct starter variant, not a Python compiler/linker implementation. A source-only integration can use the fragment from any existing CMake project. The starter demonstrates native C/C++ installation; ecosystem-specific variants in 20.6 use the appropriate artifact contract.
 
-Use ordinary build targets with namespace aliases and exported install names. Generated module targets must have deterministic conflict-free names across products. Export exactly the public symbols required by the ABI and adapters. Keep private symbols hidden. One intended shared runtime context per library integration even when several modules are linked; multiple independently selected contexts remain supported as in section 12.4. Static libraries are permitted, but composing static archives into multiple shared libraries must not create independent unintended runtime instances. Tests must detect this scenario. Use PIC for static objects linked into a shared library. Do not leak build paths, warning flags or internal dependencies to consumers.
+#### 20.4.3 Dependency preparation without duplicate configuration
 
-```cmake
-# Proposed public options; exact defaults are part of the implementation contract.
-option(POLYGLUE_BUILD_TESTS "Build native tests" OFF)
-option(POLYGLUE_BUILD_EXAMPLES "Build examples" OFF)
-option(POLYGLUE_BUILD_JNI "Build JNI adapter" OFF)
-option(POLYGLUE_BUILD_OBJC "Build Apple adapter" OFF)
-option(POLYGLUE_ENABLE_INSTALL "Enable install and export rules" ON)
+System uses ordinary find_package/add_subdirectory/FetchContent. CPM is loaded by CMake, not bootstrapped by Python. Conan requires a preparation step before configure; the project owns recipe, lockfile, host/build profiles, compiler/SDK options and generator output paths. Run the standard Conan CLI explicitly, or allow a project's CMake configure preset to invoke a project-owned preparation workflow outside CMake configuration. A thin CLI may invoke an explicitly selected project-owned preparation command via a standard CMake workflow preset when supported, or use the optional delivery action in 20.5.2. Do not introduce a PolyGlue-specific provider configuration or infer Conan profiles/settings. For normal Conan builds, prepare the toolchain first, then select the CMake preset referencing the generated toolchain. The preset and Conan files are the source of truth. Never pass a second competing toolchain. CPM/Conan converge on imported CMake targets; no mandatory dependency or resolver in PolyGlue.
 
-set(POLYGLUE_LINKAGE "static" CACHE STRING "static or shared")
-set_property(CACHE POLYGLUE_LINKAGE PROPERTY STRINGS static shared)
-
-set(POLYGLUE_SANITIZER "none" CACHE STRING "Native instrumentation")
-set_property(CACHE POLYGLUE_SANITIZER PROPERTY STRINGS
-    none address thread undefined memory)
-```
-
-Validate every option and incompatible combination at configure time. Use target-scoped compile features, includes, definitions, link options and warnings. Only set default build type/output directories for the top-level project. Do not overwrite parent project settings when used with add_subdirectory or FetchContent. Account for single-configuration and multi-configuration generators. Enable C, CXX, OBJC, OBJCXX or Swift only when required. Do not apply C/C++ flags to Swift or managed-language builds. Propagate ABI-affecting definitions through the public target, and keep private warnings private. MSVC, Clang and GCC receive compatible flags.
-
-Sanitizer modes build and link every relevant native component with compatible instrumentation. TSan and ASan run separately. LSan is enabled with a supported ASan configuration or standalone where appropriate. MSan requires instrumented dependencies and a compatible toolchain. Never silently ignore a requested sanitizer. Validate actual instrumented binaries and execute a fault-detection probe in an isolated test harness. Avoid mixing sanitizer and production artifacts.
-
-#### 20.4.2 Native dependency management
-
-Keep the common runtime dependency-light. Business/native implementation dependencies are owned by the consumer. Support CPM and Conan as first-class optional preparation strategies, normal system CMake and explicitly configured custom setup. All use ordinary CMake targets, not a new package resolver. No provider is required for source generation.
-
-| Provider | Preparation and integration |
-| --- | --- |
-| system | No separate preparation; find_package, local imported targets, add_subdirectory or pinned FetchContent. |
-| cpm | Load the selected pinned CPM.cmake script before project dependencies; CPMAddPackage and target_link_libraries. |
-| conan | Run Conan 2 install per slice; CMakeToolchain and CMakeDeps or verified CMakeConfigDeps recipe; use find_package CONFIG. |
-| custom | Explicit local setup function using the existing trusted Python loader; returns toolchain/prefix paths/definitions. |
-
-**CPM:** accept a project-owned script or ship a reviewed stable version pinned by digest. Never download a moving latest script. Set CPM_SOURCE_CACHE for the invocation, honoring the explicit cache path. The generated integration exposes POLYGLUE_DEPENDENCY_PROVIDER and POLYGLUE_CPM_FILE and loads the script once before the project dependency fragment. Ordinary user-owned CMake declares the packages, exact revisions/archive hashes and options. Do not generate arbitrary versions or add dependencies merely to demonstrate CPM. Reuse populated local source/cache inputs in offline mode; missing dependency fails. Do not bootstrap competing CPM versions in a custom root.
-
-**Conan:** accept a trusted consumer conanfile.py or conanfile.txt. The recipe owns dependency requirements, options, CMakeToolchain and CMakeDeps (or deliberately selected compatible CMakeConfigDeps). Resolve separate build/host profiles for each native slice. Check OS, architecture, compiler/runtime, SDK variant, deployment/API floor, sanitizer and build configuration. Run conan install into a slice-owned folder, with explicit profiles and lockfile. Pass --build=missing only when native_dependencies.conan.build_missing is true; otherwise do not build missing packages implicitly. Offline mode forbids contacting Conan remotes or fetching dependency sources, even with build_missing enabled. No automatic --update, profile detect --force, global settings modification or lockfile rewrite. Example conceptual command:
+Example direct commands (paths/preset names are illustrative):
 
 ```bash
-conan install /project/native/conanfile.py --output-folder /stage/conan --profile:build /project/profiles/build --profile:host /project/profiles/android --settings:host arch=armv8 --settings:host build_type=Release --lockfile /project/locks/android.lock --build=missing
-cmake -S /project/native/android -B /stage/cmake -DCMAKE_TOOLCHAIN_FILE=/stage/conan/conan_toolchain.cmake
+conan install native --output-folder build/conan/linux-x86_64 --profile:build profiles/build --profile:host profiles/linux-x86_64 --lockfile locks/linux-x86_64.lock
+cmake --preset linux-conan
+cmake --build --preset linux-conan
 ```
 
-Resolve actual generator output location from the recipe rather than assume the illustrative path. Conan's generated toolchain composes the NDK/Emscripten/Apple/custom toolchain with matching host settings; if necessary use Conan's explicit user-toolchain facility. Never override it with a competing CMAKE_TOOLCHAIN_FILE, mix host and target dependencies or fall back to CPM on failure. Verify the actual cache/compiler/ABI. Link generated imported targets through find_package(... CONFIG REQUIRED).
+The project decides when to use --build=missing and offline flags. Record actual build provenance from native tools; do not claim offline isolation or dependency reproducibility solely because PolyGlue ran a command. Test actual CPM and Conan integration including cross-toolchain selection, not a duplicate provider implementation.
 
-**Other dependencies:** system mode supports standard CMake package config, FetchContent, imported/prebuilt libraries, local SDKs or an explicit vcpkg/other compatible toolchain. Additional setup uses native_dependencies.custom.setup_file, one explicit trusted run(params: dict) action with action=dependencies per slice before configure. Reuse 20.5.2's loader; the return dictionary contains optional toolchain_file, prefix_paths, definitions. Validate paths, types, nonreserved definitions and compatibility with the selected slice. No arbitrary YAML shell commands or plugin registry. No hook discovery from IDL/prebuilt dependencies; no execution during generate/validate/config/dry-run. Custom setup cannot claim successful compilation or bypass manifests.
+#### 20.4.4 Conventional project and module integration
 
-Use one provider per resolved slice; user CMake may deliberately combine nonoverlapping dependencies, but no silent mixing or duplicate incompatible runtime owners. Record actual dependency revisions, lockfiles, options and licenses; preserve host/target cache isolation, offline inputs, link visibility and test-only dependency separation. Use standard ecosystem dependency tools for managed code. Verify real system, CPM and Conan fixtures (native and representative cross builds), custom setup, cache hit/miss, incorrect profiles, missing SDK, offline rebuild and failure paths. No extra mandatory core dependency. Reference: [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake), [Conan install](https://docs.conan.io/2/reference/commands/install.html), [CMakeToolchain](https://docs.conan.io/2/reference/tools/cmake/cmaketoolchain.html), [Conan CMake integration](https://docs.conan.io/2/integrations/cmake.html), [CMake toolchains](https://cmake.org/cmake/help/latest/manual/cmake-toolchains.7.html).
+The recommended native root is implementation/CMakeLists.txt. Optional project.cmake and per-module implementation/module.cmake are normal user CMake files explicitly included by the project. They may declare target_sources, target_include_directories, target_link_libraries, add_subdirectory and platform conditions. No automatic Python scanning or extra source lists in YAML. Generated source manifests and the generated integration fragment contain only generated files and required support. Managed source sets are configured in their ecosystem files. A generated starter can include known fixture paths as explicit CMake statements; the project owns its handwritten files after export. A module may contain only IDL. Preserve all handwritten code and never add synthetic providers to conceal link errors.
 
-#### 20.4.3 Consumer integration and installation
+#### 20.4.5 Calling CMake
 
-Support all three native consumption modes:
-
-```cmake
-# Source integration
-add_subdirectory(path/to/polyglue-runtime)
-target_link_libraries(app PRIVATE PolyGlue::runtime)
-```
-
-```cmake
-# Installed package
-find_package(PolyGlue CONFIG REQUIRED)
-target_link_libraries(app PRIVATE PolyGlue::runtime PolyGlue::cpp)
-```
-
-```cmake
-# Pinned source dependency
-include(FetchContent)
-FetchContent_Declare(polyglue
-    GIT_REPOSITORY https://github.com/polyglue/polyglue.git
-    GIT_TAG <reviewed-release-or-commit>)
-FetchContent_MakeAvailable(polyglue)
-target_link_libraries(app PRIVATE PolyGlue::runtime)
-```
-
-The final implementation must provide relocatable config/version/target files, proper BUILD_INTERFACE and INSTALL_INTERFACE paths, runtime headers, correct transitive dependencies and generated module package exports when package mode is selected. Test an independent consumer from a relocated installation, not just a target inside the repository. Test both static/shared linkage, multiple generated modules, custom implementation sources and a consumer with its own build flags. Never overwrite an existing consumer CMakeLists.txt unless explicitly generating a new package into an owned directory.
-
-#### 20.4.4 Conventional module CMake integration
-
-The built-in generated top-level CMake entrypoint consumes the resolved library/module plan for a specific platform, SDK variant, architecture, configuration and linkage. The Python planner deterministically discovers recognized source extensions in selected language and platform folders, canonicalizes/deduplicates and emits explicit source lists. Do not scan unrelated modules, unselected languages or stale generated directories. Generated source manifests are authoritative. Handwritten source roots, public headers, target dependencies and extra explicit sources enter the same plan. Managed source goes to its ecosystem tooling, not CMake.
-
-Configure the actual native toolchain before project configuration. Load selected dependency metadata/CPM first; include optional project implementation/project.cmake once for common dependency targets, then create and integrate the runtime and selected module targets; then each selected module's implementation/module.cmake once in deterministic dependency order, inside a module-scoped CMake function after creating its target. A local file can use normal target_sources, target_include_directories, target_compile_definitions, target_link_libraries, find_package and add_subdirectory, or explicitly include platform-specific fragments. No global build-system replacement. Missing optional include is normal; existing invalid script or missing explicit source/dependency fails. Never generate synthetic application implementations to mask unresolved symbols. Link the shared core exactly once per intended integration. Standard CMake installation/export and native output staging apply.
-
-| Context variable | Value |
-| --- | --- |
-| POLYGLUE_MODULE_ID / POLYGLUE_MODULE_TARGET | Logical ID and actual non-alias CMake target |
-| POLYGLUE_MODULE_DIR / POLYGLUE_IMPLEMENTATION_DIR / POLYGLUE_GENERATED_DIR | Resolved module, implementation and generated roots |
-| POLYGLUE_LIBRARY_ID | Selected library |
-| POLYGLUE_TARGETS | Resolved target list including required adapters |
-| POLYGLUE_PLATFORM / POLYGLUE_SDK_VARIANT | Actual platform and SDK variant |
-| POLYGLUE_ARCH / POLYGLUE_CONFIGURATION | Target architecture and build configuration |
-| POLYGLUE_LIBRARY_VERSION / POLYGLUE_LIBRARY_BUILD_NUMBER | Resolved release coordinates, absent for unversioned local build |
-
-The project include has library/slice context, not module-specific variables. Example modules/repository/implementation/module.cmake (normal sources already selected):
-
-```cmake
-if(POLYGLUE_PLATFORM STREQUAL "android")
-    find_library(android_log_library log REQUIRED)
-    target_link_libraries(${POLYGLUE_MODULE_TARGET} PRIVATE ${android_log_library})
-elseif(POLYGLUE_PLATFORM STREQUAL "ios" OR POLYGLUE_PLATFORM STREQUAL "macos")
-    find_library(foundation_framework Foundation REQUIRED)
-    target_link_libraries(${POLYGLUE_MODULE_TARGET} PRIVATE ${foundation_framework})
-endif()
-```
-
-The built-in plan fingerprints selected implementation files, local CMake scripts and declared transitive inputs, reconfigures on changed source list/script, and relies on normal CMake dependency tracking. If a local script introduces untracked dependencies, conservatively rebuild rather than claim stale-cache correctness. Keep parent project options intact. Test absent/present include, selected platform sources, module variable isolation, additional explicit sources/dependencies, incremental changes and an independent consumer. Preserve handwritten code on regeneration/clean.
-
-#### 20.4.5 Project-owned CMake entrypoint and generated integration
-
-Research reference: [XPLPC at 46aa1dd](https://github.com/xplpc/xplpc/tree/46aa1dd48319207759c06804fb19b6ce4dbee617). Its [root CMakeLists.txt](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/CMakeLists.txt) includes a custom source directory using add_subdirectory; [core/util.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/util.py) validates its CMakeLists.txt; [core/cxx.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/cxx.py), [core/kotlin.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/kotlin.py), [core/swift.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/swift.py) and [core/wasm.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/wasm.py) drive platform builds. Its [core/conan.py](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/core/conan.py), [CPM dependency file](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/cmake/cpm/cpm-dependency.cmake) and [Conan dependency file](https://github.com/xplpc/xplpc/blob/46aa1dd48319207759c06804fb19b6ce4dbee617/cmake/conan/conan-dependency.cmake) converge on ordinary CMake targets. Its actual configuration uses Python target dictionaries; PolyGlue adopts that workflow with its own YAML, not XPLPC source, RPC semantics or fixed dependencies.
-
-Exactly two entry modes share one generated integration file:
-- Generated root: generated CMakeLists.txt in manifest-owned output. Includes the generated integration; automatically attaches conventional implementation sources and project/module CMake fragments.
-- Project root: selected build.cmake.source_dir or conventional implementation/CMakeLists.txt. Preserve the user file; it includes the generated integration once after project(). It can add its own native targets, sources and dependencies. The selected actual root is passed to cmake -S.
-
-The common generated include creates the runtime/module graph and native product once, runs project.cmake and module.cmake in the order in 20.4.4 and exposes the actual POLYGLUE_NATIVE_TARGET. For an explicit build.cmake.target, the user declares the existing product target before including integration; the include attaches the generated object/source graph and install requirements to that target, instead of creating a second product. Validate target existence, type, linkage and actual output; a custom root may extend the target after the include. An existing explicit source_dir without the required integration fails rather than packaging an unrelated binary. Do not include those fragments twice. An explicit custom product target may consume the graph and supply its own install rules; verify it actually contains or distributes required generated/native symbols, user implementation and exactly one compatible runtime. Linking a static archive against another static archive does not physically merge its objects; use object inclusion or distribute the actual declared transitive closure. No guessed archive merging. The integration file is a normal manifest-owned template output, not a new build framework.
-
-Example consumer native/CMakeLists.txt:
-
-```cmake
-cmake_minimum_required(VERSION 3.25)
-project(Example LANGUAGES C CXX)
-
-if(NOT DEFINED POLYGLUE_INTEGRATION_FILE)
-    message(FATAL_ERROR "Configure with the PolyGlue integration plan")
-endif()
-
-include("${POLYGLUE_INTEGRATION_FILE}")
-
-if(POLYGLUE_PLATFORM STREQUAL "android")
-    find_library(android_log_library log REQUIRED)
-    target_link_libraries(${POLYGLUE_NATIVE_TARGET} PRIVATE ${android_log_library})
-endif()
-```
-
-The minimum CMake version is illustrative; verify actual supported stable version. The same root works with selected Apple, desktop, Android and WASM toolchains. User-provided business implementations remain necessary where the contract requires them.
-
-Reserve POLYGLUE_INTEGRATION_FILE, POLYGLUE_NATIVE_TARGET, POLYGLUE_DEPENDENCY_PROVIDER, POLYGLUE_CPM_FILE, POLYGLUE_LINKAGE and all context variables in 20.4.4. Pass the selected library/version/build, platform/SDK variant, arch, build configuration, install prefix and actual toolchain from the plan. Reject conflicting cmake.definitions for reserved POLYGLUE_* or native ABI/toolchain/arch/cache keys. Other user definitions are passed as individual typed -D arguments, with CMake list escaping, no shell-string interpolation. Example conceptual single-config native commands:
+Use the project root (or selected preset in that root) as cwd. Resolve the generated integration path and release coordinates once. For the default starter, pass official platform arguments to select the requested slice; project presets own generator, compiler, toolchain, SDK floor, architecture settings and build options. Do not inject a competing generator/toolchain or silently override preset settings. If an explicit preset conflicts with the requested slice, fail. Explicit configure presets are mapped by slice in YAML solely for orchestration; use the standard CMake configure, build and install commands with isolated binary and staging paths. Never parse the internal CMake language to predict dependencies. For a custom root require the integration contract above, verify actual target and installed outputs, and respect user CMake choices.
 
 ```bash
-cmake -S /project/native -B /stage/cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/stage/install -DPOLYGLUE_INTEGRATION_FILE=/stage/integration/polyglue-integration.cmake -DPOLYGLUE_PLATFORM=linux -DPOLYGLUE_ARCH=x86_64
-cmake --build /stage/cmake --config Release --target example --parallel 4
-cmake --install /stage/cmake --config Release --prefix /stage/install
+cmake -S implementation -B build/native/linux-x86_64 -DPOLYGLUE_INTEGRATION_FILE=/stage/generated/polyglue-integration.cmake -DPOLYGLUE_LIBRARY_ID=example -DPOLYGLUE_ARTIFACT_NAME=Example
+cmake --build build/native/linux-x86_64 --config Release
+cmake --install build/native/linux-x86_64 --config Release --prefix /stage/install
 ```
 
-Use actual target/install metadata (or CMake File API), never scan unrelated build directories for arbitrary binaries. Multi-config generators select configuration at build/install/test, not through CMAKE_BUILD_TYPE alone. Keep per-slice caches and stage isolated by toolchain, provider, SDK, architecture, linkage and configuration. The source/build plan fingerprint identifies native linkage, product target, provider, toolchain and all selected input settings; include a native-plan fingerprint component in the staging path whenever release coordinates alone would collide. Different linkage/provider plans at the same coordinates must not share a CMake cache. Validate root and profile before destructive cleanup. Native source configuration is reused by every ecosystem package. In the ordinary generated root case, a caller can set per-platform cmake.source_dir to null to reset an inherited custom path to conventional discovery; if the conventional project CMakeLists.txt exists it is used. There is no recursive search for another root. Pure managed-only output skips CMake only if no native capability is actually required. Test generated root, custom root (including spaces and explicitly external path), target overrides, platform source selection, dependencies, install/relocation and static/shared closure. See [CMake CLI](https://cmake.org/cmake/help/latest/manual/cmake.1.html).
+Versioned builds additionally pass the exact version/build values. Multi-config builds select the same configuration at build/install/test. Use the actual selected preset or configure cache to validate platform, compiler and SDK; do not replicate CMake's compilation and dependency state in Python. Clean only owned staging and binary directories. For pure managed output without native capability, skip native build. No build-only configuration is required to generate source.
+
 
 ### 20.5 Python build orchestration and artifact pipeline
 
@@ -6840,67 +6587,15 @@ The same generator CLI and generation path are used locally, by Makefile and in 
 
 #### 20.5.1 Build directories and incremental behavior
 
-```text
-build/polyglue/
-└── <library>/<version>/build-<build-number>/
-    └── <platform>/<sdk-variant>/<architecture>/<configuration>/<sanitizer>/
-        ├── generated/
-        ├── cmake/
-        ├── stage/
-        ├── logs/
-        └── build-manifest.json
-dist/
-└── <library>/
-    └── <version>/build-<build-number>/
-        └── <format>/
-            └── <platform-or-platform-set>/<architecture-or-slice-set>/<configuration>/<sanitizer>/
-                ├── <validated-artifact>
-                ├── artifact-manifest.json
-                └── checksums.sha256
-```
-
-The displayed version/build paths are release-coordinate paths. Unversioned local build and test use build/polyglue/<library>/local/<build-plan-fingerprint>/<platform>/<sdk-variant>/<architecture>/<configuration>/<sanitizer>/; no fake version or build number, no distributable dist artifact or deployment identity. Build plan fingerprint includes all actual inputs and the absence of release metadata. If version/build are explicitly supplied, use the shown release-coordinate staging path with validated input fingerprints and never reuse stale outputs. Supplying only one of the release fields is invalid for package; local source/build may omit both, but not invent the missing field. A local build can generate nonrelease build metadata only where the toolchain permits it; if the ecosystem requires a release version for the requested package, require explicit coordinates instead. Package and deploy always require both. Use stable names for actual platform and slice sets, not guessed SDK identifiers. Separate local artifact paths for different configurations, architectures and sanitizer modes, even when the library version is unchanged. Package archives and manifests must agree on that identity. Generated source outputs configured by the module may reside outside build/. The build plan references them or stages a snapshot without rewriting user files. Build cache keys include generator/runtime version, library version and build number, canonical IDL, effective config, all used templates, implementation source fingerprints, dependencies, compiler/SDK, architecture, flags and configuration. Compiler caches may reuse unchanged objects across build identities when their actual input hashes match. Do not reuse a previous artifact for a changed build plan. The tool must detect stale or missing outputs, unexpected files, architecture mismatches and interrupted builds. Clean only explicitly owned directories (never recursive deletion based on an unvalidated path). Temporary staging and atomic publication prevent partial packages appearing successful. Incremental generation must be byte-equivalent to clean generation. Incremental native build results must be contract- and artifact-content-equivalent to a clean build under the same resolved inputs, without assuming byte-identical compiler/signing output when the toolchain is nondeterministic. See section 20.7.
-
-A single plan/runner/verification implementation supports all package formats. The individual packaging adapter only invokes the ecosystem's real tools and verifies its actual artifact shape. Do not write a Gradle, SwiftPM, CMake, npm, dotnet, pub or Python package manager replacement. Reuse the same native build, canonical manifest, version/build values and content hashes. Share paired Java/Kotlin, Swift/Objective-C, Dart/Flutter and JS/TS artifacts when the actual ownership/format plan permits. Keep S3-compatible deploy isolated from generation and ordinary packaging; no new cloud provider abstraction or custom signing protocol.
-
-#### 20.5.2 Trusted project-local Python actions
-
-A Nativium-style function is the only dynamic delivery extension mechanism. Explicit native dependency setup may reuse that loader via native_dependencies.custom.setup_file (20.4.2). Discover build.py, package.py or deploy.py relative to the resolved project implementation root only for an explicitly requested delivery command or its documented prerequisite. package may execute the selected build.py when the matching stage is missing/stale; a build action never triggers package or deploy. Each required action runs at most once per planned scope, with no recursive invocation of the same plan. Source generation and installed-package test do not execute delivery overrides. A platform-specific implementation/<platform>/<action>.py takes precedence for one selected platform. For multi-platform assembly/deploy select the project-level action once with all slices. No module-level discovery or plugin framework. Missing file uses built-in action; an invalid existing file or action failure stops, without fallback or double execution.
-
-Call one function run(params: dict) -> dict with a fresh complete resolved non-secret context. Stable fields:
-
-| Key | Meaning |
-| --- | --- |
-| schema_version / action | Context revision and build/package/deploy or explicit dependencies setup |
-| project | Root, config path, project ID, effective non-secret settings |
-| library | ID, public API plan, module/target closure, artifact name, version/build or None for local |
-| modules | Ordered module dictionaries, config, dependencies, implementation/generated paths and selected sources |
-| targets | Selected public targets and private adapter closure |
-| platform / slices | Single platform or None, list of SDK variant/arch/config/toolchain/floor/staging data |
-| paths | Resolved project, implementation, generated, build, staging, dist and selected manifest paths |
-| config | Effective non-secret configuration, including selected deploy destination if applicable |
-| artifact | Expected outputs/format or exact selected package manifest and hashes |
-| tools / options | Resolved tool paths/versions, jobs and validated command options |
-| native_build | Resolved CMake root/target/definitions, provider/toolchain, per-slice inputs/outputs and prepared dependency metadata when applicable |
-
-The local action replaces only the selected delivery implementation; dependency setup uses the distinct return shape in 20.4.2 and does not claim a built artifact. Prerequisites and canonical generation/validation still use the built-in planner. For deploy, validate the exact local artifact and applicable passing test evidence before any action executes. No automatic action chaining beyond package's documented generation/build prerequisites. A custom build action receives the prepared dependency and generation context and owns the selected build stage; a custom package receives the verified matching stage. Do not run the built-in compiler again after a successful custom replacement. Build/package returns {"artifacts": [actual staged paths]}; validate returned schema, required outputs, metadata, architecture, hashes and containment using common verification, and write canonical manifests from actual results. Custom deploy returns receipt data (manifest hash, selected destination, object keys/hashes and verification evidence). Validate against the selected artifact. Do not report user-defined delivery as verified built-in S3 unless actual required remote verification occurred. No success=True-only return, silent fallback or implicit version change. Custom package consumes the planned build/stage; custom deploy never rebuilds.
-
-```python
-from pathlib import Path
-import subprocess
+Use build/polyglue/<library>/<version>/build-<number>/<platform>/<variant>/<arch>/<configuration>/<plan-id>/ for native build and staging; use local instead of release coordinates for unversioned builds. The plan ID separates incompatible CMake roots, presets, toolchains and generator inputs; sanitizer and other settings are read from the real native build, not a second YAML model. The native tool owns its dependency graph, cache and incremental invalidation. Always invoke the selected native build before treating its stage as current; do not attempt to parse CMake or independently discover transitive C++ sources. Validate the actual installed outputs and record resolved toolchain/build metadata. Use the existing artifact manifest for exact byte identity and provenance. Stage final packages under dist/<library>/<version>/build-<number>/<format>/<platform-set>/<slice-set>/<configuration>/<plan-id>/. Keep different native profiles and incompatible slices isolated. Do not invent release coordinates. Clean only owned directories. Atomically publish a validated local package; never leave partial success. Incremental generated code remains byte-equivalent to clean generation; do not promise deterministic signed or compiler-produced bytes.
 
 
-def run(params: dict) -> dict:
-    output = Path(params["paths"]["staging"]) / "AppBridge.aar"
-    subprocess.run(
-        ["python3", "tools/package-android.py", "--output", str(output)],
-        cwd=params["project"]["root"],
-        check=True,
-    )
-    return {"artifacts": [str(output)]}
-```
+#### 20.5.2 Optional project-local delivery actions
 
-This is illustrative consumer-owned code, not an extra PolyGlue dependency. Use one importlib loader, isolated deterministic module name, no global sys.path pollution. Exceptions, bad returns and missing outputs fail with context. Treat local Python and CMake as trusted executable project code, not sandboxed input. Never import from prebuilt/downloaded dependencies or IDL-controlled paths. Generate/validate/config/ordinary import never execute hooks. Dry-run prints selected hook and resolved non-secret input without loading Python or running commands/network; user-defined outputs are marked unknown if not predictable. No credentials in dict, logs or generated output; authorized script can use its actual environment. Fingerprint script and declared inputs; custom action is conservatively non-cacheable unless fully tracked. Test discovery, precedence, absence, exact context, failures, nonexecution on dry-run/generate, path validation and output verification. The loader is part of first-party 100% Python coverage.
+Normal projects need no Python hook. For exceptional packaging or delivery requirements, preserve the optional trusted project-local build.py, package.py or deploy.py under implementation/; a matching implementation/<platform>/<action>.py may override a single-platform action. Use one small loader for run(params: dict) -> dict, invoked only for the explicitly selected action or package's build prerequisite. Missing hook uses the built-in action; an existing invalid hook fails. A custom build invokes the project's native tools itself; it does not get a second built-in build or a dependency-provider setup phase. Custom package consumes staged outputs; deploy consumes exact verified package bytes and never rebuilds.
+
+Pass only non-secret project/library/module/target/slice metadata, generated and staging paths, selected CMake root/preset, version/build, action and expected artifact identity. Build/package returns {"artifacts": [actual staged paths]}; validate paths, content, architecture, metadata and required output through the same normal verifier. Deploy returns a receipt for the exact artifact/destination; label custom receipts as user-defined unless independently verified. No arbitrary YAML commands or remote hook discovery. Treat explicit local scripts as trusted executable project code. Generate, config, validate and dry-run never load hooks. Do not introduce a plugin framework, dependency setup hook or additional build DSL.
+
 
 ### 20.6 Binary and package outputs by target
 
@@ -6995,7 +6690,7 @@ Stage CMake install output: include/, lib/, bin/ where applicable, CMake package
 
 #### 20.6.5 Per-platform build recipes and consumer integration
 
-The following standard recipes use the same YAML, generated source manifest, implementation roots, CMake source directory, selected dependency provider and native slice plan from sections 7.7.3 and 20.4. The user should be able to produce each final library without authoring repetitive build scripts. No separate compiler, runtime or build framework per language. All commands are planned interfaces, not implemented features. package alone generates and builds missing or stale prerequisites and produces the final requested artifact under dist; running build first is optional. Build stages and verifies the native/managed output of the selected plan; package assembles the final consumer artifact. Test with an explicit format uses the exact packaged artifact. Deploy consumes it without implicitly building or packaging. Native P0 conformance does not wait for P1 package automation.
+The following recipes use the same YAML library/slice selection, generated bindings, project-owned CMake root and optional preset from sections 7.7.3 and 20.4. Native compilation is delegated to CMake, with managed compilation and packaging delegated to ecosystem tools. All commands are planned interfaces. package builds missing or stale prerequisites and produces the final artifact under dist; running build first is optional. Test with an explicit format uses exact packaged bytes. Deploy consumes those bytes without implicitly building or packaging. P0 conformance does not wait for P1 automation.
 
 | Target / platform | Format | Native compilation and final tool |
 | --- | --- | --- |
@@ -7014,7 +6709,7 @@ The format identifiers in this table are the canonical identifiers for the liste
 
 ##### C and C++: native desktop and mobile libraries
 
-Generate C headers and typed ABI adapter, C++ API, shared support and build integration. Select native CMake root and requested library linkage, architecture, compiler/toolchain and SDK from the resolved YAML. Linux uses compatible GCC/Clang or an explicit cross-toolchain/sysroot; Windows uses supported MSVC or another verified toolchain with correct CRT and generator architecture; macOS uses Apple SDK, architecture and deployment floor. Configure/build/install per slice using the common plan. Stage actual .a/.so, .lib/.dll or .a/.dylib, headers, import libraries, declared native dependency closure and relocatable CMake package. Static library assembly must include actual objects or publish required transitive archives. Inspect ABI, exports, runtime dependencies and install paths. Test separate C11 and C++20 consumers with find_package from a relocated install root. For Android use NDK ABI/API settings below; for iOS/iPadOS, tvOS, watchOS, visionOS and Catalyst use proper Apple variants. Native archives are valid only for the slice actually produced, never interchangeable device/simulator outputs. If the user selects an Apple container or Android library format, use that format's packaging recipe instead of duplicating compilation.
+Generate C headers and typed ABI adapter, C++ API, shared support and build integration. Select the CMake root and requested architecture from YAML; the project CMake files/presets own linkage, compiler/toolchain and SDK. Linux uses compatible GCC/Clang or an explicit cross-toolchain/sysroot; Windows uses supported MSVC or another verified toolchain with correct CRT and generator architecture; macOS uses Apple SDK, architecture and deployment floor. Configure/build/install per slice using the common plan. Stage actual .a/.so, .lib/.dll or .a/.dylib, headers, import libraries, declared native dependency closure and relocatable CMake package. Static library assembly must include actual objects or publish required transitive archives. Inspect ABI, exports, runtime dependencies and install paths. Test separate C11 and C++20 consumers with find_package from a relocated install root. For Android use NDK ABI/API settings below; for iOS/iPadOS, tvOS, watchOS, visionOS and Catalyst use proper Apple variants. Native archives are valid only for the slice actually produced, never interchangeable device/simulator outputs. If the user selects an Apple container or Android library format, use that format's packaging recipe instead of duplicating compilation.
 
 ```bash
 polyglue package --library desktop --platform linux --format cmake
@@ -7022,7 +6717,7 @@ polyglue package --library desktop --platform linux --format cmake
 
 ##### Java and Kotlin: desktop JVM
 
-Generate Java and/or Kotlin native public callable APIs and one shared JNI adapter, preserving the paired package/model ownership of section 10.6. Compile the native JNI shared library through CMake per OS/architecture; select actual target-compatible JDK headers, native runtime and dependency provider. Generate the Gradle library project/source sets and native resource layout, or integrate with an explicit consumer-owned project that follows the same plan. Gradle compiles Java and Kotlin as selected and produces the JAR plus required dependency metadata. Include native resources organized by actual platform/architecture, or explicit compatible native companion libraries; a loader must use the exact verified native library and never fall back to another host's binary. A multi-OS JAR is assembled from validated slices from actual supported build hosts. Test independent Java and Kotlin consumers in a fresh JVM including CompletableFuture, suspend, JNI roots and native calls. Android AAR is a separate output, not a desktop JAR.
+Generate Java and/or Kotlin native public callable APIs and one shared JNI adapter, preserving the paired package/model ownership of section 10.6. Compile the native JNI shared library through CMake per OS/architecture; use actual target-compatible JDK headers, native runtime and project-owned dependencies. Generate the Gradle library project/source sets and native resource layout, or integrate with an explicit consumer-owned project that follows the same plan. Gradle compiles Java and Kotlin as selected and produces the JAR plus required dependency metadata. Include native resources organized by actual platform/architecture, or explicit compatible native companion libraries; a loader must use the exact verified native library and never fall back to another host's binary. A multi-OS JAR is assembled from validated slices from actual supported build hosts. Test independent Java and Kotlin consumers in a fresh JVM including CompletableFuture, suspend, JNI roots and native calls. Android AAR is a separate output, not a desktop JAR.
 
 ```bash
 polyglue package --library jvm --platform linux --format jar
@@ -7030,14 +6725,14 @@ polyglue package --library jvm --platform linux --format jar
 
 ##### Android and Android XR: AAR
 
-Select SDK/JDK/NDK and AGP/Gradle versions compatible with the declared min_sdk, compile SDK and requested ABIs. Generate actual Java/Kotlin classes, JNI adapter and native CMake integration. For each configured ABI, use the official NDK toolchain or its correct Conan composition. Example system/CPM configure (the actual plan supplies all slice parameters):
+Select SDK/JDK/NDK and AGP/Gradle versions compatible with the actual native API floor, project-owned Gradle settings and requested ABIs. Generate actual Java/Kotlin classes, JNI adapter and native CMake integration. For each configured ABI, use the official NDK toolchain or its correct Conan composition. Example system/CPM configure (the actual plan supplies all slice parameters):
 
 ```bash
 cmake -S /project/native/android -B /stage/arm64-v8a/cmake -DCMAKE_TOOLCHAIN_FILE=/sdk/ndk/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DPOLYGLUE_INTEGRATION_FILE=/stage/integration/polyglue-integration.cmake
 cmake --build /stage/arm64-v8a/cmake --config Release
 ```
 
-Conan mode passes the single composed toolchain, not a second independent NDK toolchain. Verify dependency API floors, actual architecture and consistent C++ runtime. Generate Gradle library settings, namespace, manifest, source sets, dependency metadata, optional consumer shrinker rules and native staging paths. Stage native slices and declared shared dependencies in jniLibs/<abi>; AGP packages them into jni/<abi> inside the AAR. Default packager stages verified precompiled slices and invokes the generated/selected Gradle wrapper's :library:assembleRelease or actual requested variant. Do not also build the same native library via externalNativeBuild. If an explicit existing project delegates native compilation to AGP, use its one validated path with the same source/toolchain inputs; no duplicate binaries. Resolve exact output via task metadata and verify AAR contents rather than copying any AAR found in build directories. Include POM/dependency metadata where needed; a raw AAR alone does not carry all transitive Maven dependencies. Native C++ consumers can use Prefab only when explicitly selected and verified; Java/Kotlin callers need not configure Prefab. Android XR follows the same Android build/AAR format with actual XR SDK/device capabilities, not an invented new binary format. Test an independent app using the resulting AAR, including release R8 behavior, real native loading, ABI and alignment requirements.
+A Conan-prepared CMake preset uses its single composed toolchain, not a second independent NDK toolchain. Verify dependency API floors, actual architecture and consistent C++ runtime. Generate Gradle library settings, namespace, manifest, source sets, dependency metadata, optional consumer shrinker rules and native staging paths. Stage native slices and declared shared dependencies in jniLibs/<abi>; AGP packages them into jni/<abi> inside the AAR. Default packager stages verified precompiled slices and invokes the generated/selected Gradle wrapper's :library:assembleRelease or actual requested variant. Do not also build the same native library via externalNativeBuild. If an explicit existing project delegates native compilation to AGP, use its one validated path with the same source/toolchain inputs; no duplicate binaries. Resolve exact output via task metadata and verify AAR contents rather than copying any AAR found in build directories. Include POM/dependency metadata where needed; a raw AAR alone does not carry all transitive Maven dependencies. Native C++ consumers can use Prefab only when explicitly selected and verified; Java/Kotlin callers need not configure Prefab. Android XR follows the same Android build/AAR format with actual XR SDK/device capabilities, not an invented new binary format. Test an independent app using the resulting AAR, including release R8 behavior, real native loading, ABI and alignment requirements.
 
 ```bash
 polyglue package --library mobile --platform android --format aar
@@ -7076,7 +6771,7 @@ The Apple library selects its declared compatible platform set; --platform can r
 
 ##### Python: native bindings wheel
 
-Keep the pure Python generator wheel separate from generated consumer/provider bindings. Generate Python API, CPython native adapter, CMake integration and package pyproject.toml. Choose one verified PEP 517 backend with CMake integration (e.g. scikit-build-core, subject to actual stable dependency review). A backend may execute the common CMake configure/build/install with the resolved root/toolchain/definitions, or package an already built verified extension when supported. Never compile two competing native extensions. Use the correct target CPython headers and ABI. Produce platform/interpreter/ABI-specific wheel through uv build --wheel or standard backend frontend; no universal or abi3 claim unless proven. Repair/audit shared dependencies through ecosystem-supported tooling as needed, including Linux compatibility tags, Windows DLL and macOS dylib paths. The required sdist deliverable must contain necessary generated sources/resources and build in the declared environment, not a stub that fails at import. Until actual source-install proof exists, report that format as unimplemented, not supported. Install wheel outside source tree in a clean venv and run real generated calls, native callbacks, lifetime and asyncio tests.
+Keep the pure Python generator wheel separate from generated consumer/provider bindings. Generate Python API, CPython native adapter, CMake integration and package pyproject.toml. Choose one verified PEP 517 backend with CMake integration (e.g. scikit-build-core, subject to actual stable dependency review). A backend may execute the common CMake configure/build/install with the selected root and project-owned toolchain/preset, or package an already built verified extension when supported. Never compile two competing native extensions. Use the correct target CPython headers and ABI. Produce platform/interpreter/ABI-specific wheel through uv build --wheel or standard backend frontend; no universal or abi3 claim unless proven. Repair/audit shared dependencies through ecosystem-supported tooling as needed, including Linux compatibility tags, Windows DLL and macOS dylib paths. The required sdist deliverable must contain necessary generated sources/resources and build in the declared environment, not a stub that fails at import. Until actual source-install proof exists, report that format as unimplemented, not supported. Install wheel outside source tree in a clean venv and run real generated calls, native callbacks, lifetime and asyncio tests.
 
 ```bash
 polyglue package --library python-api --platform linux --format wheel
@@ -7133,11 +6828,10 @@ One host can package the selected platform without installing all other SDKs. A 
 
 #### 20.6.6 Generated build and test projects
 
-The generator must emit the real integration needed to build/test a project that follows the standard layout. Existing mode: sources emits bindings and applicable source integration; existing mode: package emits generated CMakeLists.txt, polyglue-integration.cmake, native/source/install plan, ecosystem project files, metadata templates and loader configuration. These are ordinary deterministic template outputs with the same ownership/override rules; no new compiler backend. generate never executes CMake, SDKs, dependency managers or local Python. Build/package can request the required integration output automatically, in an owned staging directory, without changing the logical API or overwriting user files. A configured user-owned CMake root is consumed, not rewritten. Other ecosystem files can be extended using the existing template overrides/local Python action rather than implementing parallel project generators.
+Use the existing deterministic template system to generate bindings, an integration CMake fragment, and optional editable starter projects for each ecosystem. The project CMakeLists.txt is the authority for all native compilation; the generated fragment contains only the known generated source/headers/support graph. User-owned sources and dependencies are declared in the project's native tool files. Never overwrite them. A project can use the generated starter root unchanged, export it once and maintain it, or select its own CMake root. Generate never executes CMake, SDKs, dependency managers or local Python.
 
-For the repository's own tests, use shared IDL and independently handwritten provider/consumer fixtures in the same conventional layout expected from consumers. Generate build/test projects with PolyGlue itself: CMake/CTest, JVM Gradle/JUnit, Apple Swift/XCTest/native app, pytest package, Dart tests, Flutter example app, .NET test project, Node/browser/TypeScript harness as applicable. Instantiate test-project skeletons using the same normal template rendering and source-plan infrastructure, not a public test DSL or production business-code generator. Generated files wire independent fixtures to actual generated adapters; self-calling generated stubs are not evidence. Compile real native libraries/executables and execute them. P0 tests can run ecosystem tools directly from generated integration before the P1 convenience CLI is complete; P1 tests exercise the full CLI build/package and installed consumer. Share assertions and fixtures instead of duplicating identical suites.
+For the repository's own tests, generate real CMake/CTest, JVM Gradle/JUnit, Apple Swift/XCTest, pytest, Dart/Flutter, .NET and Node/browser/TypeScript projects with the normal templates and independent handwritten fixtures. P0 uses direct native commands, P1 tests the same projects with the convenience CLI and installed consumers. Exercise generated and project roots, explicit per-platform root and preset selection, CPM and Conan, static/shared native installs, Android ABIs, Apple SDK variants, desktop/Web, changed sources and dependencies, version propagation and failures. No duplicate Cartesian test matrix; preserve 100% first-party Python line/branch coverage and the full semantic conformance contract.
 
-Mandatory distinct delivery cases: conventional module with no optional CMake file, real handwritten implementation, generated root, explicit project root from YAML, platform-specific override, custom native target, system/CPM/Conan and explicit custom provider, static/shared install, Android ABIs, Apple device/simulator slice assembly, desktop/Web, Python/local action failure, dependency/source/IDL change invalidation, missing CMakeLists failure before cleanup, independent installed consumer, version/build propagation, actual final artifacts in dist, S3/R2 dry-run. Use actual toolchains for real integration evidence and meaningful injected failures for Python planner tests. No unnecessary Cartesian matrix; retain complete semantic and native target conformance. All first-party Python planner, provider, template and package verification code remains subject to exact 100% line/branch coverage.
 
 ### 20.7 Artifact provenance and release validation
 
@@ -7392,27 +7086,16 @@ Use the section 1.3 architecture budget as an acceptance gate. For each item ide
 
 ### 22.8 CMake, Python build tool and binary artifacts
 
-Generated integration needed for actual native P0 tests is part of the generator; reusable consumer-facing build/package automation is P1 and deploy is P2. Use direct native build/test commands before these convenience actions exist. No final delivery claim until applicable P1/P2 gates pass.
+- [ ] P0: generate ordinary source integration and real test projects; execute native and managed tools directly. P1: thin build/package orchestration; P2: explicit deployment.
+- [ ] Provide the project-owned CMakeLists.txt template in section 20.4, with optional CPM or Conan integration, normal CMake targets, explicit user sources, install rules and native toolchain presets. Test both dependency tools using real fixtures, without YAML dependency settings.
+- [ ] Validate a generated root and a user-owned root, optional platform-specific CMake directory, CMake preset selection, actual target/platform/ABI and installed artifact; preserve user files.
+- [ ] Keep compile flags, linkages, dependency versions, sources, include directories, SDK floors, toolchains and sanitizer settings in native tool files. Python passes only integration metadata and selected slice coordinates, invokes tools, checks exits and verifies outputs. Do not write a CMake interpreter or package resolver.
+- [ ] Implement build/test/package/clean/doctor with direct subprocess arguments, explicit cwd, errors and owned stage directories. Delegate incremental compilation to CMake and other ecosystem tools; never reuse stale artifacts.
+- [ ] Verify relocated C/C++ installs, JVM JAR and Android AAR with native slices, Apple XCFramework/SwiftPM with actual SDK variants, Python wheels, Dart/Flutter packages, NuGet and npm/WASM with independent consumers. Keep one native compilation path per slice.
+- [ ] Record actual package metadata, architecture, dependencies, runtime ownership, checksums and evidence; validate version/build coordinates from one source. Distinguish structural validation from passing tests.
+- [ ] Implement optional trusted project-local delivery action only as an escape hatch; no separate dependency setup API. Validate returned artifacts; never execute during generation/inspection/dry-run.
+- [ ] Implement optional S3-compatible deploy from exact tested package bytes; no rebuilding, automatic publication, version changes or duplicate packaging. Test conditional immutable uploads, integrity and interrupted delivery.
 
-- [ ] Implement conventional implementation roots, deterministic selected sources, optional project.cmake/module.cmake, project-owned CMakeLists.txt selected by per-platform YAML or generated root, one common generated include and safe incremental invalidation. Preserve handwritten files.
-- [ ] P0: generate real build and test projects with the ordinary template pipeline and execute generated bindings with native tools. P1: exercise generated and project-owned CMake roots, all platform packaging recipes and independent installed consumers under sections 20.6.5–20.6.6.
-- [ ] Implement the single trusted local Python run(params) action loader for build/package/deploy, full resolved non-secret context, precedence, dry-run nonexecution, exact output/receipt validation and failure behavior (section 20.5.2).
-
-- [ ] Create organized target-based CMake infrastructure with options, dependencies, warnings, sanitizer modes, installation/export rules and appropriate toolchain files. Keep parent projects unaffected.
-- [ ] Implement system CMake, optional CPM and Conan 2, and explicitly configured custom dependency setup using the same trusted local Python loader. Verify per-slice profiles/toolchains, pinned inputs, caches/offline behavior and complete native dependency closure; no mandatory provider or extra business dependency in core.
-- [ ] Implement Python doctor/build/test/package/run/clean and inspectable build plans. Use real SDK commands, explicit arguments, expected artifacts, bounded parallelism and contextual failures.
-- [ ] Isolate builds by library, platform, SDK variant, architecture, configuration and sanitizer. Verify incremental invalidation, clean build equivalence, missing output rejection and safe owned cleanup.
-- [ ] Build and inspect C/C++ desktop static/shared libraries, headers and relocatable CMake exports. Install and run an independent consumer after relocating the package.
-- [ ] Build Java/Kotlin desktop JAR and Android AAR with native architecture slices, required dependencies and release/R8 rules. Inspect classes, native binaries, alignment and real clean consumers.
-- [ ] Build Objective-C/Swift XCFramework for requested Apple SDK slices, keeping device/simulator/Catalyst distinct and preserving public module identities when packaging multiple frameworks. Validate Info.plist, Mach-O platform/architecture, headers/modules and matching debug symbols as applicable.
-- [ ] Generate valid local and remote SwiftPM integration with archive/checksum and no fabricated URL. Test a separate Swift and Objective-C consumer.
-- [ ] Build the pure Python generator wheel/sdist and target-specific native bindings wheels. Inspect archive metadata/resources and install outside the source tree.
-- [ ] Build and validate Dart/Flutter packages and plugins, .NET NuGet packages, JS/TS npm packages and WASM binaries/loader assets. Run real installed consumers.
-- [ ] Record package manifests, hashes, exact toolchains, dependencies and evidence. No stale artifacts or cross-architecture/sanitizer contamination.
-- [ ] Implement one library version/build number source, validate selected ecosystem ranges, pass both values to CMake and all ecosystem tools and inspect final native/package metadata. Keep tool, module, ABI and library identities independent.
-- [ ] Isolate build and dist paths by library version and build number as well as platform, architecture, format, configuration and sanitizer. Prove separate builds coexist and changed metadata invalidates the relevant build inputs.
-- [ ] Implement optional boto3-based deploy for S3/R2/compatible endpoints using exact packaged manifests, explicit destinations, version/build keys and dry-run without credentials or network. No extra provider framework or implicit uploads.
-- [ ] Implement conditional immutable uploads, manifest-first identity, bounded multipart handling, SHA-256 verification, completion manifest, identical re-run and conflict/partial-failure handling. Test through SDK fixtures and separately authorized AWS/R2 live smokes. Never mark an unverified provider as supported.
 
 ### 22.9 Real applications and conformance
 
