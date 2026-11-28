@@ -1,0 +1,56 @@
+start: module_decl import_decl* declaration*
+module_decl: DOC* annotation* "module" qualified_name ";"
+import_decl: "import" IDENTIFIER import_suffix ";"
+import_suffix: "as" IDENTIFIER -> import_alias
+             | "." IDENTIFIER import_suffix? -> import_segment
+             | "." "{" IDENTIFIER ("," IDENTIFIER)* "}" -> import_group
+
+declaration: DOC* annotation* visibility? (record_decl | enum_decl | flags_decl | variant_decl | interface_decl | callback_decl | const_decl | specialization)
+visibility: "public" -> public_visibility
+          | "private" -> private_visibility
+record_decl: "record" IDENTIFIER generic_parameters? "{" field* "}"
+generic_parameters: "<" IDENTIFIER ("," IDENTIFIER)* ">"
+field: DOC* annotation* IDENTIFIER ":" type_expr ("=" literal)? ";"
+enum_decl: "enum" IDENTIFIER "{" enum_member ("," enum_member)* ","? "}"
+flags_decl: "flags" IDENTIFIER "{" enum_member ("," enum_member)* ","? "}"
+enum_member: DOC* annotation* IDENTIFIER "=" INTEGER
+variant_decl: "variant" IDENTIFIER "{" variant_case+ "}"
+variant_case: DOC* annotation* IDENTIFIER (":" type_expr)? ";"
+interface_decl: "interface" IDENTIFIER (":" qualified_name)? "{" method* "}"
+method: DOC* annotation* static_modifier? async_modifier? IDENTIFIER "(" parameters? ")" ":" type_expr ";"
+callback_decl: async_modifier? "callback" IDENTIFIER "(" parameters? ")" ":" type_expr ";"
+static_modifier: "static"
+async_modifier: "async"
+parameters: parameter ("," parameter)*
+parameter: annotation* IDENTIFIER ":" type_expr
+const_decl: "const" IDENTIFIER ":" type_expr "=" literal ";"
+specialization: "specialize" qualified_name type_arguments "as" IDENTIFIER ";"
+
+type_expr: (BUILTIN | qualified_name) type_arguments?
+type_arguments: "<" type_expr ("," type_expr)* ">"
+qualified_name: IDENTIFIER ("." IDENTIFIER)*
+annotation: "@" qualified_name ("(" annotation_arguments? ")")?
+annotation_arguments: annotation_argument ("," annotation_argument)*
+annotation_argument: IDENTIFIER ":" literal -> named_argument
+                   | literal -> positional_argument
+?literal: STRING -> string_literal
+        | FLOAT -> float_literal
+        | INTEGER -> integer_literal
+        | "true" -> true_literal
+        | "false" -> false_literal
+        | "null" -> null_literal
+        | qualified_name -> reference_literal
+        | "[" (literal ("," literal)*)? "]" -> sequence_literal
+        | "{" (map_entry ("," map_entry)*)? "}" -> map_literal
+map_entry: literal ":" literal
+
+BUILTIN: /(?:bool|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|string|bytes|void|date|timestamp|duration|uuid|list|array|set|map|optional|Result|Stream|WeakRef|CancellationToken|DataView|MutableDataView|DataRef)(?![A-Za-z0-9_])/
+IDENTIFIER: /(?!(?:module|import|as|record|enum|flags|variant|interface|callback|const|static|async|public|private|specialize|true|false|null|bool|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|string|bytes|void|date|timestamp|duration|uuid|list|array|set|map|optional|Result|Stream|WeakRef|CancellationToken|DataView|MutableDataView|DataRef)(?![A-Za-z0-9_]))[A-Za-z_][A-Za-z0-9_]*/
+FLOAT.2: /[+-]?(?:[0-9]+\.[0-9]+(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)/
+INTEGER: /[+-]?[0-9]+/
+STRING: /"(?:[^"\\\x00-\x1f]|\\(?:["\\nrt]|u[0-9a-fA-F]{4}))*"/
+DOC.2: /\/\/\/[^\r\n]*/
+%ignore /\/\/(?!\/)[^\r\n]*/
+%ignore /\/\*(?s:.*?)\*\//
+%import common.WS
+%ignore WS
