@@ -8,36 +8,170 @@ Always write the product name as PolyGlue, with an uppercase P and G, in documen
 
 ## Contents
 
-Section 22 is the implementation checklist. AGENTS.md defines the engineering rules.
+Start with chapters 1 through 5 if this is your first time using a cross-language generator. Chapters 6 through 11 explain generation and customization. Chapters 12 through 16 explain what happens at runtime. Chapters 17 through 22 explain the examples, tests and distribution. Section 22 is the single detailed implementation checklist. AGENTS.md holds permanent engineering rules and links to this normative specification; do not duplicate reference tables.
 
 - [1. Product and scope](#1-product-and-scope)
 - [2. Supported languages and platforms](#2-supported-languages-and-platforms)
 - [3. Developer workflow and distribution](#3-developer-workflow-and-distribution)
 - [4. IDL language](#4-idl-language)
+  - [Static operations and factories](#46-static-operations-and-factories)
+  - [Inheritance, properties, overloads and generic specialization](#47-inheritance-properties-overloads-and-generic-specialization)
+  - [Concrete generic ownership and resolver limits](#471-concrete-generic-ownership-and-resolver-limits)
+  - [Declaration syntax and semantic validation baseline](#48-declaration-syntax-and-semantic-validation-baseline)
 - [5. Type system](#5-type-system)
+  - [Complete type mapping contract](#54-complete-type-mapping-contract)
+  - [Canonical equality, numeric conversion and legal value positions](#541-canonical-equality-numeric-conversion-and-legal-value-positions)
+  - [One Dart API across native and web](#542-one-dart-api-across-native-and-web)
+  - [Concrete lowering rules for every type family](#543-concrete-lowering-rules-for-every-type-family)
+  - [Compound values, equality and non-void host generics](#544-compound-values-equality-and-non-void-host-generics)
+  - [Initialization, destruction and execution-domain properties of types](#545-initialization-destruction-and-execution-domain-properties-of-types)
+  - [Concrete value model and conversion policy](#546-concrete-value-model-and-conversion-policy)
+  - [Built-in date and time types](#56-built-in-date-and-time-types)
+  - [Custom and external type extension system](#57-custom-and-external-type-extension-system)
+  - [Optional values, nulls and defaults](#58-optional-values-nulls-and-defaults)
+  - [How each value crosses languages](#59-how-each-value-crosses-languages)
+    - [Records and generic records](#records-and-generic-records)
+    - [Enums](#enums)
+    - [Flags](#flags)
+    - [Variants](#variants)
+    - [Lists and arrays](#lists-and-arrays)
+    - [Sets and maps](#sets-and-maps)
 - [6. Modules and dependencies](#6-modules-and-dependencies)
+  - [Conventional implementation layout](#611-conventional-implementation-layout)
+  - [Module versions and dependency identity](#621-module-versions-and-dependency-identity)
 - [7. Module-first configuration](#7-module-first-configuration)
+  - [Operational defaults and diagnostics](#763-operational-defaults-and-diagnostics)
+  - [Library and build configuration](#77-library-and-build-configuration)
+  - [Native build configuration and platform defaults](#773-native-build-configuration-and-platform-defaults)
+  - [Library version and build number](#78-library-version-and-build-number)
+  - [Single configuration and runtime options inventory](#710-single-configuration-and-runtime-options-inventory)
 - [8. Naming and file formatting](#8-naming-and-file-formatting)
+  - [Complete public naming defaults](#85-complete-public-naming-defaults)
+  - [Formatting and customization profiles](#86-formatting-and-customization-profiles)
+  - [Idiomatic public signatures and Swift import defaults](#87-idiomatic-public-signatures-and-swift-import-defaults)
+  - [Public signature resolution and identity](#88-public-signature-resolution-and-identity)
+  - [Swift signature grammar and Apple exposure](#89-swift-signature-grammar-and-apple-exposure)
+  - [Idiomatic callable surfaces for every target](#810-idiomatic-callable-surfaces-for-every-target)
+  - [Public API without generator artifacts](#811-public-api-without-generator-artifacts)
 - [9. Annotations and platform attributes](#9-annotations-and-platform-attributes)
 - [10. Output layout and import resolution](#10-output-layout-and-import-resolution)
+  - [Unified library public entry points](#105-unified-library-public-entry-points)
+  - [Shared target artifact ownership](#106-shared-target-artifact-ownership)
+  - [One public Apple module without language suffixes](#1061-one-public-apple-module-without-language-suffixes)
+  - [Composition of libraries](#107-composition-of-libraries)
 - [11. Compiler and templates](#11-compiler-and-templates)
+  - [Compiler pipeline](#111-pipeline)
+  - [Template override system](#115-template-override-system-mandatory)
+  - [Compiler input bounds, trust and transactional output](#117-compiler-input-bounds-trust-and-transactional-output)
 - [12. Native runtime and ABI](#12-native-runtime-and-abi)
+  - [Call and return across the ABI](#123-call-and-return-across-the-abi)
+  - [Contexts, attachments and admission](#124-contexts-attachments-and-admission)
+  - [Public lifecycle control and errors](#125-public-lifecycle-control-and-errors)
+  - [Handle identity, contract fingerprints and start/completion invariants](#126-handle-identity-contract-fingerprints-and-startcompletion-invariants)
+  - [Physical ABI baseline and compatibility gates](#127-physical-abi-baseline-and-compatibility-gates)
+  - [Canonical recursive contract fingerprints](#128-canonical-recursive-contract-fingerprints)
+  - [Explicit initialization, construction and teardown](#129-explicit-initialization-construction-and-teardown)
+  - [Operational ABI contract and ownership inventory](#1210-operational-abi-contract-and-ownership-inventory)
+  - [Shared core acquisition across independently built libraries](#1211-shared-core-acquisition-across-independently-built-libraries)
+  - [Handle ownership tickets, status and delivery protocol](#1212-handle-ownership-tickets-status-and-delivery-protocol)
 - [13. Memory and buffers](#13-memory-and-buffers)
+  - [Reference and value ownership matrix](#1321-reference-and-value-ownership-matrix)
+  - [Host-specific memory and execution rules](#1322-host-specific-memory-and-execution-rules)
+  - [Proxy identity, root pressure and cycles](#1323-proxy-identity-root-pressure-and-cycles)
+  - [Borrow scopes and aliasing](#135-borrow-scopes-and-aliasing)
+  - [DataRef storage ownership and zero-copy](#136-dataref-storage-ownership-and-zero-copy)
+  - [Owner retirement and executable-code lifetime](#1361-owner-retirement-and-executable-code-lifetime)
+  - [Memory domains and platform boundaries](#137-memory-domains-and-platform-boundaries)
+  - [JavaScript buffer integration through the shared WASM core](#1371-javascript-buffer-integration-through-the-shared-wasm-core)
+  - [Configurable resource limits and diagnostics](#138-configurable-resource-limits-and-diagnostics)
+  - [Aggregate budgets and reservations](#1381-aggregate-budgets-and-reservations)
+  - [Race invariants and runtime observability](#1382-race-invariants-and-runtime-observability)
+  - [Allocation and lifetime accounting boundaries](#1383-allocation-and-lifetime-accounting-boundaries)
+  - [Prior-art and official platform review](#139-prior-art-and-official-platform-review)
+  - [Buffer and ownership flows](#134-buffer-and-ownership-flows)
 - [14. Asynchronous operations callbacks and streams](#14-asynchronous-operations-callbacks-and-streams)
+  - [Async, callbacks, cancellation and streams in motion](#145-async-callbacks-cancellation-and-streams-in-motion)
+  - [Listeners and subscription patterns](#146-listeners-and-subscription-patterns)
+  - [Default delivery and callback scope](#1431-default-delivery-and-callback-scope)
+  - [Stream acquisition, subscription and terminal state](#1432-stream-acquisition-subscription-and-terminal-state)
+  - [Demand and item conversion](#1433-demand-and-item-conversion)
+  - [Capture, acceptance and publication](#1441-capture-acceptance-and-publication)
+  - [Cancellation authority and observer lifetime](#1442-cancellation-authority-and-observer-lifetime)
+  - [Scheduler rejection and shutdown accounting](#1443-scheduler-rejection-and-shutdown-accounting)
+  - [Stream and callback adapter lifecycle](#1444-stream-and-callback-adapter-lifecycle)
+  - [Prepared operations, result materialization and terminal commitment](#1445-prepared-operations-result-materialization-and-terminal-commitment)
+  - [Threads, executors, event loops and asynchronous I/O](#147-threads-executors-event-loops-and-asynchronous-io)
+  - [Language and platform execution profiles](#1474-language-and-platform-execution-profiles)
+  - [Application-created threads and direct native entry](#1475-application-created-threads-and-direct-native-entry)
+  - [Bidirectional thread interoperability by language](#1476-bidirectional-thread-interoperability-by-language)
+  - [Blocking native HTTP from a host-owned worker: concrete usage](#1477-blocking-native-http-from-a-host-owned-worker-concrete-usage)
+  - [Cross-thread handles, cancellation, close and conformance evidence](#1478-cross-thread-handles-cancellation-close-and-conformance-evidence)
+  - [Explicit capability transfer and scheduler guarantees](#1479-explicit-capability-transfer-and-scheduler-guarantees)
+  - [Runtime lifecycle, suspension and host-specific availability](#14710-runtime-lifecycle-suspension-and-host-specific-availability)
 - [15. Interfaces and service discovery](#15-interfaces-and-service-discovery)
+  - [Direct references and service registry flows](#155-direct-references-and-service-registry-flows)
+  - [Registry identity, contexts and public API](#156-registry-identity-contexts-and-public-api)
+  - [Registration policies and deterministic restoration](#157-registration-policies-and-deterministic-restoration)
+  - [Three-layer application example](#158-three-layer-application-example)
+  - [Registration ownership, detach and shutdown](#159-registration-ownership-detach-and-shutdown)
 - [16. Language-specific integration](#16-language-specific-integration)
+  - [Host attachment and disposal integration](#1620-host-attachment-and-disposal-integration)
 - [17. Example applications](#17-example-applications)
+  - [HTTP execution, ownership and cancellation across all targets](#1721-http-execution-ownership-and-cancellation-across-all-targets)
 - [18. Test specification](#18-test-specification)
+  - [Coverage and test design policy](#180-coverage-and-test-design-policy)
+  - [Mandatory 100% Python generator coverage](#1801-mandatory-100-python-generator-coverage)
+  - [Registry and listener lifecycle conformance](#187-registry-and-listener-lifecycle-conformance)
+  - [Deterministic lifecycle race fixtures](#188-deterministic-lifecycle-race-fixtures)
+  - [Default profiles and installed public API conformance](#189-default-profiles-and-installed-public-api-conformance)
+  - [Cross-contract and ownership regression fixtures](#1810-cross-contract-and-ownership-regression-fixtures)
+  - [Cross-boundary consistency checks](#1811-cross-boundary-consistency-checks)
+  - [Type and ownership audit acceptance](#1812-type-and-ownership-audit-acceptance)
+  - [Consolidated semantic, ABI and lifecycle acceptance](#1813-consolidated-semantic-abi-and-lifecycle-acceptance)
+  - [Execution-domain, initialization and HTTP conformance](#1814-execution-domain-initialization-and-http-conformance)
+  - [Application-owned thread and reverse-callback conformance](#1815-application-owned-thread-and-reverse-callback-conformance)
+  - [Independent coverage, regression and performance gates](#1816-independent-coverage-regression-and-performance-gates)
+  - [Final contract closure and negative evidence](#1817-final-contract-closure-and-negative-evidence)
+  - [Public signature and importer conformance](#1818-public-signature-and-importer-conformance)
+  - [No-leakage public API conformance](#1819-no-leakage-public-api-conformance)
 - [19. GitHub Actions](#19-github-actions)
+  - [Isolated CI execution](#1911-isolated-ci-execution)
+  - [Fast CI and cache policy](#196-fast-ci-and-cache-policy)
+  - [CI trust boundaries](#1961-ci-trust-boundaries)
 - [20. Repository documentation and branding](#20-repository-documentation-and-branding)
+  - [README and logo](#202-readme-and-logo)
+  - [Native build system and CMake organization](#204-native-build-system-and-cmake-organization)
+  - [Conventional project and module integration](#2044-conventional-project-and-module-integration)
+  - [Calling CMake](#2045-calling-cmake)
+  - [Platform catalog and command contracts](#2046-platform-catalog-and-command-contracts)
+  - [Python build orchestration and artifact pipeline](#205-python-build-orchestration-and-artifact-pipeline)
+  - [Optional project-local delivery actions](#2052-optional-project-local-delivery-actions)
+  - [Binary and package outputs by target](#206-binary-and-package-outputs-by-target)
+  - [Per-platform build recipes and consumer integration](#2065-per-platform-build-recipes-and-consumer-integration)
+  - [Generated build and test projects](#2066-generated-build-and-test-projects)
+  - [Library deployment to S3-compatible object storage](#2010-library-deployment-to-s3-compatible-object-storage)
 - [21. Implementation phases and reviews](#21-implementation-phases-and-reviews)
 - [22. Implementation and acceptance checklist](#22-implementation-and-acceptance-checklist)
+  - [Repository and tooling](#221-repository-tooling-and-engineering-rules)
+  - [Compiler and IDL](#222-compiler-idl-and-diagnostics)
+  - [Modules and configuration](#223-module-system-configuration-and-output-planning)
+  - [Templates and annotations](#224-templates-and-annotations)
+  - [Built-in and external types](#225-built-in-types-and-extension-mechanism)
+  - [Runtime and ownership](#226-native-abi-ownership-and-runtime)
+  - [Language backends](#227-language-specific-backends-and-platform-support)
+  - [Build and artifacts](#228-cmake-python-build-tool-and-binary-artifacts)
+  - [Applications and conformance](#229-real-applications-and-conformance)
+  - [CI and delivery](#2210-ci-performance-documentation-and-final-delivery)
 
 ## 1. Product and scope
 
 **One definition. Multiple languages. Native interoperability.**
 
-PolyGlue generates idiomatic, typed, bidirectional bindings from one IDL contract. Applications implement their own business logic. A small native support library connects compatible runtimes without a server, mandatory serialization or Python in non-Python applications.
+Imagine a Flutter app that needs an Android feature written in Kotlin and an iOS feature written in Swift. Without a shared contract, developers often write the same data models and connecting code separately, and must keep the signatures, error handling and memory rules in sync.
+
+PolyGlue is designed to solve this problem. Write a contract once in an Interface Definition Language (IDL). The Python generator creates native-looking types and bindings for each selected language. A binding is generated code that lets one language call another. The application still supplies the real implementation of each method. The runtime is a small support library used at execution time. It is not a server and it does not require JSON or Python in non-Python applications.
+
+Start with the platform scope in section 2, follow the developer workflow in section 3, and learn the IDL and type mappings in sections 4 and 5. Sections 6 through 11 explain how files are generated. Sections 12 through 16 explain what happens when the program runs. Sections 17 through 22 explain how to prove the behavior, build, distribute and complete the project.
 
 ### 1.0 The idea in one picture
 
@@ -77,7 +211,9 @@ Terms used throughout this document:
 | Runtime | Native support code that connects compatible language attachments |
 | SDK | A broader development kit or a third-party platform toolchain, such as Android SDK or Apple SDK |
 
-A service is an interface implementation registered for optional discovery.
+A record carries data, an enum names allowed choices, and an interface describes actions. A service is an interface implementation registered for discovery. PolyGlue generates the connection between languages, not the application's business logic.
+
+For a first project, start with a record and one interface method. Generate bindings for two languages, implement the method in one language and call it from the other. Once that works, add a second module, optional values, asynchronous methods and callbacks. Use shared buffers when the application needs to avoid copying large data. Use the registry when the application needs to find or replace an implementation at runtime. Build and package the library after the calls work. Deployment is optional. The later chapters explain each step in depth.
 
 **Product priority.** PolyGlue is first a source generator. P0: correct, deterministic, intelligent Python generation for all declared targets, 100% Python statement and branch coverage, and real compile/run conformance of generated bindings with the shared runtime. P1: conventional per-platform build and package convenience, including handwritten implementations, AAR and XCFramework assembly. P2: optional distribution/deploy convenience, including S3/R2. Real native builds and execution for P0 conformance do not depend on completion of the P1/P2 CLI. All remain required planned deliverables before full project release; P1/P2 must not delay the generator. Source generation requires the Python generator, but no native SDK, CMake, cloud access or execution of project-owned build code.
 
@@ -577,7 +713,7 @@ Constants and field defaults are typed literals, declared constant references, o
 
 ## 5. Type system
 
-Section 5.4 defines the type mappings; section 5.9 defines cross-language conversion and ownership.
+Start with ordinary values such as integers and strings. Records group values together. Collections hold several values. Optionals say whether a value exists. Interfaces and callbacks allow calls rather than just carrying data. Buffers and references add lifetime rules. Section 5.4 is the complete type reference, and section 5.9 shows how the values actually travel and return.
 
 ### 5.1 Types to implement and test
 
@@ -3496,33 +3632,28 @@ Use the generation ownership transaction defined in section 11.4 for all writers
 
 ## 12. Native runtime and ABI
 
-The handwritten support/ library provides one C++20 core with a C11 ABI, plus reusable host-specific helpers. Generated adapters supply typed descriptors, tables and schema-specific conversions. The core has no dependency on IDL, generated headers, application code, managed SDKs, the Python generator, transport or serialization. Section 20.4.7 defines native source and header selection; borrowed adapters use ABI declarations without another core.
+The handwritten support/ library is shared by generated bindings. Its C++20 core exposes a C11 ABI; reusable host helpers integrate foreign runtimes. It does not depend on IDL, generated headers, application code, managed SDKs, Python generator, transport or serialization. CMake selects native components as defined in 20.4.7.
+
+| Owner | Responsibility |
+| --- | --- |
+| core | Contexts, attachments, validated handles, ownership and allocation, status/errors, buffer leases, call admission, async/cancellation, streams, static bindings and optional service registry. |
+| c | Common ABI declarations, bootstrap and entry points forwarding to the core. Headers compile as C11; implementations may use C++20. |
+| cpp | Reusable typed RAII, conversion and async helpers. No separate runtime. |
+| Host helpers | Reusable host entry/exit, reference rooting, value conversion primitives, scheduler dispatch, error translation and release on the required host domain. |
+| Generated code | Concrete types, descriptors, typed tables, schema-specific conversion/traversal, consumer proxies and provider adapters. |
+| Application | Business logic, native dependencies, host/executor selection and explicit initialization/teardown. |
+
+Use small functions and typed state. Share validation, atomic admission/pinning, owner retention, initialized-value cleanup, terminal result/cancellation and retirement mechanics wherever semantics agree. Retain distinct resource kinds, state machines and registry/static-binding behavior. Never add a second host-side handle store, registry, allocator authority or cancellation engine. Host-specific roots and caches belong to their attachment/provider (13 and 14.7). A scheduler adapter is not a new scheduler framework. Use the simplest locking that proves correctness; never invoke host code, callbacks, schedulers or destructors under bookkeeping locks. Optimize only with evidence. Native fast paths must preserve the same validation and ownership rules.
 
 Required ABI rules:
 
-- Versioned C ABI with fixed-width primitives, explicit alignment, size/version headers and documented calling conventions.
-- Stable logical type IDs distinct from contract fingerprints and target-specific ABI fingerprints.
-- Validate architecture, ABI version, handle origin, kind and generation before invocation.
-- Explicit ownership for every argument and return, allocator/deallocator pairing and checked length/offset arithmetic.
-- No C++ STL layout, foreign object memory layout or exception crossing the ABI directly.
-- One compatible shared runtime per context. Detect unintended duplicate instances.
-- Explicit close/dispose and safe finalization for abandoned resources. Never rely on finalizers alone.
-- Define identity, strong and weak references, refcount overflow, cycles and thread-affine destruction.
+- Versioned fixed-width C ABI with explicit alignment, size/version headers and calling conventions; distinct logical IDs, semantic contract and physical ABI fingerprints.
+- Validate handle origin, kind, generation and ABI before obtaining a live owner. Pair allocators/deleters, check length/offset arithmetic and define every argument/result ownership transfer.
+- No STL layout, foreign object memory layout or exception crossing the ABI.
+- One compatible core per context; reject unintended duplicate instances. Explicit close/dispose and safe finalization; never rely on finalizers alone.
+- Strong/weak references, overflow, cycles and host-affine destruction follow section 13; lifecycle and concurrency follow sections 12.2–12.12, 14 and 15.
 
-Buffer-specific rules are in section 13. Asynchronous lifecycle rules are in section 14.
-
-**Shared core implementation contract.** Build one small C++20 implementation with typed C11 ABI exports, also compiled to WASM. Core mechanisms are shared implementation code, not a public framework:
-
-| Internal mechanism | Reused by | Required boundary |
-| --- | --- | --- |
-| Validated resource identity and ownership | Interface/callback references, DataRef owners, context/attachment control, operations, subscriptions, registration and cancellation controls | Typed kinds and descriptor checks; owning tickets and weak metadata; no untyped public handle or unchecked cast |
-| Admission and execution lease | Sync calls, async starts, reverse callbacks, stream deliveries, static binding, registry resolution and host cleanup | Atomic live checks and pin/claim; execute host code outside locks; preserve caller/provider/attachment lifetimes |
-| Owning value conversion and cleanup | Records, arrays/lists, tagged values, external adapters, async captures and results | One recursive lowering/initialization plan; release only active initialized owners; transactional conversion |
-| Terminal result and cancellation | Async method/callback, host promise/future adapter, stream item/terminal delivery | Exactly-once consumer result; separate actual execution end and host delivery; no second cancellation engine |
-| Resource retirement and host-affine cleanup | All resource kinds with owner/root/code leases | Revoke new admission before draining; one cleanup claim; cleanup remains possible while business calls are closed |
-| Typed discovery/binding | Static binding and optional service registry | Reuse descriptor validation, tokens, retained entries and admission; keep distinct static-slot versus service-stack semantics |
-
-These are reuse boundaries, not six mandatory classes or independent systems. Common native support owns allocation/ownership, handle tables, error/status, admission, cancellation, streams, static bindings and optional discovery. Stateless scalar/UTF/bounds helpers and small C++ RAII/coroutine helpers may be shared here; concrete schema-specific traversal remains generated. Do not implement a second conversion engine or process-global service state in a host helper. A common handle store or equivalent validated mechanism can use type-specific payload and state; do not force unrelated resources into a universal public object or a single giant state enum. Start with the simplest synchronization that proves correctness; split locks or add fast paths only when measured contention requires it. Never invoke callbacks, schedulers or destructors under bookkeeping locks. No independent host-side copy of canonical registry, cancellation, handle or admission state. Host adapters retain native roots and translate host errors/scheduling only. Use canonical identity across C/C++, JNI, Apple, CPython, Dart, .NET and JS/WASM. Native direct calls may avoid redundant conversion only when the same validation/ownership guarantees are established by the fast path.
+No mandatory public framework, universal invocation API or generic plugin system. Implement the shared mechanisms only as the existing typed contracts require.
 
 ### 12.1 Typed function tables
 
@@ -3782,7 +3913,7 @@ The final C ABI inventory specifies per function: exact parameter and return lay
 
 ### 12.11 Shared core acquisition across independently built libraries
 
-A library's native code can be statically linked or dynamically loaded without automatically sharing its runtime instance. Shared context mode has one explicit core owner. Export a small versioned C bootstrap/descriptor entrypoint from that owner, or receive the identical validated bootstrap descriptor through explicit embedding initialization. Bootstrap returns the supported ABI profile, descriptor schema version, required runtime features, immutable runtime function table and owning runtime-instance reference; compare the full compatibility fingerprint and validate core identity before attach. A descriptor is not a global service registry. Use an explicit context-control/reference supplied by the embedding application; no default lookup by library name, process-global address, symbol interposition, first-loaded library or version string. No context creation on package import. Native loader entry points (JNI_OnLoad, PyInit_*, Windows DLL loader and WASM initialization as applicable) may establish only platform-required loader metadata or module exports. Do not create a context, register a business provider, start a worker, block/drain or invoke arbitrary foreign code from C++ static initialization or Windows loader-lock entry. Consolidate required entry points per actual binary; generated modules contribute explicit registration tables, not duplicate JNI_OnLoad or conflicting exports. JNI VM/class-loader and CPython interpreter state belong to their actual integrations and attach explicitly.
+A library's native code can be statically linked or dynamically loaded without automatically sharing its runtime instance. Shared context mode has one explicit core owner. Export a small versioned C bootstrap/descriptor entrypoint from that owner, or receive the identical validated bootstrap descriptor through explicit embedding initialization. Bootstrap returns the supported ABI profile, descriptor schema version, required runtime features, immutable runtime function table and owning runtime-instance reference; compare the full compatibility fingerprint and validate core identity before attach. A descriptor is not a global service registry. Use an explicit context-control/reference supplied by the embedding application; no default lookup by library name, process-global address, symbol interposition, first-loaded library or version string. No context creation on package import. Native loader entry points (JNI_OnLoad, PyInit_*, Windows DLL loader and WASM initialization as applicable) may establish only platform-required loader metadata or module exports. Do not create a context, register a business provider, start a worker, block/drain or invoke arbitrary foreign code from C++ static initialization or Windows loader-lock entry. Consolidate each required loader symbol per actual binary; generated modules contribute explicit registration tables, not duplicate JNI_OnLoad or conflicting exports. Distinct CPython extension module names may require distinct PyInit_* symbols (20.4.7). JNI VM/class-loader and CPython interpreter state belong to their actual integrations and attach explicitly.
 
 A consumer adapter acquires a code-loader lease for the actual shared core and its own implementation library, verifies the ABI/contract and dependency manifests, then attaches to the provided context. Independent native copies may coexist as isolated cores; their handles cannot cross even when their bytes and ABI versions are equal. A static core archive linked into different shared objects creates independent core instances when their core symbols and state are correctly isolated; do not rely on default symbol preemption. A static intermediate archive is not itself a loaded core instance. For shared mode, link exactly one owner and make borrowers use the actual acquired bootstrap table (without a private core archive), or link all products to the same shared runtime. A forwarded bootstrap must route all handle/state operations to its owner; a borrower must never pass those tokens to local core symbols. Reject conflicting owner/link profiles and verify actual loader identities. Isolated static copies are valid only with isolated contexts and no cross-copy handles. Hide private C++ and host helper symbols by default. Export only the selected C ABI/bootstrap, generated public native symbols and required platform loader entries using target-specific visibility/export macros. Use correct static versus DLL import/export declarations; do not rely on exporting every archive symbol or global symbol interposition. The ABI table's code and each provider/deleter's defining image remain leased until their last valid owner and execution retire. The owner of any allocation/function table remains responsible for its matching destroy. A shared dependency library's detach does not close unrelated attachments or stop a borrowed core. The explicit context owner coordinates full shutdown and loader lifetime.
 
@@ -5724,7 +5855,7 @@ flowchart TD
 
 ### 18.0 Coverage and test design policy
 
-Test public behavior, invariants, platform risks and regressions using real adapters and runtimes. Avoid unreachable cases, trivial getters, duplicate assertions, arbitrary sleeps and coverage-only fixtures. Tests must fail when the contract breaks.
+Test actual contracts and credible failure modes. Every test must identify a public behavior, invariant, boundary, platform integration risk or previously observed defect. A test must fail when that behavior breaks, not merely duplicate implementation logic or assert editorial wording. Use real generated adapters and actual language runtimes. Do not invent unlikely cases that have no reachable code path, test trivial getters, duplicate assertions in multiple suites, add arbitrary sleeps, or grow a test matrix solely to increase counts or coverage percentages.
 
 Use the smallest set of meaningful fixtures that proves all supported types, directions and distinct behaviors. Share IDL, canonical expected values and parameterized tests across languages. Cover each type in each feasible ordered pair, then exercise nested values, callback, async, stream and ownership paths according to the distinct conversion and lifetime risks. Reuse a fixture or result where it proves multiple requirements. Do not multiply every scalar by every annotation, collection, OS, compiler, build mode and scheduler when those dimensions exercise the same code path. Do test each platform-specific adapter, ABI, loader and runtime lifecycle where it differs. Never omit a required type, direction or distinct failure mode to save time.
 
@@ -6115,20 +6246,20 @@ Update existing cross-language conformance fixtures rather than adding a paralle
 
 ### 18.17.1 Support library integration evidence
 
-Use existing CMake/CTest and real compiler/host fixtures. Test shared primitives once in a minimal C/C++ consumer without IDL or managed SDKs; test each distinct adapter, ABI, loader and runtime boundary using generated bindings.
+Use CMake/CTest and real host fixtures. Test shared primitives once in a minimal C/C++ project without IDL or managed SDKs; use actual generated bindings for each distinct host boundary.
 
 | Case ID | Required evidence |
 | --- | --- |
-| support.component-selection | Exact selected sources, headers and usage requirements for C/C++, JVM, Apple, CPython, native FFI, WASM and mixed targets; no unrelated SDK/language discovery. |
-| support.platform-validation | Reject invalid coordinates/components, missing SDK, host artifacts in cross-build and unsupported variants; verify actual Android/XR, Apple variants, desktop and WASM binary coordinates. |
+| support.component-selection | Exact sources, headers and usage requirements for C/C++, JNI, Apple, CPython, native FFI, WASM and mixed products; no unrelated SDK/language discovery. |
+| support.platform-validation | Reject invalid coordinates/components, missing SDK, cross-build host artifacts and unsupported variants; verify actual Android/XR, Apple variants, desktop and WASM coordinates. |
 | support.module-composition | Two IDL modules plus user fragment; no duplicate sources/specializations; independent targets, repeated identical attach, conflicting attach, aliases, invalid target and incompatible core. |
-| support.headers-and-linkage | Standalone C11/C++20 public headers, private SDK isolation, install paths, transitive static links, PIC, exports and relocated consumer without source tree. |
-| support.owner-bootstrap | Embedded/shared/borrowed identity; borrowed-only build has no local core/imports; one owner per final image; foreign handles rejected; pending releases protect storage/code. |
-| support.loader-entry | One loader entry per image; VM/interpreter/attachment isolation; no context or provider initialization on load. |
+| support.headers-and-linkage | Standalone C11/C++20 headers, private SDK isolation, installed paths, static transitive links, PIC, correct exports and relocated consumer without source tree. |
+| support.owner-bootstrap | Embedded/shared/borrowed actual identity; borrowed-only build has no local core/direct imports; one owner per final image; foreign handles rejected; pending releases protect storage/code. |
+| support.loader-entry | One definition of each required loader symbol; correct JNI VM/class-loader and CPython interpreter/module isolation; no business initialization on load. |
 | support.resources | Installed wheel/sdist, relocated offline CMake without Python; reject missing, modified, escaping or incompatible resources. |
-| support.incremental | Changes reconfigure/rebuild correctly; no stale stage, receipt or cross-slice reuse; parent settings and other targets unchanged. |
+| support.incremental | Changes reconfigure/rebuild correctly; no stale stage/receipt or cross-slice reuse; parent settings and other targets unchanged. |
 
-Verify configure, compile, link, install and execution where applicable. Use actual symbols/imports and loader identity for runtime ownership; configure success alone is insufficient. Record evidence in existing reports.
+Verify configure, compile, link, install and execution where applicable. Inspect actual symbols/imports and loader identity; configure alone is not proof. Record results in existing reports; no new test framework.
 
 ### 18.18 Public signature and importer conformance
 
@@ -6288,6 +6419,8 @@ flowchart TD
 ```
 
 ## 20. Repository documentation and branding
+
+**Delivery priority.** P0 generation/conformance, P1 build/package and P2 explicit deployment are independently testable (sections 1 and 20.4–20.10).
 
 ### 20.1 Repository layout
 
@@ -6449,39 +6582,39 @@ Use the listed mobile Apple slices by default; macOS XCFramework defaults to bot
 
 #### 20.4.7 Support library and per-module CMake source selection
 
-Keep one handwritten support/ tree. support/cmake/support-lib.cmake selects the native components; support/CMakeLists.txt creates or exports the core when needed. Each component with native code owns a cmake/module.cmake, include/ and src/ as needed. Managed-only sources use their ecosystem build tools. No empty modules, duplicate source catalog or extra build framework.
+Keep one handwritten support/ tree. support/cmake/support-lib.cmake validates the target and selects components; support/CMakeLists.txt creates/exports the core only when needed. Every component containing native files owns cmake/module.cmake and include/ and src/ as needed. Managed-only helpers use their ecosystem source sets. No empty directories, plugin mechanism or second native build system.
 
-**Integration.** Generated polyglue-integration.cmake invokes polyglue_attach_support(target COMPONENTS <ids...>) and each selected IDL module's generated CMake fragment in dependency order. The compiler supplies the logical adapter closure; CMake selects the actual native sources. A project-owned implementation/module.cmake independently adds handwritten application code. No user-source scanning, Python calls or downloads in these fragments.
+**Integration.** Generated polyglue-integration.cmake calls polyglue_attach_support(target COMPONENTS <ids...>) once, then attaches the selected IDL modules' generated fragments in dependency order. The compiler supplies required bridge IDs, not native support filenames. A user-owned implementation/module.cmake adds its own handwritten files. Each native component fragment contains its explicit common and platform-specific sources, headers, include directories, compile requirements and link dependencies. Use a uniquely named function accepting the real target and validated coordinates; attach only to that target. The selector uses a fixed component catalog and dependency order, not a configurable plugin graph. No Python invocation, downloads, user-source scanning, recursive glob or global source-list cache.
 
-Each module.cmake uses the validated target to add its explicit common and platform-specific source and header lists, include paths, compile features/options/definitions and required link dependencies. Use ordinary target_sources, target_include_directories, target_compile_features and target_link_libraries (plus target-specific options/definitions as needed). Compile sources privately; expose only necessary public usage requirements. Resolve paths relative to the defining fragment (CMAKE_CURRENT_LIST_DIR or CMAKE_CURRENT_FUNCTION_LIST_DIR); do not use recursive globs or cache lists. Deduplicate by component and canonical file path per real target; conflicting file ownership or flags fail. Identical support attachment is a no-op; conflicting attachment or repeated primary generated integration fails. Resolve aliases; reject non-buildable/imported primary targets, but validate compatible imported core targets without modifying them. Function definitions may be guarded; target attachment must not be globally guarded.
+**Selection.** Use the existing POLYGLUE_PLATFORM, POLYGLUE_SDK_VARIANT, POLYGLUE_ARCH and POLYGLUE_TARGETS (20.4.5), plus actual required bridge IDs. Validate after project()/language enablement against the configured toolchain (CMAKE_SYSTEM_NAME, ANDROID, EMSCRIPTEN, compiler target/architecture, Android ABI/API, Apple sysroot/SDK/triple or Xcode destination). Do not infer from host OS, UNIX/APPLE, pointer width or CMAKE_CROSSCOMPILING alone. One architecture per slice. Direct CMake consumers can infer only unambiguous coordinates; otherwise require them. Android XR needs explicit XR capability; Apple device, simulator and Catalyst are distinct; browser and Node may reuse compatible WASM32. Fail unsupported/mismatched combinations with requested and observed coordinates; verify destination-specific Xcode settings and actual binary identity before staging.
 
-**Target selection.** Use POLYGLUE_PLATFORM, POLYGLUE_SDK_VARIANT, POLYGLUE_ARCH and POLYGLUE_TARGETS (20.4.5), plus the internal required adapter closure. Normalize using the existing platform catalog; do not add a YAML/cache component list. Validate after project()/language enablement against the actual toolchain: CMAKE_SYSTEM_NAME, ANDROID, EMSCRIPTEN, compiler target/architecture, Android ABI/API and Apple SDK/sysroot/triple or Xcode destination as applicable. Never infer from host OS, pointer width, UNIX/APPLE or CMAKE_CROSSCOMPILING alone. One architecture per slice. Direct CMake may infer unambiguous coordinates; otherwise require explicit values. Android XR requires explicit XR capability. Apple device, simulator and Catalyst are distinct. Browser and Node may reuse a compatible WASM32 slice. Reject conflicts and unsupported targets with requested/observed coordinates and a useful error. For Xcode properties only provable during build, require matching configuration and verify actual binary identity before staging.
-
-| Component | Native selection |
+| Component | Native requirements and reuse |
 | --- | --- |
-| core + c | C++20 core and C11 ABI on every runtime owner; ABI headers only for borrowers. No host SDKs. |
-| cpp | C++ APIs and required native helpers. |
-| jni | Java/Kotlin bridge: NDK JNI on Android/XR, target JDK headers on desktop. |
-| objc | Objective-C/Swift bridge: selected Apple SDK, OBJC/OBJCXX, ARC/blocks and required frameworks. |
-| python | CPython bridge: target development headers and appropriate extension or embedding linkage. |
-| dart / dotnet | Native Dart/Flutter FFI or C# glue where required. No native managed SDK unless embedding requires it. |
-| wasm | JS/TS or Dart/Flutter Web: Emscripten WASM32 and matching memory/thread/exception profile. |
+| core + c | Runtime owner: C++20 core and C ABI entry points. Borrower: ABI declarations only. Common code on all supported native/WASM slices; no managed SDK. |
+| cpp | C++ APIs and required reusable native helpers, also when another bridge needs them. |
+| jni | One Java/Kotlin bridge; Android/XR NDK JNI headers or desktop target JDK headers. |
+| objc | One Objective-C/Swift bridge; supported Apple SDK, OBJC/OBJCXX, ARC/blocks and required frameworks. |
+| python | CPython bridge; target development headers and extension or embedding linkage as selected. |
+| dart / dotnet | Native Dart/Flutter FFI or C# glue when actually needed; no managed SDK dependency unless embedding requires it. |
+| wasm | JS/TS and Dart/Flutter Web; Emscripten WASM32, matching memory/thread/exception profile. |
 
-Discover only selected SDKs and target-compatible headers/libraries. Native Flutter FFI alone does not require JNI/ObjC; select them only for actual provider/plugin glue. Android JNI needs no desktop JVM; desktop JNI loaded by a VM need not link an embedded JVM. CPython extension and embedding requirements differ; never execute a cross-target interpreter to discover target headers. The consumer/starter enables needed languages at a valid directory scope before attachment. No unselected SDK search, host-library fallback or automatic thread enablement.
+Select only required components and their dependencies. Flutter FFI alone does not select JNI or ObjC; actual provider/plugin glue may require them. Android JNI needs no desktop JVM; desktop JNI loaded by a VM need not link an embedded JVM. CPython extension and embedding discovery/linkage differ; do not execute cross-target interpreters or use host development headers. Use target SDK/sysroot discovery; no host fallback or unselected SDK search. The consumer/starter enables required native languages before attachment at the correct common directory scope. Threads, exceptions and other ABI-affecting options follow the existing profile; use native system link requirements only when needed. Managed Java/Kotlin/Swift/Python/Dart/Flutter/.NET/JS/TS sources use the corresponding ecosystem tools, never the native CMake source list.
 
-**Headers and build isolation.** List private headers for IDE/build use without installing them. Public headers must be self-contained, have explicit relative install paths, and propagate only required include roots/features. Use CMake header file sets or the platform framework mechanism as appropriate; reject missing files and installed-path collisions. Do not propagate compilable files through INTERFACE_SOURCES. Keep C11/C++20 requirements on the appropriate APIs/targets and SDK paths private unless needed publicly. Use relocatable exports and preserve static transitive link dependencies. Apply PIC where needed and compatible CRT/STL, exceptions, visibility and sanitizer settings. Never alter parent flags, BUILD_SHARED_LIBS, toolchain, output paths or version.
+**CMake rules.** Use target_sources, target_include_directories, target_compile_features, target_compile_definitions/options and target_link_libraries/options. Sources and private headers are PRIVATE; expose only necessary public usage requirements. Resolve paths from CMAKE_CURRENT_LIST_DIR or CMAKE_CURRENT_FUNCTION_LIST_DIR. Public C11 and C++20 headers must compile independently with their required include roots. Install only selected public headers with relative paths and relocatable exports (header file sets or platform framework mechanism); reject missing files and conflicting install paths. Private SDK headers stay private unless required by the public API. No compilable INTERFACE_SOURCES. Preserve transitive static link dependencies; use PIC where needed and matching CRT/STL, exception, visibility and sanitizer settings. Never change parent flags, toolchain, BUILD_SHARED_LIBS, output paths or version.
 
-**Runtime ownership (12.11).** Use one actual core target polyglue-runtime, with alias/export PolyGlue::runtime. The native target property POLYGLUE_CORE_MODE selects:
+Deduplicate components and canonical file paths per real target; conflicting owners/flags fail. Validate aliases, target kind, selected SDKs, ABI/resource identity and existing ownership before attaching. Primary targets are buildable libraries or WASM executables, not imported/interface/object-only targets. Identical repeated support attachment is a no-op; conflicting attachment and duplicate primary generated integration fail. Guard function definitions, not target attachments; different products in one configure must each receive their sources. Validate imported core targets without modifying them.
 
-| Mode | Linkage |
+**Runtime linkage (12.11).** The core target is polyglue-runtime, exposed as PolyGlue::runtime in build and installed exports. Use the existing native target property POLYGLUE_CORE_MODE:
+
+| Mode | Behavior |
 | --- | --- |
-| embedded (default) | Static core, linked into the final owner image. Intermediate archives carry the transitive dependency. |
-| shared | Explicit compatible shared core; link and distribute the actual runtime dependency. |
-| borrowed | Matching ABI headers and host helpers; dispatch only through the supplied owner bootstrap/table, with no local core or direct core-symbol imports. |
+| embedded (default) | Link the static core into the final native image. Static intermediate archives carry the transitive core dependency. |
+| shared | Link an explicitly supplied compatible shared core and distribute that dependency. |
+| borrowed | Use matching ABI declarations and host helpers; route all calls through the supplied bootstrap/table, with no local core or direct core-symbol imports. |
 
-Create the static core only when needed; shared owners are explicitly configured/supplied. Reuse existing targets only with matching type, ABI profile, resource identity and dependencies; incompatible profiles require separate build trees. A borrowed-only build does not require a core target. Compile core/c implementation only into its owner; host helpers may be built in distinct images without duplicate canonical state. One core per final image, including static/archive/object composition. Separate embedded images are isolated; cooperating images must share the actual owner/context. Use correct static or DLL export/import macros and hidden private symbols. Do not rely on symbol interposition. One required loader entry point per binary. WASM embeds its core in the final module; separate instances are isolated. Verify actual link/import/export and loader identity, not just CMake target names.
+Compile core/c implementation only in its owner; create no core target in a borrowed-only build. Reuse a core only with matching type, ABI profile, support identity and dependencies; incompatible profiles need separate build trees. One canonical core per final image, including archive/object composition. Distinct embedded images are isolated; cooperating images share the actual owner/context. Do not rely on symbol interposition. Use matching static/DLL export/import definitions; hide private symbols. Each required loader symbol has one definition per image (e.g. JNI_OnLoad); different CPython module names may have distinct PyInit_* symbols. A loader only prepares platform metadata/exports, not business initialization. WASM embeds its core in the final module; borrowers, if used, must access the same proven instance. Actual symbol/link/loader tests confirm ownership.
 
-Consumer example:
+Consumer integration (planned):
 
 ```cmake
 add_library(example SHARED)
@@ -6489,7 +6622,7 @@ include("${POLYGLUE_INTEGRATION_FILE}")
 polyglue_attach_generated(example)
 ```
 
-**Distribution and rebuilds.** Ship the canonical support tree in wheel/sdist and materialize version/hash-addressed resources when generating. The existing manifest records relative file hashes and required components. Validate resources and paths; keep packaged sources immutable and configured headers in the build tree. Standalone relocated CMake must work without Python, checkout or network. Installed binaries/headers may replace sources only with matching ownership/ABI. Record selected components, actual sources/headers, include/link requirements, core mode, support hash and toolchain in the existing receipt and CMake codemodel; verify before staging. Reconfigure on plan, fragment, resource or profile changes; rebuild edited development files, reject stale slice/receipt and remove stale files only in owned output. Tests: 18.17.1.
+The consumer never lists support files manually. The existing manifest records the support resource version/hash, relative file hashes and required component IDs. Ship the canonical tree in wheel/sdist, materialize immutable resources in owned output, and reject missing/modified/escaping paths. Configured headers belong to the build tree. Standalone relocated CMake works without Python, checkout or network. An installed core may replace the corresponding source build only with verified matching headers, ABI and ownership; selected host helpers remain available. Record actual selected sources/headers, include/link requirements, core mode, support hash and toolchain in the existing build receipt/codemodel, not a new manifest system. Reconfigure on selection, fragment or profile changes; rebuild edited development sources/headers; changed packaged resources require new identity. Reject stale receipts/slices and remove stale files only from owned output. Tests: 18.17.1.
 
 ### 20.5 Python build orchestration and artifact pipeline
 
@@ -6963,15 +7096,19 @@ Use the detailed checklist in section 22 as the implementation backlog. Check an
 | 6 — build/package (P1), distribution (P2) | Conventional implementation roots, native builds, all specified formats, local Python actions and S3-compatible deployment; complete guides | Independently installed artifact tests, 100% Python coverage of added helpers, explicit deployment only |
 | 7 — stabilization | Full finite conformance matrix, CI, sanitizer, fuzz, performance and review | All applicable required gates pass on exact candidate SHA; owner release approval remains separate |
 
-Implement and test each vertical slice together. P0 includes real native execution, HTTP, camera/grayscale and login fixtures, independent CI and Python coverage from the first production code; P1/P2 must not delay it. Prove advanced types, external adapters, streams and registry in the common core before expanding host integrations.
+Every phase includes implementation, purposeful automated tests, review and fixes. P0 includes HTTP, camera/grayscale and login fixtures, actual native compile/run and independent per-target CI; no need to wait for the secondary artifact CLI. Establish the generator coverage gate from the first production Python code. P1/P2 work can begin independently when prerequisites exist but must not displace unfinished generator behavior. All supported targets and formats retain final acceptance gates. Define the canonical semantics before implementation; build small executable vertical slices rather than completing every compiler customization before proving the ABI. Prove advanced types, external adapters, streams and registry in the common core before replicating host integrations. Develop tests together with each slice; do not postpone real target evidence.
 
-Phase 2 proves Swift import/actor callbacks, JVM unsigned/boxed conversion and native-thread attachment, Dart isolate delivery/int64, and WASM32 layout/async return. Reuse production adapters; include sync, async completion/cancel, owning result and teardown in each feasible proof. Missing toolchain evidence blocks acceptance. Freeze the ABI only after these proofs. Map requirements to existing test IDs, not a second tracker. Review final tree/diff, remove obsolete owned files, and reconcile README.md, AGENTS.md, PROJECT.md and docs with implementation and CI. Verify links/examples; preserve user data and unrelated work.
+During phase 2, use small actual cross-host vertical slices to test Swift mixed module import and actor-safe callback, JVM unsigned/boxed conversion and native-thread attach, Dart isolate delivery plus portable int64, and WASM32 layout and async host return. Reuse eventual adapter code/fixtures rather than separate throwaway architectures. Include one sync call, async completion/cancel, owning result and explicit teardown in each feasible proof. Freeze the physical ABI only after these representative constraints are checked; blocked toolchain evidence remains a gate, not permission to claim compatibility. Complete all backend coverage in later phases. Link each checklist requirement to existing case IDs or an independently defined gate in the implementation evidence; do not create a second task tracker. Each new backend implements the established contracts and generated metadata; native package-specific version/build verification is P1, not a P0 dependency. Do not mark a backend complete until its full checklist and actual execution evidence are satisfied. Tests are developed alongside the feature, not deferred to phase 7. Review runtime contracts and compiler configuration before freezing public APIs. At completion, inspect the actual repository tree and final diff, remove unused code, obsolete tests, duplicate paths and temporary artifacts within the authorized scope. Reconcile README.md, AGENTS.md, PROJECT.md and all existing docs with implementation and CI. Verify links and examples using their actual tools. Do not delete user files or release artifacts outside the task scope.
 
 Explicit implementation gates to settle with proof-of-concept and tests: complete grammar against the specified constructs, concrete ABI declarations and numeric status codes, safe handle representation, exact unsigned/64-bit web conversions, actual executor capabilities, compiler-proven JVM/Apple ownership layouts, bounded stream implementation and concrete idiomatic lifecycle/registry/static facade signatures. Defaults and semantic policies are fixed by sections 4, 5, 7, 10, 12, 13, 14 and 15; changes require specification review, not convenient implementation fallbacks. These are engineering design gates, not permission to drop requirements.
 
 ## 22. Implementation and acceptance checklist
 
-This is the single implementation checklist. Mark an item complete only with implementation, applicable section 18 test evidence and current documentation. Reuse test IDs across requirements; no second tracker or publication authorization. Follow section 1.3: one canonical compiler, runtime, registry/cancellation machinery and package planner; no speculative abstractions or compatibility branches. Freeze the operational ABI and bootstrap before broad adapter rollout. Retain the specific acceptance gates throughout sections 4–20.
+The checklist includes the consolidated gates in sections 4.7.1, 5.4.6, 7.10, 11.7, 12.10–12.12, 13.8.2–13.8.3, 14.3.3, 14.4.5, 14.7.9–14.7.10, 18.16–18.17.1, 19.6.1 and 20.4.7. Map applicable requirements to independent test/evidence IDs as part of the existing checklist and reports. In particular, freeze the operational ABI and shared-core bootstrap before broad adapter rollout; verify prepared/consumer delivery/transfer states, demand, independent values and compiler transaction recovery, and record trust/benchmark evidence before release. No new checklist item is considered complete from documentation alone.
+
+This is the detailed delivery checklist, grouped by responsibility rather than a second architecture specification. All boxes are initially unchecked. Each item requires actual implementation, the applicable tests from section 18 and current documentation. Mark only completed work with evidence. Do not create one test per checkbox when an existing test proves several requirements. No publication is authorized by checking these boxes.
+
+Use the section 1.3 architecture budget as an acceptance gate. For each item identify the owning implementation and shared test ID. Reject duplicate resource tables, refcount/cancellation engines, host-side registry stacks, parallel semantic graphs, unrelated configurable profiles, duplicate package planners and unused extension frameworks. Retain actual safety guarantees, target coverage and user-approved customization. Remove obsolete code/grammar/configuration rather than maintaining compatibility aliases; this is an unreleased project. A checklist item is not a reason to create a new subsystem.
 
 ### 22.1 Repository, tooling and engineering rules
 
