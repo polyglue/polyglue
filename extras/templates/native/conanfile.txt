@@ -1,0 +1,7 @@
+# Optional dependency example. Pin and lock the actual consumer dependency graph.
+[requires]
+nlohmann_json/3.12.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
